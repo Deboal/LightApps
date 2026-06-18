@@ -1,0 +1,10 @@
+[build]
+  command = "bash build.sh"
+  publish = "public"
+
+# Clean URLs: /gear-tracker/ serves apps/gear-tracker
+[[redirects]]
+  from = "/*"
+  to = "/:splat/index.html"
+  status = 200
+  force = false
