@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { store } from "../../../shared/store.js";
+import { AuthGate, signOut } from "../../../shared/auth.js";
 
-// This is all it takes to use the shared backend: name the app, and you get a
-// namespaced data store with list/get/set/remove/subscribe. No new schema, no keys.
+// Default store = per-user PRIVATE: each signed-in user sees only their own gear.
 const db = store("gear-tracker");
 const COLLECTION = "items";
 
-function App() {
+function Tracker({ user }) {
   const [items, setItems] = useState([]);
   const [text, setText] = useState("");
   const [ready, setReady] = useState(false);
@@ -18,18 +18,9 @@ function App() {
     catch (e) { setErr(e.message || "load failed"); setReady(true); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const ch = db.subscribe(load);          // live updates across devices
-    return () => ch.unsubscribe();
-  }, [load]);
+  useEffect(() => { load(); const ch = db.subscribe(load); return () => ch.unsubscribe(); }, [load]);
 
-  const add = async () => {
-    const name = text.trim(); if (!name) return;
-    setText("");
-    await db.set(COLLECTION, { name, checked: false });
-    load();
-  };
+  const add = async () => { const name = text.trim(); if (!name) return; setText(""); await db.set(COLLECTION, { name, checked: false }); load(); };
   const toggle = async (it) => { await db.set(COLLECTION, { ...it, checked: !it.checked }, it.id); load(); };
   const del = async (it) => { await db.remove(COLLECTION, it.id); load(); };
 
@@ -40,8 +31,12 @@ function App() {
 
   return (
     <div style={wrap}>
-      <div style={{ fontSize: 11, letterSpacing: ".22em", color: "#8b97a3", fontWeight: 600 }}>SHARED · REALTIME</div>
-      <h1 style={{ letterSpacing: "-.02em", margin: "6px 0 20px" }}>Gear Tracker</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style={{ fontSize: 11, letterSpacing: ".22em", color: "#8b97a3", fontWeight: 600 }}>YOUR GEAR · PRIVATE</div>
+        <button onClick={signOut} style={{ background: "none", border: "1px solid #2a333d", color: "#8b97a3", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>Sign out</button>
+      </div>
+      <h1 style={{ letterSpacing: "-.02em", margin: "2px 0 4px" }}>Gear Tracker</h1>
+      <div style={{ color: "#5c6670", fontSize: 12, marginBottom: 20 }}>{user.email}</div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <input style={input} value={text} placeholder="Add gear (e.g. crampons)"
@@ -62,6 +57,10 @@ function App() {
       ))}
     </div>
   );
+}
+
+function App() {
+  return <AuthGate>{(user) => <Tracker user={user} />}</AuthGate>;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

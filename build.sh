@@ -16,7 +16,7 @@ for dir in apps/*/; do
   "$ESBUILD" "${dir}src/app.jsx" \
     --bundle --minify --format=iife --platform=browser --target=es2018 \
     --define:process.env.NODE_ENV='"production"' \
-    --jsx=transform --outfile="public/$name/bundle.js"
+    --jsx=transform --loader:.js=jsx --outfile="public/$name/bundle.js"
   cp "${dir}index.html" "public/$name/index.html"
   names+=("$name")
 done
