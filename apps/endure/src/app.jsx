@@ -54,6 +54,30 @@ const TESTS = {
     score: (s) => s.correct,
     fmt: (v) => `${v} correct`,
   },
+  gng: {
+    name: "Go / No-Go",
+    tag: "Response Inhibition",
+    icon: "\u{1F6A6}",
+    color: "#5cbf6b",
+    blurb:
+      "Tap fast on green, hold back on red. The tapping is easy — stopping yourself is the work, and sustaining that restraint is draining. This response-inhibition task is essentially the one Samuele Marcora used in Endure to mentally fatigue athletes before they even started exercising.",
+    unit: "%",
+    better: "higher",
+    score: (s) => s.accuracy,
+    fmt: (v) => `${v}%`,
+  },
+  nback: {
+    name: "N-Back",
+    tag: "Working Memory",
+    icon: "\u{1F9E9}",
+    color: "#dd7fb0",
+    blurb:
+      "Letters stream past; flag when the current one matches the one N steps back. It's the classic working-memory stress test — holding and constantly updating a mental buffer under time pressure, the kind of executive load that frays as fatigue builds.",
+    unit: "%",
+    better: "higher",
+    score: (s) => s.accuracy,
+    fmt: (v) => `${v}%`,
+  },
   breath: {
     name: "Breath Hold",
     tag: "The Central Governor",
@@ -79,7 +103,13 @@ const TESTS = {
     fmt: (v) => fmtDur(v),
   },
 };
-const ORDER = ["pvt", "stroop", "breath", "hold"];
+const ORDER = ["pvt", "stroop", "gng", "nback", "breath", "hold"];
+// Home groups the mental tasks first — the heart of the book — then the two
+// "your body could go further than your brain lets it" holds.
+const CATEGORIES = [
+  { title: "MENTAL ENDURANCE", note: "Cognitive tasks — vigilance, control, memory.", tests: ["pvt", "stroop", "gng", "nback"] },
+  { title: "BODY VS. MIND", note: "Where the quitting happens in your head, not your muscles.", tests: ["breath", "hold"] },
+];
 
 function fmtDur(sec) {
   sec = Math.max(0, Math.round(sec));
@@ -153,32 +183,38 @@ function Home({ user, sessions, ready, err, onOpen }) {
 
       {err && <div style={{ color: C.danger, marginBottom: 14, fontSize: 13 }}>{err}</div>}
 
-      <div style={{ display: "grid", gap: 12 }}>
-        {ORDER.map((key) => {
-          const def = TESTS[key];
-          const list = byTest[key] || [];
-          const best = bestOf(list, key);
-          return (
-            <button key={key} onClick={() => onOpen(key)} style={{
-              textAlign: "left", background: C.panel, border: `1px solid ${C.line}`,
-              borderRadius: 16, padding: "16px 18px", cursor: "pointer", color: C.text,
-              display: "flex", alignItems: "center", gap: 16,
-            }}>
-              <div style={{ fontSize: 30, lineHeight: 1, width: 40, textAlign: "center" }}>{def.icon}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.15 }}>{def.name}</div>
-                <div style={{ fontSize: 11, color: def.color, letterSpacing: ".05em", textTransform: "uppercase", fontWeight: 600, marginTop: 2 }}>{def.tag}</div>
-                <div style={{ fontSize: 13, color: C.dim, marginTop: 5 }}>
-                  {best
-                    ? <>Best <b style={{ color: C.text }}>{def.fmt(def.score(best))}</b> · {list.length} session{list.length > 1 ? "s" : ""}</>
-                    : (ready ? "Not attempted yet" : "…")}
-                </div>
-              </div>
-              <div style={{ color: C.faint, fontSize: 22 }}>{"›"}</div>
-            </button>
-          );
-        })}
-      </div>
+      {CATEGORIES.map((cat) => (
+        <div key={cat.title} style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 11, letterSpacing: ".18em", color: C.dim, fontWeight: 700, marginBottom: 2 }}>{cat.title}</div>
+          <div style={{ fontSize: 12, color: C.faint, marginBottom: 12 }}>{cat.note}</div>
+          <div style={{ display: "grid", gap: 12 }}>
+            {cat.tests.map((key) => {
+              const def = TESTS[key];
+              const list = byTest[key] || [];
+              const best = bestOf(list, key);
+              return (
+                <button key={key} onClick={() => onOpen(key)} style={{
+                  textAlign: "left", background: C.panel, border: `1px solid ${C.line}`,
+                  borderRadius: 16, padding: "16px 18px", cursor: "pointer", color: C.text,
+                  display: "flex", alignItems: "center", gap: 16,
+                }}>
+                  <div style={{ fontSize: 30, lineHeight: 1, width: 40, textAlign: "center" }}>{def.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.15 }}>{def.name}</div>
+                    <div style={{ fontSize: 11, color: def.color, letterSpacing: ".05em", textTransform: "uppercase", fontWeight: 600, marginTop: 2 }}>{def.tag}</div>
+                    <div style={{ fontSize: 13, color: C.dim, marginTop: 5 }}>
+                      {best
+                        ? <>Best <b style={{ color: C.text }}>{def.fmt(def.score(best))}</b> · {list.length} session{list.length > 1 ? "s" : ""}</>
+                        : (ready ? "Not attempted yet" : "…")}
+                    </div>
+                  </div>
+                  <div style={{ color: C.faint, fontSize: 22 }}>{"›"}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
 
       {recent.length > 0 && (
         <div style={{ marginTop: 30 }}>
@@ -372,6 +408,243 @@ function StroopTest({ onDone, onBack }) {
             padding: "22px 0", fontSize: 17, fontWeight: 800, cursor: "pointer",
           }}>{c.name}</button>
         ))}
+      </div>
+    </Screen>
+  );
+}
+
+// ===========================================================================
+// Go / No-Go (response inhibition)
+// ===========================================================================
+const GNG_TRIALS = 30;
+const GNG_GO_PROB = 0.72; // frequent "go" builds a reflex that "no-go" must fight
+const GNG_STIM = 850;     // ms a stimulus is on screen
+const GNG_ITI = 400;      // ms blank between stimuli
+
+function GoNoGoTest({ onDone, onBack }) {
+  const [phase, setPhase] = useState("intro"); // intro | stim | iti
+  const [isGo, setIsGo] = useState(true);
+  const [n, setN] = useState(0);               // trial index shown (1-based for display)
+  const [flash, setFlash] = useState(null);    // 'hit' | 'false' brief tap feedback
+
+  const seq = useRef([]);
+  const idx = useRef(0);
+  const responded = useRef(false);
+  const stimAt = useRef(0);
+  const res = useRef({ hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0, rts: [] });
+  const t1 = useRef(null), t2 = useRef(null), t3 = useRef(null);
+
+  const clearAll = () => [t1, t2, t3].forEach((t) => { if (t.current) { clearTimeout(t.current); t.current = null; } });
+  useEffect(() => clearAll, []);
+
+  const finish = () => {
+    const r = res.current;
+    const total = GNG_TRIALS;
+    const correct = r.hits + r.correctRejections;
+    const accuracy = Math.round((correct / total) * 100);
+    const meanRt = r.rts.length ? Math.round(r.rts.reduce((a, b) => a + b, 0) / r.rts.length) : 0;
+    onDone({
+      accuracy, hits: r.hits, misses: r.misses,
+      falseAlarms: r.falseAlarms, correctRejections: r.correctRejections,
+      meanRt, trials: total,
+    });
+  };
+
+  const runTrial = (i) => {
+    if (i >= GNG_TRIALS) { finish(); return; }
+    idx.current = i;
+    responded.current = false;
+    const go = seq.current[i];
+    setIsGo(go); setN(i + 1); setPhase("stim");
+    stimAt.current = performance.now();
+    t1.current = setTimeout(() => {
+      // Stimulus window closed with no response → resolve the omission case.
+      if (!responded.current) {
+        if (go) res.current.misses++; else res.current.correctRejections++;
+      }
+      setPhase("iti");
+      t2.current = setTimeout(() => runTrial(i + 1), GNG_ITI);
+    }, GNG_STIM);
+  };
+
+  const start = () => {
+    res.current = { hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0, rts: [] };
+    seq.current = Array.from({ length: GNG_TRIALS }, () => Math.random() < GNG_GO_PROB);
+    runTrial(0);
+  };
+
+  const tap = () => {
+    if (phase !== "stim" || responded.current) return;
+    responded.current = true;
+    if (isGo) { res.current.hits++; res.current.rts.push(performance.now() - stimAt.current); setFlash("hit"); }
+    else { res.current.falseAlarms++; setFlash("false"); }
+    t3.current = setTimeout(() => setFlash(null), 160);
+  };
+
+  if (phase === "intro") {
+    return (
+      <Screen>
+        <TopBar onBack={onBack} />
+        <TestIntro test="gng" />
+        <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, margin: "18px 0 22px" }}>
+          <div style={{ fontSize: 14, color: C.dim, lineHeight: 1.65 }}>
+            A circle flashes. <b style={{ color: "#5cbf6b" }}>Green</b> — tap anywhere, fast.
+            <b style={{ color: C.danger }}> Red</b> — do nothing. Most are green, so the urge to tap builds; the whole test is whether you can stop yourself on the red ones. {GNG_TRIALS} rounds, about 40 seconds.
+          </div>
+        </div>
+        <button style={btnPrimary(TESTS.gng.color)} onClick={start}>Start</button>
+      </Screen>
+    );
+  }
+
+  const showStim = phase === "stim";
+  const dotColor = isGo ? "#5cbf6b" : C.danger;
+  return (
+    <div onClick={tap} style={{
+      position: "fixed", inset: 0, background: flash === "false" ? "rgba(229,96,77,.16)" : C.bg,
+      color: C.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      cursor: "pointer", userSelect: "none", transition: "background .08s",
+    }}>
+      <div style={{ position: "absolute", top: 22, fontSize: 12, letterSpacing: ".2em", color: C.dim, fontWeight: 600 }}>{n} / {GNG_TRIALS}</div>
+      {showStim ? (
+        <div style={{
+          width: 190, height: 190, borderRadius: "50%", background: dotColor,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#0f1318", fontSize: 34, fontWeight: 800, letterSpacing: ".05em",
+          boxShadow: `0 0 70px -12px ${dotColor}`, transform: flash === "hit" ? "scale(0.94)" : "scale(1)", transition: "transform .08s",
+        }}>{isGo ? "GO" : "STOP"}</div>
+      ) : (
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.line }} />
+      )}
+      <div style={{ position: "absolute", bottom: 40, color: C.faint, fontSize: 13 }}>Tap for green. Hold back on red.</div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// N-Back (working memory)
+// ===========================================================================
+const NBACK_LEN = 24;
+const NBACK_STIM = 2200;  // ms each letter is visible
+const NBACK_MATCH = 0.3;  // target rate of matches
+const NBACK_LETTERS = "BCDFGHJKLMNPQRSTVWXYZ".split(""); // consonants, no easy words
+
+function NBackTest({ onDone, onBack }) {
+  const [phase, setPhase] = useState("intro"); // intro | run
+  const [level, setLevel] = useState(2);
+  const [letter, setLetter] = useState("");
+  const [pos, setPos] = useState(0);           // 1-based position for display
+  const [flash, setFlash] = useState(null);    // 'good' | 'bad'
+
+  const seq = useRef([]);
+  const responded = useRef(false);
+  const res = useRef({ hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0 });
+  const nRef = useRef(2);
+  const t1 = useRef(null), t2 = useRef(null);
+
+  const clearAll = () => [t1, t2].forEach((t) => { if (t.current) { clearTimeout(t.current); t.current = null; } });
+  useEffect(() => clearAll, []);
+
+  const buildSeq = (n) => {
+    const s = [];
+    for (let i = 0; i < NBACK_LEN; i++) {
+      if (i >= n && Math.random() < NBACK_MATCH) {
+        s.push(s[i - n]); // deliberate match
+      } else {
+        let c;
+        do { c = NBACK_LETTERS[Math.floor(Math.random() * NBACK_LETTERS.length)]; }
+        while (i >= n && c === s[i - n]); // avoid an accidental match
+        s.push(c);
+      }
+    }
+    return s;
+  };
+
+  const finish = () => {
+    const r = res.current;
+    const scored = NBACK_LEN - nRef.current; // positions where a match is possible
+    const correct = r.hits + r.correctRejections;
+    const accuracy = Math.round((correct / scored) * 100);
+    onDone({ n: nRef.current, accuracy, hits: r.hits, misses: r.misses, falseAlarms: r.falseAlarms, scored });
+  };
+
+  const runPos = (i) => {
+    if (i >= NBACK_LEN) { finish(); return; }
+    responded.current = false;
+    setLetter(seq.current[i]); setPos(i + 1);
+    t1.current = setTimeout(() => {
+      const n = nRef.current;
+      if (i >= n) {
+        const isMatch = seq.current[i] === seq.current[i - n];
+        if (!responded.current) {
+          if (isMatch) res.current.misses++; else res.current.correctRejections++;
+        }
+      }
+      setLetter(""); // brief gap
+      t2.current = setTimeout(() => runPos(i + 1), 300);
+    }, NBACK_STIM);
+  };
+
+  const start = () => {
+    nRef.current = level;
+    res.current = { hits: 0, misses: 0, falseAlarms: 0, correctRejections: 0 };
+    seq.current = buildSeq(level);
+    setPhase("run");
+    runPos(0);
+  };
+
+  const tapMatch = () => {
+    if (phase !== "run" || !letter || responded.current) return;
+    const i = pos - 1, n = nRef.current;
+    if (i < n) return; // no possible match yet
+    responded.current = true;
+    const isMatch = seq.current[i] === seq.current[i - n];
+    if (isMatch) { res.current.hits++; setFlash("good"); }
+    else { res.current.falseAlarms++; setFlash("bad"); }
+    setTimeout(() => setFlash(null), 150);
+  };
+
+  if (phase === "intro") {
+    return (
+      <Screen>
+        <TopBar onBack={onBack} />
+        <TestIntro test="nback" />
+        <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, margin: "18px 0 18px" }}>
+          <div style={{ fontSize: 14, color: C.dim, lineHeight: 1.65 }}>
+            Letters appear one at a time. Tap <b style={{ color: C.text }}>Match</b> whenever the current letter is the same as the one <b style={{ color: TESTS.nback.color }}>{level}</b> place{level > 1 ? "s" : ""} back. {NBACK_LEN} letters, no going back — you have to hold the recent ones in your head.
+          </div>
+        </div>
+        <div style={{ fontSize: 12, letterSpacing: ".14em", color: C.dim, fontWeight: 600, marginBottom: 10 }}>DIFFICULTY</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 24 }}>
+          {[{ v: 1, label: "1-back", hint: "Easier" }, { v: 2, label: "2-back", hint: "Classic" }].map((o) => (
+            <button key={o.v} onClick={() => setLevel(o.v)} style={{
+              background: level === o.v ? TESTS.nback.color : C.panel, color: level === o.v ? "#2a0f20" : C.text,
+              border: `1px solid ${level === o.v ? TESTS.nback.color : C.line}`, borderRadius: 12, padding: "14px 0",
+              fontSize: 15, fontWeight: 700, cursor: "pointer", lineHeight: 1.3,
+            }}>{o.label}<div style={{ fontSize: 11, fontWeight: 600, opacity: .8 }}>{o.hint}</div></button>
+          ))}
+        </div>
+        <button style={btnPrimary(TESTS.nback.color)} onClick={start}>Start {level}-back</button>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div style={{ fontSize: 12, letterSpacing: ".2em", color: TESTS.nback.color, fontWeight: 600 }}>{nRef.current}-BACK</div>
+        <div style={{ fontSize: 15, color: C.dim }}>{pos} / {NBACK_LEN}</div>
+      </div>
+      <div style={{
+        height: 220, borderRadius: 16, marginBottom: 26, display: "flex", alignItems: "center", justifyContent: "center",
+        background: flash === "good" ? "rgba(76,175,125,.14)" : flash === "bad" ? "rgba(229,96,77,.14)" : C.panel,
+        border: `1px solid ${flash === "good" ? C.good : flash === "bad" ? C.danger : C.line}`, transition: "all .1s",
+      }}>
+        <span style={{ fontSize: 96, fontWeight: 800, letterSpacing: ".02em" }}>{letter || ""}</span>
+      </div>
+      <button onClick={tapMatch} style={{ ...btnPrimary(TESTS.nback.color), padding: "20px", fontSize: 18 }}>Match</button>
+      <div style={{ textAlign: "center", color: C.faint, fontSize: 13, marginTop: 14 }}>
+        Tap only when this letter matches the one {nRef.current} back.
       </div>
     </Screen>
   );
@@ -590,6 +863,18 @@ function Result({ test, result, prevBest, onAgain, onHome }) {
     stats.push(["Correct", `${result.correct}`]);
     stats.push(["Errors", `${result.wrong}`]);
     stats.push(["Accuracy", `${result.accuracy}%`]);
+  } else if (test === "gng") {
+    stats.push(["Accuracy", `${result.accuracy}%`]);
+    stats.push(["Correct stops (red)", `${result.correctRejections}`]);
+    stats.push(["False taps (red)", `${result.falseAlarms}`]);
+    stats.push(["Missed greens", `${result.misses}`]);
+    if (result.meanRt) stats.push(["Avg tap speed", `${result.meanRt} ms`]);
+  } else if (test === "nback") {
+    stats.push(["Accuracy", `${result.accuracy}%`]);
+    stats.push(["Level", `${result.n}-back`]);
+    stats.push(["Matches caught", `${result.hits}`]);
+    stats.push(["Missed matches", `${result.misses}`]);
+    stats.push(["False alarms", `${result.falseAlarms}`]);
   } else if (test === "breath") {
     stats.push(["Hold", fmtDur(result.seconds)]);
   } else if (test === "hold") {
@@ -663,6 +948,8 @@ function App({ user }) {
     const props = { onBack: () => setView({ name: "home" }), onDone: (r) => finish(view.test, r) };
     if (view.test === "pvt") return <PVTTest {...props} />;
     if (view.test === "stroop") return <StroopTest {...props} />;
+    if (view.test === "gng") return <GoNoGoTest {...props} />;
+    if (view.test === "nback") return <NBackTest {...props} />;
     if (view.test === "breath") return <BreathTest {...props} />;
     if (view.test === "hold") return <HoldTest {...props} />;
   }
