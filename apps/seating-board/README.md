@@ -55,6 +55,25 @@ The board is **deliberately not React**. The geometry and drag-drop are the
 whole value; a rewrite would risk them for nothing the user would see. React's
 only jobs are auth and mounting.
 
+## No sign-in — deliberate
+
+This app does **not** use the shared `AuthGate`. It holds names and office
+numbers, which is wall-map information, so the sign-in friction wasn't worth it.
+
+Two consequences to be clear about:
+
+- **The URL permits writing, not just reading.** Anyone with the link can
+  reassign or clear the board. `Save file` exports are the only undo.
+- **`schema-auth-enforce.sql` must stay UNRUN.** It drops the anonymous
+  policies this app depends on and would break it completely. If a future app in
+  the hub needs enforcement, this one has to move to its own project or grow a
+  sign-in first.
+
+Because there's no signed-in identity, the `by` field on an assignment comes
+from a name the user sets via the **Who am I?** button, kept in `localStorage`.
+It's a courtesy label so changes are readable later — nothing verifies it, and
+it is not a credential. Rows written anonymously have a null `owner`.
+
 ## Persistence
 
 Shared, not per-user — `store("b100-seating", { shared: true })`. A board where

@@ -2,8 +2,8 @@
  *
  * Ported from the standalone B100-seating-board.html with the geometry and
  * interaction model intact. Two deliberate changes:
- *   1. It mounts into a container instead of owning <body>, so a React
- *      AuthGate can wrap it.
+ *   1. It mounts into a container instead of owning <body>, so a React host can
+ *      wrap it.
  *   2. Every mutation still funnels through render(), but render() now also
  *      notifies the host (hooks.onMutate) so persistence has exactly one
  *      hook point — see the handoff's "single mutation sink".
@@ -36,7 +36,7 @@ var MARKUP = [
   '    <button data-el="btn-json">Save file</button>',
   '    <button data-el="btn-load">Open file</button>',
   '    <button data-el="btn-print">Print</button>',
-  '    <button data-el="btn-signout">Sign out</button>',
+  '    <button data-el="btn-whoami" title="Used to label who changed what. Not a login.">Who am I?</button>',
   '    <input type="file" data-el="file-in" accept=".json" hidden>',
   '  </div>',
   '</header>',
@@ -664,7 +664,25 @@ export function mountBoard(container, hooks) {
   });
   $("btn-print").addEventListener("click", function () { window.print(); });
   $("btn-reload").addEventListener("click", function () { if (hooks.onReload) hooks.onReload(); });
-  $("btn-signout").addEventListener("click", function () { if (hooks.onSignOut) hooks.onSignOut(); });
+
+  /* There is no sign-in, so edits would otherwise be unattributed. This is a
+     label the user sets for themselves — it proves nothing, it just makes the
+     "by" field on an assignment readable later. */
+  function currentWho() {
+    return typeof hooks.whoami === "function" ? hooks.whoami() || "" : "";
+  }
+  function paintWho() {
+    var who = currentWho();
+    $("btn-whoami").textContent = who ? "You: " + who : "Who am I?";
+  }
+  $("btn-whoami").addEventListener("click", function () {
+    var next = window.prompt("Your name — labels the changes you make. Not a login.", currentWho());
+    if (next === null) return;
+    next = next.trim().replace(/\s+/g, " ");
+    if (hooks.onWhoami) hooks.onWhoami(next);
+    paintWho();
+  });
+  paintWho();
 
   /* ===================== HOST API ===================== */
 

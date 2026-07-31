@@ -25,7 +25,11 @@ export function createSync(opts) {
   var board = opts.board;
   var onStatus = opts.onStatus || function () {};
   var onConflict = opts.onConflict || function () {};
-  var whoami = opts.whoami || "";
+  /* Resolved at write time, not construction: with no sign-in the user can set
+     or change their name at any point during the session. */
+  var whoami = typeof opts.whoami === "function"
+    ? opts.whoami
+    : function () { return opts.whoami || ""; };
 
   var ready = false;          // gate: no writes before the first load lands
   var chain = Promise.resolve(); // serialize writes so they can't interleave
@@ -108,7 +112,7 @@ export function createSync(opts) {
     s.rev = (s.rev || 0) + 1;
     return db.set("layout", {
       groups: s.groups, basis: BASIS_LABEL, version: LAYOUT_VERSION, rev: s.rev,
-      at: new Date().toISOString(), by: whoami,
+      at: new Date().toISOString(), by: whoami(),
     }, LAYOUT_DOC);
   }
 
@@ -129,7 +133,7 @@ export function createSync(opts) {
   function pushAssignment(person) {
     return enqueue("assignment", function () {
       return db.set("assignments", {
-        roomId: person.roomId || null, at: new Date().toISOString(), by: whoami,
+        roomId: person.roomId || null, at: new Date().toISOString(), by: whoami(),
       }, person.id);
     });
   }
@@ -151,7 +155,7 @@ export function createSync(opts) {
       for (var i = 0; i < s.people.length; i++) {
         var p = s.people[i];
         await db.set("people", { name: p.name, dept: p.dept || "" }, p.id);
-        await db.set("assignments", { roomId: p.roomId || null, at: new Date().toISOString(), by: whoami }, p.id);
+        await db.set("assignments", { roomId: p.roomId || null, at: new Date().toISOString(), by: whoami() }, p.id);
       }
     });
   }
