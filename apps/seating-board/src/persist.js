@@ -20,6 +20,32 @@ import { LAYOUT_VERSION, BASIS_LABEL } from "./basis.js";
 
 export var LAYOUT_DOC = "b100";
 
+/* Rebuild a stored plan floor from a newer definition, keeping what the users
+   own (room ids, so assignments still resolve; seat counts, which they edit)
+   and taking what the definition owns (position, size, name, open flag). */
+function reshape(storedGroup, def) {
+  var prev = {};
+  (storedGroup.items || []).forEach(function (it) {
+    if (it.kind === "room") prev[it.code] = it;
+  });
+  var out = JSON.parse(JSON.stringify(def));
+  out.items = out.items.map(function (it) {
+    if (it.kind !== "room") return it;
+    var was = prev[it.code];
+    if (was) {
+      /* Id always carries, so assignments keep resolving. Seat count only
+         carries while the room is still the same KIND of room — if the
+         definition reclassified it (a support room becoming an assignable open
+         office, say), the old count describes a space that no longer exists and
+         the definition's value is the correct one. */
+      if (was.id) it.id = was.id;
+      if (typeof was.cap === "number" && was.type === it.type && !it.forceCap) it.cap = was.cap;
+    }
+    return it;
+  });
+  return out;
+}
+
 export function createSync(opts) {
   var db = opts.db;
   var board = opts.board;
@@ -89,14 +115,31 @@ export function createSync(opts) {
        isn't already stored, and persist that once. This is the upgrade path for
        every floor added from here on. */
     var stored = layout && layout.groups ? layout.groups : null;
-    var groups, migrated = [];
+    var groups, migrated = [], regeom = [];
     if (!stored) {
       groups = board.defaultGroups();
     } else {
+      var defs = board.defaultGroups();
+      var defById = {};
+      defs.forEach(function (g) { defById[g.id] = g; });
+
+      /* A stored floor whose geometry definition has since been revised gets
+         rebuilt from the definition. Room ids and seat counts are carried
+         across by room code so existing assignments and edits survive the
+         reshape; rooms dropped from the definition (e.g. two rooms merged into
+         one) fall away with it. */
+      groups = stored.map(function (sg) {
+        var d = defById[sg.id];
+        if (!d || d.layout !== "plan") return sg;
+        if ((d.geomRev || 0) <= (sg.geomRev || 0)) return sg;
+        regeom.push(d.building + " " + d.floor);
+        return reshape(sg, d);
+      });
+
       var have = {};
       stored.forEach(function (g) { have[g.id] = true; });
-      migrated = board.defaultGroups().filter(function (g) { return !have[g.id]; });
-      groups = migrated.length ? stored.concat(migrated) : stored;
+      migrated = defs.filter(function (g) { return !have[g.id]; });
+      if (migrated.length) groups = groups.concat(migrated);
     }
 
     var data = {
@@ -115,15 +158,18 @@ export function createSync(opts) {
     if (!layout) {
       await enqueue("seed layout", function () { return writeLayout(); });
       status("saved", "Saved " + clockTime());
-    } else if (migrated.length) {
-      await enqueue("add new floors", function () { return writeLayout(); });
-      console.info("[seating] added " + migrated.length + " new floor(s): " +
-        migrated.map(function (g) { return g.building + " " + g.floor; }).join(", "));
+    } else if (migrated.length || regeom.length) {
+      await enqueue("layout migration", function () { return writeLayout(); });
+      if (migrated.length) {
+        console.info("[seating] added floor(s): " +
+          migrated.map(function (g) { return g.building + " " + g.floor; }).join(", "));
+      }
+      if (regeom.length) console.info("[seating] reshaped floor(s): " + regeom.join(", "));
       status("saved", "Saved " + clockTime());
     } else {
       status("saved", "Loaded " + clockTime());
     }
-    return { ok: true, seeded: !layout, added: migrated.length };
+    return { ok: true, seeded: !layout, added: migrated.length, reshaped: regeom.length };
   }
 
   /* ---------------- writes ---------------- */

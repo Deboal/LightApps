@@ -104,10 +104,22 @@ export const BASIS = [
    To correct this later: replace the numbers here. The renderer needs no
    changes, and a dimensioned source would simply drop in.
 ========================================================= */
-var T = function (code, name, x, y, w, h, type, cap) {
-  return { kind: "room", code: code, name: name, xFt: x, yFt: y, wFt: w, hFt: h,
-           type: type || "office", cap: cap === undefined ? 2 : cap, est: true };
+var T = function (code, name, x, y, w, h, type, cap, extra) {
+  var r = { kind: "room", code: code, name: name, xFt: x, yFt: y, wFt: w, hFt: h,
+            type: type || "office", cap: cap === undefined ? 2 : cap, est: true };
+  if (extra) Object.keys(extra).forEach(function (k) { r[k] = extra[k]; });
+  return r;
 };
+
+/* Rotate a room box inside a widthFt x heightFt envelope. Coordinates are kept
+   in their as-traced orientation above and rotated here, so the trace stays
+   comparable to the source image and reorienting is a one-number change. */
+function rotateBox(r, W, H, deg) {
+  if (deg === 90)  return { x: H - r.yFt - r.hFt, y: r.xFt,                w: r.hFt, h: r.wFt };
+  if (deg === 180) return { x: W - r.xFt - r.wFt, y: H - r.yFt - r.hFt,    w: r.wFt, h: r.hFt };
+  if (deg === 270) return { x: r.yFt,             y: W - r.xFt - r.wFt,    w: r.hFt, h: r.wFt };
+  return { x: r.xFt, y: r.yFt, w: r.wFt, h: r.hFt };
+}
 
 export const TRACED = {
   id: "b2-upper",
@@ -117,8 +129,21 @@ export const TRACED = {
   note: "Traced from image — approximate, not dimensioned",
   layout: "plan",
   approx: true,
+  /* As-traced envelope. rotateDeg turns the whole floor at build time; at 90
+     or 270 the drawn canvas swaps to heightFt x widthFt. */
   widthFt: 85,
   heightFt: 64,
+  rotateDeg: 90,
+  /* Bump whenever the traced geometry changes. On load, a stored copy with a
+     lower geomRev is rebuilt from this definition, carrying over each room's
+     id (so existing assignments survive) and seat count, matched by code.
+     rev 2 = rotated 90 CW, and Living Room 2 + Office 5 merged into T17.
+     rev 3 = reapplies rev 2 now that seat counts only carry across when the
+     room type is unchanged; T17 went support -> office, so it needed its
+     definition's 4 seats rather than Living Room 2's 0.
+     rev 4 = rev 3 left the stale 0 in place, because by then the stored copy
+     already had the new type alongside the old count. T17 now sets forceCap. */
+  geomRev: 4,
   items: [
     /* detached wing, upper right */
     T("T01", "Office", 67, 1, 9, 9),
@@ -139,10 +164,18 @@ export const TRACED = {
     T("T14", "Office", 2, 49, 14, 7),
     T("T15", "Office", 17, 49, 12, 7),
     T("T16", "Office", 2, 57, 14, 6),
-    /* centre */
-    T("T17", "Living Room 2", 31, 32, 13, 10, "support", 0),
+    /* centre.
+       T17 is what the source image drew as two rooms, "Living Room 2" and
+       "Office 5", divided by a wall that does not exist. Per Alex they are one
+       space, and it is an open office with a single wall — so it is one
+       assignable room here, flagged open. Which side the wall is on was not
+       stated and is not guessed, so no single edge is drawn as solid. */
+    /* forceCap because this code previously described "Living Room 2", a
+       0-seat support room. Without it the reshape would carry that 0 forward
+       onto a room that is now assignable. */
+    T("T17", "Open Office", 31, 32, 13, 20, "office", 4, { open: true, forceCap: true,
+      sub: "One-walled open area — was drawn as Living Room 2 + Office 5" }),
     T("T18", "Office", 45, 32, 18, 15, "office", 6),
-    T("T19", "Office", 31, 43, 13, 9),
     T("T20", "Living Room 3", 31, 53, 32, 10, "support", 0),
     /* right zone */
     T("T21", "Bathroom", 64, 32, 8, 9, "support", 0),
@@ -162,6 +195,9 @@ export function buildGroups(nextId) {
   return BASIS.map(function (g) {
     var depth = g.depthFt || B100.depthFt;
     var plan = g.layout === "plan";
+    var deg = ((g.rotateDeg || 0) % 360 + 360) % 360;
+    var turned = deg === 90 || deg === 270;
+    var envW = g.widthFt || 0, envH = g.heightFt || 0;
     return {
       id: g.id,
       site: g.site,
@@ -173,8 +209,10 @@ export function buildGroups(nextId) {
       depthFt: depth,
       overallFt: g.overallFt || B100.overallFt,
       stairFt: g.stairFt || B100.stairFt,
-      widthFt: g.widthFt || 0,
-      heightFt: g.heightFt || 0,
+      widthFt: turned ? envH : envW,
+      heightFt: turned ? envW : envH,
+      rotateDeg: deg,
+      geomRev: g.geomRev || 0,
       hangarLabel: g.hangarLabel || "",
       items: g.items.map(function (it) {
         if (it.kind !== "room") return JSON.parse(JSON.stringify(it));
@@ -192,10 +230,13 @@ export function buildGroups(nextId) {
         if (plan) {
           /* Positioned rooms carry their own box; area is derived from it
              rather than scheduled, hence est:true above. */
-          room.xFt = it.xFt; room.yFt = it.yFt;
-          room.wFt = it.wFt; room.hFt = it.hFt;
-          room.widthFt = it.wFt;
-          room.sf = Math.round(it.wFt * it.hFt);
+          var b = rotateBox(it, envW, envH, deg);
+          room.xFt = b.x; room.yFt = b.y;
+          room.wFt = b.w; room.hFt = b.h;
+          room.widthFt = b.w;
+          room.sf = Math.round(b.w * b.h);
+          room.open = !!it.open;
+          if (it.forceCap) room.forceCap = true;
         } else {
           room.widthFt = it.widthFt || (it.sf ? it.sf / depth : depth);
         }

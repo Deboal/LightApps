@@ -531,6 +531,7 @@ export function mountBoard(container, hooks) {
     else if (occ.length > 0) cls += " fill-part";
     if (px(boxH) < 120) cls += " compact";
     if (absolute) cls += " placed";
+    if (r.open) cls += " open";
     card.className = cls;
     card.dataset.room = r.id;
     card.style.width = px(boxW) + "px";
@@ -798,6 +799,7 @@ export function mountBoard(container, hooks) {
       return {
         id: g.id, site: g.site || "", building: g.building, floor: g.floor, note: g.note || "",
         layout: plan ? "plan" : "strip", approx: !!g.approx,
+        rotateDeg: g.rotateDeg || 0, geomRev: g.geomRev || 0,
         depthFt: depth, overallFt: g.overallFt || 145, stairFt: g.stairFt || 7.67,
         widthFt: g.widthFt || 0, heightFt: g.heightFt || 0,
         hangarLabel: g.hangarLabel || "",
@@ -812,6 +814,7 @@ export function mountBoard(container, hooks) {
             room.xFt = it.xFt || 0; room.yFt = it.yFt || 0;
             room.wFt = it.wFt || 10; room.hFt = it.hFt || 10;
             room.widthFt = room.wFt;
+            room.open = !!it.open;
           } else {
             room.widthFt = it.widthFt || (it.sf ? it.sf / depth : depth);
           }

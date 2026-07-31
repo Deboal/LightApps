@@ -116,6 +116,11 @@
   .plan-canvas .room.placed{position:absolute;border-right:1px solid var(--hairline)}
   .plan-canvas .room.placed.est{border-style:dashed}
   .plan-canvas .room.over-cap{border-color:var(--flag)}
+  /* A one-walled open area. Which edge is the wall wasn't stated, so no single
+     side is drawn solid — the dotted outline says "open", not "enclosed". */
+  .plan-canvas .room.placed.open{border-style:dotted;border-width:2px;border-color:var(--blueprint);
+    background-image:repeating-linear-gradient(45deg,rgba(15,95,166,.07) 0 6px,transparent 6px 12px)}
+  .room.open .tag::after{content:" OPEN";font-size:8px;letter-spacing:.1em;color:var(--blueprint)}
   /* Traced floors are shallower than B100's 14', so cards are short. Drop the
      area line first; the seat list keeps its own scroll. */
   .room.compact .room-sf{display:none}
