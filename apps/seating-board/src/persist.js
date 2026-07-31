@@ -83,8 +83,24 @@ export function createSync(opts) {
     var where = {};
     (assigns || []).forEach(function (a) { where[a.id] = a.roomId || null; });
 
+    /* The stored layout wins, because it carries edits (seat counts, hand-added
+       spaces) the code defaults don't know about. But a NEW floor shipped in
+       basis.js would then never appear. So fold in any default group whose id
+       isn't already stored, and persist that once. This is the upgrade path for
+       every floor added from here on. */
+    var stored = layout && layout.groups ? layout.groups : null;
+    var groups, migrated = [];
+    if (!stored) {
+      groups = board.defaultGroups();
+    } else {
+      var have = {};
+      stored.forEach(function (g) { have[g.id] = true; });
+      migrated = board.defaultGroups().filter(function (g) { return !have[g.id]; });
+      groups = migrated.length ? stored.concat(migrated) : stored;
+    }
+
     var data = {
-      groups: layout && layout.groups ? layout.groups : board.defaultGroups(),
+      groups: groups,
       rev: layout && typeof layout.rev === "number" ? layout.rev : 0,
       people: (people || []).map(function (p) {
         return { id: p.id, name: p.name, dept: p.dept || "", roomId: where[p.id] || null };
@@ -99,10 +115,15 @@ export function createSync(opts) {
     if (!layout) {
       await enqueue("seed layout", function () { return writeLayout(); });
       status("saved", "Saved " + clockTime());
+    } else if (migrated.length) {
+      await enqueue("add new floors", function () { return writeLayout(); });
+      console.info("[seating] added " + migrated.length + " new floor(s): " +
+        migrated.map(function (g) { return g.building + " " + g.floor; }).join(", "));
+      status("saved", "Saved " + clockTime());
     } else {
       status("saved", "Loaded " + clockTime());
     }
-    return { ok: true, seeded: !layout };
+    return { ok: true, seeded: !layout, added: migrated.length };
   }
 
   /* ---------------- writes ---------------- */

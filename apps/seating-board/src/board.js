@@ -289,18 +289,85 @@ export function mountBoard(container, hooks) {
     return order;
   }
 
+  /* A floor whose rooms carry their own x/y/w/h, drawn on a positioned canvas
+     rather than as a single strip. Used for real 2-D footprints — L-shaped
+     wings, interior rooms, varying depths — which the strip model can't hold. */
+  function planFloor(g) {
+    var wrap = document.createElement("div");
+
+    var seats = 0, filled = 0, rooms = 0, area = 0;
+    g.items.forEach(function (it) {
+      if (it.kind !== "room") return;
+      seats += it.cap; filled += occupants(it.id).length; rooms += 1;
+      area += (it.wFt || 0) * (it.hFt || 0);
+    });
+
+    var head = document.createElement("div");
+    head.className = "band-label";
+    head.innerHTML = "<h3>" + g.building + " · " + g.floor + "</h3>" +
+      '<span class="eyebrow' + (g.approx ? " short" : "") + '">' + g.note +
+      " · " + rooms + " spaces · " + Math.round(area).toLocaleString() + " sf drawn" +
+      (g.approx ? " · APPROXIMATE" : "") + "</span>" +
+      '<span class="eyebrow meta">' + filled + " of " + seats + " seats filled</span>";
+    wrap.appendChild(head);
+
+    var cv = document.createElement("div");
+    cv.className = "plan-canvas" + (g.approx ? " approx" : "");
+    cv.style.width = px(g.widthFt) + "px";
+    cv.style.height = px(g.heightFt) + "px";
+    g.items.forEach(function (it) {
+      if (it.kind === "room") cv.appendChild(roomCard(it, it.wFt, it.hFt, true));
+    });
+    wrap.appendChild(cv);
+
+    var ruler = document.createElement("div");
+    ruler.className = "ruler";
+    ruler.style.width = px(g.widthFt) + "px";
+    for (var f = 0; f <= g.widthFt; f += 5) {
+      var t = document.createElement("div");
+      t.className = "tick" + (f % 20 === 0 ? " major" : "");
+      t.style.left = px(f) + "px";
+      ruler.appendChild(t);
+      if (f % 20 === 0) {
+        var l = document.createElement("div");
+        l.className = "tick-lbl";
+        l.style.left = px(f) + "px";
+        l.textContent = f + "'";
+        ruler.appendChild(l);
+      }
+    }
+    wrap.appendChild(ruler);
+
+    var ov = document.createElement("div");
+    ov.className = "overall";
+    ov.style.width = px(g.widthFt) + "px";
+    ov.textContent = (g.approx ? "≈ " : "") + ftIn(g.widthFt) + " × " + ftIn(g.heightFt) +
+      (g.approx ? "  ·  TRACED, NOT DIMENSIONED" : "");
+    wrap.appendChild(ov);
+    return wrap;
+  }
+
   function renderPlan() {
     var plan = $("plan");
     plan.innerHTML = "";
 
     var widest = 0;
-    state.groups.forEach(function (g) { widest = Math.max(widest, g.overallFt || 145); });
+    state.groups.forEach(function (g) {
+      widest = Math.max(widest, g.layout === "plan" ? (g.widthFt || 0) : (g.overallFt || 145));
+    });
 
     var canvas = document.createElement("div");
     canvas.className = "canvas";
     canvas.style.width = px(widest) + 160 + "px";
 
     buildingsOf(state.groups).forEach(function (b) {
+      /* Plan-mode floors are drawn on their own positioned canvas and have no
+         corridor band, stair enclosures or overall dimension string. */
+      b.groups.filter(function (g) { return g.layout === "plan"; })
+              .forEach(function (g) { canvas.appendChild(planFloor(g)); });
+      b.groups = b.groups.filter(function (g) { return g.layout !== "plan"; });
+      if (b.groups.length === 0) return;
+
       var bOverall = 0, hangarLabel = "";
       b.groups.forEach(function (g) {
         bOverall = Math.max(bOverall, g.overallFt || 145);
@@ -330,7 +397,7 @@ export function mountBoard(container, hooks) {
         var row = document.createElement("div");
         row.className = "row";
         g.items.forEach(function (it) {
-          if (it.kind === "room") { row.appendChild(roomCard(it, depth)); }
+          if (it.kind === "room") { row.appendChild(roomCard(it, it.widthFt, depth, false)); }
           else if (it.kind === "stair") {
             var s = document.createElement("div");
             s.className = "stair";
@@ -410,6 +477,18 @@ export function mountBoard(container, hooks) {
      if the room table is edited. */
   function basisNote() {
     var rows = state.groups.map(function (g) {
+      if (g.layout === "plan") {
+        var a = 0;
+        g.items.forEach(function (it) {
+          if (it.kind === "room") a += (it.wFt || 0) * (it.hFt || 0);
+        });
+        return "<li><strong>" + g.building + " " + g.floor + "</strong> — " +
+          Math.round(a).toLocaleString() + " sf of rooms drawn inside a " +
+          ftIn(g.widthFt) + " × " + ftIn(g.heightFt) + " envelope" +
+          (g.approx
+            ? ' <span style="color:var(--flag)">(traced from an image — every dimension approximate, room codes are placeholders)</span>'
+            : "") + "</li>";
+      }
       var stairFt = g.stairFt || 7.67;
       var overall = g.overallFt || 145;
       var sched = 0, stairs = 0, est = 0;
@@ -439,7 +518,9 @@ export function mountBoard(container, hooks) {
     return note;
   }
 
-  function roomCard(r, depth) {
+  /* Strip mode passes the floor depth as the box height. Plan mode passes the
+     room's own traced box and positions it absolutely. */
+  function roomCard(r, boxW, boxH, absolute) {
     var card = document.createElement("div");
     var occ = occupants(r.id);
     var cls = "room";
@@ -448,10 +529,16 @@ export function mountBoard(container, hooks) {
     if (occ.length > r.cap) cls += " over-cap";
     else if (r.cap > 0 && occ.length === r.cap) cls += " fill-full";
     else if (occ.length > 0) cls += " fill-part";
+    if (px(boxH) < 120) cls += " compact";
+    if (absolute) cls += " placed";
     card.className = cls;
     card.dataset.room = r.id;
-    card.style.width = px(r.widthFt) + "px";
-    card.style.height = px(depth) + "px";
+    card.style.width = px(boxW) + "px";
+    card.style.height = px(boxH) + "px";
+    if (absolute) {
+      card.style.left = px(r.xFt) + "px";
+      card.style.top = px(r.yFt) + "px";
+    }
     card.title = (r.code !== "—" ? r.code + " " : "") + r.name +
                  (r.sf ? " · " + r.sf + " sf" : "") + (r.sub ? " · " + r.sub : "");
 
@@ -707,18 +794,28 @@ export function mountBoard(container, hooks) {
   function normalizeGroups(groups) {
     return groups.map(function (g) {
       var depth = g.depthFt || 14;
+      var plan = g.layout === "plan";
       return {
         id: g.id, site: g.site || "", building: g.building, floor: g.floor, note: g.note || "",
+        layout: plan ? "plan" : "strip", approx: !!g.approx,
         depthFt: depth, overallFt: g.overallFt || 145, stairFt: g.stairFt || 7.67,
+        widthFt: g.widthFt || 0, heightFt: g.heightFt || 0,
         hangarLabel: g.hangarLabel || "",
         items: (g.items || []).map(function (it) {
           if (it.kind !== "room") return it;
-          return {
+          var room = {
             kind: "room", id: it.id, code: it.code, name: it.name, sub: it.sub || "",
             sf: it.sf === undefined ? null : it.sf,
-            widthFt: it.widthFt || (it.sf ? it.sf / depth : depth),
             est: !!it.est, type: it.type || "office", cap: typeof it.cap === "number" ? it.cap : 2,
           };
+          if (plan) {
+            room.xFt = it.xFt || 0; room.yFt = it.yFt || 0;
+            room.wFt = it.wFt || 10; room.hFt = it.hFt || 10;
+            room.widthFt = room.wFt;
+          } else {
+            room.widthFt = it.widthFt || (it.sf ? it.sf / depth : depth);
+          }
+          return room;
         }),
       };
     });

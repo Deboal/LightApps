@@ -110,6 +110,19 @@
   .room-foot button{padding:0 4px;font-size:11px;letter-spacing:0;line-height:1.35}
   .cap-n{min-width:11px;text-align:center;color:var(--ink)}
 
+  /* ---------- plan mode: rooms carry their own x/y/w/h ---------- */
+  .plan-canvas{position:relative;background:var(--surface);border:1px solid var(--ink);margin-bottom:2px}
+  .plan-canvas.approx{border-style:dashed;border-color:var(--flag)}
+  .plan-canvas .room.placed{position:absolute;border-right:1px solid var(--hairline)}
+  .plan-canvas .room.placed.est{border-style:dashed}
+  .plan-canvas .room.over-cap{border-color:var(--flag)}
+  /* Traced floors are shallower than B100's 14', so cards are short. Drop the
+     area line first; the seat list keeps its own scroll. */
+  .room.compact .room-sf{display:none}
+  .room.compact .room-head{padding:2px 4px 2px}
+  .room.compact .room-name{font-size:9.5px}
+  .room.compact .room-foot{padding:1px 3px}
+
   .stair{background:repeating-linear-gradient(90deg,var(--hairline) 0 1px,transparent 1px 6px),#F5F6F8;border:1px solid var(--hairline);border-right:0;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px}
   .stair span{font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:var(--ink-mute);writing-mode:vertical-rl;transform:rotate(180deg)}
   .existing{background:repeating-linear-gradient(45deg,#E4E7EA 0 3px,#EDEEF0 3px 7px);border:1px dashed var(--hairline);display:flex;align-items:center;padding:6px;flex:0 0 128px}
