@@ -295,18 +295,22 @@ export function mountBoard(container, hooks) {
   function planFloor(g) {
     var wrap = document.createElement("div");
 
-    var seats = 0, filled = 0, rooms = 0, area = 0;
+    var seats = 0, filled = 0, rooms = 0, circ = 0, area = 0;
     g.items.forEach(function (it) {
       if (it.kind !== "room") return;
-      seats += it.cap; filled += occupants(it.id).length; rooms += 1;
-      area += (it.wFt || 0) * (it.hFt || 0);
+      seats += it.cap; filled += occupants(it.id).length;
+      /* Hallways and stairs aren't spaces you can put anyone in, so they don't
+         inflate the count of rooms to be named. */
+      if (it.circ) circ += 1; else rooms += 1;
+      area += it.sf || (it.wFt || 0) * (it.hFt || 0);
     });
 
     var head = document.createElement("div");
     head.className = "band-label";
     head.innerHTML = "<h3>" + g.building + " · " + g.floor + "</h3>" +
       '<span class="eyebrow' + (g.approx ? " short" : "") + '">' + g.note +
-      " · " + rooms + " spaces · " + Math.round(area).toLocaleString() + " sf drawn" +
+      " · " + rooms + " spaces" + (circ ? " + " + circ + " circulation" : "") +
+      " · " + Math.round(area).toLocaleString() + " sf drawn" +
       (g.approx ? " · APPROXIMATE" : "") + "</span>" +
       '<span class="eyebrow meta">' + filled + " of " + seats + " seats filled</span>";
     wrap.appendChild(head);
@@ -480,7 +484,7 @@ export function mountBoard(container, hooks) {
       if (g.layout === "plan") {
         var a = 0;
         g.items.forEach(function (it) {
-          if (it.kind === "room") a += (it.wFt || 0) * (it.hFt || 0);
+          if (it.kind === "room") a += it.sf || (it.wFt || 0) * (it.hFt || 0);
         });
         return "<li><strong>" + g.building + " " + g.floor + "</strong> — " +
           Math.round(a).toLocaleString() + " sf of rooms drawn inside a " +
@@ -532,6 +536,7 @@ export function mountBoard(container, hooks) {
     if (px(boxH) < 120) cls += " compact";
     if (absolute) cls += " placed";
     if (r.open) cls += " open";
+    if (r.circ) cls += " circ";
     card.className = cls;
     card.dataset.room = r.id;
     card.style.width = px(boxW) + "px";
@@ -545,10 +550,13 @@ export function mountBoard(container, hooks) {
 
     var head = document.createElement("div");
     head.className = "room-head";
-    head.innerHTML =
-      '<div class="tag">' + (r.code !== "—" ? "-" + r.code + "-" : "&mdash;") + "</div>" +
-      '<div class="room-name">' + r.name + "</div>" +
-      '<div class="room-sf">' + (r.sf ? r.sf + " SF" : "AREA N/S") + "</div>";
+    /* Circulation isn't a room, so it carries no room number — a hallway with a
+       code invites someone to name and fill it. */
+    head.innerHTML = r.circ
+      ? '<div class="room-name">' + r.name + "</div>"
+      : '<div class="tag">' + (r.code !== "—" ? "-" + r.code + "-" : "&mdash;") + "</div>" +
+        '<div class="room-name">' + r.name + "</div>" +
+        '<div class="room-sf">' + (r.sf ? r.sf + " SF" : "AREA N/S") + "</div>";
     card.appendChild(head);
 
     var seats = document.createElement("div");
@@ -561,13 +569,18 @@ export function mountBoard(container, hooks) {
       slot.textContent = "SEAT " + ("0" + (occ.length + i + 1)).slice(-2);
       seats.appendChild(slot);
     }
-    if (r.cap === 0 && occ.length === 0) {
+    if (r.cap === 0 && occ.length === 0 && !r.circ) {
       var s0 = document.createElement("div");
       s0.className = "slot";
       s0.textContent = "NO SEATS";
       seats.appendChild(s0);
     }
     card.appendChild(seats);
+
+    /* No seat stepper on circulation: a hallway shouldn't be one click away
+       from holding people. Drops are still handled below, so a mis-drop lands
+       somewhere visible rather than silently failing. */
+    if (r.circ) return finishCard(card, r);
 
     var foot = document.createElement("div");
     foot.className = "room-foot";
@@ -588,6 +601,11 @@ export function mountBoard(container, hooks) {
     foot.appendChild(minus); foot.appendChild(n); foot.appendChild(plus);
     card.appendChild(foot);
 
+    return finishCard(card, r);
+  }
+
+  /* Drop and click-to-place targeting, shared by every card. */
+  function finishCard(card, r) {
     card.addEventListener("dragover", function (ev) { ev.preventDefault(); card.classList.add("is-over"); });
     card.addEventListener("dragleave", function () { card.classList.remove("is-over"); });
     card.addEventListener("drop", function (ev) {
@@ -815,6 +833,7 @@ export function mountBoard(container, hooks) {
             room.wFt = it.wFt || 10; room.hFt = it.hFt || 10;
             room.widthFt = room.wFt;
             room.open = !!it.open;
+            room.circ = !!it.circ;
           } else {
             room.widthFt = it.widthFt || (it.sf ? it.sf / depth : depth);
           }

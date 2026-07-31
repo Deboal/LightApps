@@ -142,49 +142,62 @@ export const TRACED = {
      room type is unchanged; T17 went support -> office, so it needed its
      definition's 4 seats rather than Living Room 2's 0.
      rev 4 = rev 3 left the stale 0 in place, because by then the stored copy
-     already had the new type alongside the old count. T17 now sets forceCap. */
-  geomRev: 4,
+     already had the new type alongside the old count. T17 now sets forceCap.
+     rev 5 = Alex's first naming pass. Merges (T14+T16, T10+T06+T07,
+     T02+T03+T04 as an L around T01), the T17 open area split into three
+     offices, and hallways/stair/server/storage/second bathroom reclassified.
+     T03, T04, T07, T10, T16 and T17 no longer exist as codes. */
+  geomRev: 5,
   items: [
-    /* detached wing, upper right */
-    T("T01", "Office", 67, 1, 9, 9),
-    T("T02", "Office", 76, 1, 8, 9),
-    T("T03", "Office", 67, 10, 9, 9),
-    T("T04", "Office", 76, 10, 8, 9),
-    T("T05", "Office", 58, 13, 8, 7),
-    /* top band of the main block */
-    T("T06", "Office", 2, 21, 9, 10),
-    T("T07", "Office", 11, 21, 9, 10),
+    /* ---- accounting block (drawn as T01-T04, really one office of five) ----
+       T02 is the L: the 2x2 block minus T01's corner. The renderer has no
+       L-shape primitive, so T02 is the full bounding box drawn FIRST and T01
+       is drawn over its corner — paint order carves the notch, and clicks in
+       that corner land on T01 because it sits on top. sfOverride is the real
+       L area, since the bounding box overstates it by T01's 81 sf.
+       Item order matters here; do not sort this list. */
+    T("T02", "Accounting — open", 67, 1, 17, 18, "office", 3,
+      { sfOverride: 225, forceCap: true,
+        sub: "L-shaped, wraps T01 — was drawn as T02 + T03 + T04" }),
+    T("T01", "Accounting — 2 desks", 67, 1, 9, 9, "office", 2,
+      { sub: "Kept subdivision inside the accounting office" }),
+    T("T05", "Stair", 58, 13, 8, 7, "support", 0, { circ: true }),
+
+    /* ---- top band: two offices and the server room ----
+       The image drew this band as seven rooms. It is really two offices with
+       the server room between them. T07's divider ran perpendicular to every
+       other wall in the band; squaring it up is what lets T06 read as one
+       room, so T07's old protrusion is absorbed rather than kept. */
+    T("T06", "Office", 2, 21, 14, 19, "office", 2,
+      { sub: "Was drawn as Living Room 1 + T06 + T07" }),
     T("T08", "Kitchen", 24, 21, 16, 10, "support", 0),
-    T("T09", "Office", 44, 21, 39, 10, "office", 4),
-    /* left zone */
-    T("T10", "Living Room 1", 2, 32, 14, 8, "support", 0),
-    T("T11", "Office", 17, 32, 12, 8),
-    T("T12", "Office", 2, 41, 14, 7),
-    T("T13", "Office", 17, 41, 12, 7),
-    T("T14", "Office", 2, 49, 14, 7),
-    T("T15", "Office", 17, 49, 12, 7),
-    T("T16", "Office", 2, 57, 14, 6),
-    /* centre.
-       T17 is what the source image drew as two rooms, "Living Room 2" and
-       "Office 5", divided by a wall that does not exist. Per Alex they are one
-       space, and it is an open office with a single wall — so it is one
-       assignable room here, flagged open. Which side the wall is on was not
-       stated and is not guessed, so no single edge is drawn as solid. */
-    /* forceCap because this code previously described "Living Room 2", a
-       0-seat support room. Without it the reshape would carry that 0 forward
-       onto a room that is now assignable. */
-    T("T17", "Open Office", 31, 32, 13, 20, "office", 4, { open: true, forceCap: true,
-      sub: "One-walled open area — was drawn as Living Room 2 + Office 5" }),
-    T("T18", "Office", 45, 32, 18, 15, "office", 6),
-    T("T20", "Living Room 3", 31, 53, 32, 10, "support", 0),
-    /* right zone */
+    T("T09", "Hallway", 44, 21, 39, 10, "support", 0, { circ: true }),
+    T("T11", "Cubicles", 17, 32, 12, 8),
+    T("T12", "Server Room", 2, 41, 14, 7, "support", 0,
+      { sub: "Labelled for reference — not occupied" }),
+    T("T13", "Cubicles", 17, 41, 12, 7),
+    T("T14", "Office", 2, 49, 14, 14, "office", 2, { sub: "Was drawn as T14 + T16" }),
+    T("T15", "Cubicles", 17, 49, 12, 7),
+
+    /* ---- centre ----
+       What the image drew as "Living Room 2 + Office 5" is three two-person
+       offices, not one open area. The conference room runs the full depth of
+       those three and carries no office seats. */
+    T("T17A", "Office", 31, 45, 13, 7),
+    T("T17B", "Office", 31, 39, 13, 6),
+    T("T17C", "Office", 31, 32, 13, 7),
+    T("T18", "Conference Room", 45, 32, 18, 20, "support", 0,
+      { sub: "No office seats — extends the full width of T17A–C" }),
+    T("T20", "Hallway", 31, 53, 32, 10, "support", 0, { circ: true }),
+
+    /* ---- right zone ---- */
     T("T21", "Bathroom", 64, 32, 8, 9, "support", 0),
     T("T22", "Office", 73, 32, 10, 9),
-    T("T23", "Office", 64, 42, 8, 7),
+    T("T23", "Storage", 64, 42, 8, 7, "support", 0),
     T("T24", "Office", 73, 42, 10, 7),
-    T("T25", "Office", 64, 50, 8, 7),
+    T("T25", "Bathroom", 64, 50, 8, 7, "support", 0),
     T("T26", "Office", 73, 50, 10, 7),
-    T("T27", "Office", 73, 58, 10, 5),
+    T("T27", "Hallway", 73, 58, 10, 5, "support", 0, { circ: true }),
   ],
 };
 
@@ -234,8 +247,11 @@ export function buildGroups(nextId) {
           room.xFt = b.x; room.yFt = b.y;
           room.wFt = b.w; room.hFt = b.h;
           room.widthFt = b.w;
-          room.sf = Math.round(b.w * b.h);
+          /* sfOverride exists for rooms whose bounding box overstates them —
+             an L drawn as a rectangle with another room over its corner. */
+          room.sf = it.sfOverride || Math.round(b.w * b.h);
           room.open = !!it.open;
+          room.circ = !!it.circ;
           if (it.forceCap) room.forceCap = true;
         } else {
           room.widthFt = it.widthFt || (it.sf ? it.sf / depth : depth);
