@@ -126,8 +126,11 @@ const productUrl = (item) =>
     ? `https://www.amazon.com/dp/${item.asin}`
     : `https://www.amazon.com/s?k=${encodeURIComponent(item.search || item.name)}`;
 
-// Amazon's long-standing multi-item cart form. Everything lands in the cart;
-// sign-in and checkout happen on Amazon.
+const CART_VIEW = "https://www.amazon.com/gp/cart/view.html";
+
+// Amazon's legacy multi-item cart form. It quietly does nothing for a signed-out
+// session and for accounts without an Associates tag, so it is offered as a
+// long shot, not the main path.
 function cartUrl(lines) {
   const q = lines
     .map((l, i) => `ASIN.${i + 1}=${l.item.asin}&Quantity.${i + 1}=${l.qty}`)
@@ -273,42 +276,104 @@ function AddItem({ onAdd }) {
   );
 }
 
-// Shown after the cart link fires: Amazon's cart form is old and occasionally
-// drops an item, so the one-at-a-time fallback stays one tap away.
-function Sent({ lines, url, onDone }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(url); setCopied(true); } catch { setCopied(false); }
+// The run: one item at a time. Every open is its own tap, which is what makes
+// this survive popup blockers and Amazon's cart-link gating — the add happens
+// on Amazon's own page, using your own session.
+function Run({ run, onOpen, onAdded, onSkip, onClose }) {
+  const { lines, i, opened, added, skipped } = run;
+  const done = i >= lines.length;
+  const { item, qty } = done ? lines[lines.length - 1] : lines[i];
+
+  const pill = {
+    flex: 1, borderRadius: 11, padding: "13px 10px", fontSize: 14.5, fontWeight: 700,
+    cursor: "pointer", border: `1px solid ${C.line}`, background: C.panel2, color: C.text,
   };
+
+  if (done) {
+    return (
+      <div style={{
+        background: C.panel, border: `1px solid ${C.good}`, borderRadius: 14, padding: 18, marginBottom: 14,
+      }}>
+        <div style={{ fontWeight: 800, fontSize: 18, color: C.good, marginBottom: 6 }}>
+          {added} added{skipped ? `, ${skipped} skipped` : ""}
+        </div>
+        <div style={{ color: C.dim, fontSize: 13.5, lineHeight: 1.5, marginBottom: 14 }}>
+          Everything you added is sitting in your Amazon cart. Check the quantities and place
+          the order there.
+        </div>
+        <a href={CART_VIEW} target="_blank" rel="noreferrer" style={{
+          display: "block", textAlign: "center", background: C.accent, color: "#20160a",
+          borderRadius: 12, padding: "15px", fontWeight: 800, fontSize: 16, textDecoration: "none",
+        }}>Open my Amazon cart →</a>
+        <button onClick={onClose} style={{
+          width: "100%", marginTop: 8, background: "none", border: `1px solid ${C.line}`,
+          color: C.dim, borderRadius: 11, padding: "11px", fontSize: 13.5, cursor: "pointer",
+        }}>Back to the list</button>
+      </div>
+    );
+  }
+
   return (
     <div style={{
-      background: C.panel, border: `1px solid ${C.good}`, borderRadius: 12,
-      padding: 15, marginBottom: 12,
+      background: C.panel, border: `1px solid ${C.accent}`, borderRadius: 14, padding: 18, marginBottom: 14,
     }}>
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, color: C.good }}>
-        Cart opened in a new tab
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
+      }}>
+        <span style={{ fontSize: 11, letterSpacing: ".18em", color: C.faint, fontWeight: 700 }}>
+          ITEM {i + 1} OF {lines.length}
+        </span>
+        <button onClick={onClose} style={{
+          background: "none", border: "none", color: C.faint, fontSize: 13, cursor: "pointer",
+        }}>Pause</button>
       </div>
-      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
-        Sign in on Amazon and check out — {lines.length} item{lines.length === 1 ? "" : "s"} should be
-        waiting. Anything missing, open it directly:
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-        {lines.map(({ item }) => (
-          <a key={item.id} href={productUrl(item)} target="_blank" rel="noreferrer" style={{
-            color: C.text, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 8,
-            padding: "6px 9px", fontSize: 12, textDecoration: "none",
-          }}>{item.name} ↗</a>
+
+      <div style={{ display: "flex", gap: 3, marginBottom: 16 }}>
+        {lines.map((l, n) => (
+          <div key={l.item.id} style={{
+            flex: 1, height: 3, borderRadius: 2,
+            background: n < i ? C.good : n === i ? C.accent : C.line,
+          }} />
         ))}
       </div>
+
+      <div style={{ fontSize: 21, fontWeight: 750, letterSpacing: "-.02em", lineHeight: 1.2 }}>
+        {item.name}
+      </div>
+      <div style={{ color: C.dim, fontSize: 13, marginTop: 4 }}>
+        {item.brand} · {item.size}
+      </div>
+      {qty > 1 && (
+        <div style={{ color: C.accent, fontSize: 13, fontWeight: 700, marginTop: 6 }}>
+          Set the quantity to {qty} on Amazon
+        </div>
+      )}
+      {item.note && (
+        <div style={{ color: C.faint, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>{item.note}</div>
+      )}
+
+      <a href={productUrl(item)} target="_blank" rel="noreferrer" onClick={onOpen} style={{
+        display: "block", textAlign: "center", marginTop: 16, borderRadius: 12, padding: "16px",
+        fontWeight: 800, fontSize: 16, textDecoration: "none",
+        background: opened ? C.panel2 : C.accent,
+        color: opened ? C.dim : "#20160a",
+        border: opened ? `1px solid ${C.line}` : "none",
+      }}>
+        {opened ? "Open again ↗" : (item.asin ? "Open on Amazon ↗" : "Search Amazon ↗")}
+      </a>
+
+      <div style={{ color: C.faint, fontSize: 11.5, textAlign: "center", margin: "10px 0 12px", lineHeight: 1.5 }}>
+        {opened
+          ? "Hit Add to Cart over there, then come back and tap Added."
+          : "Opens in a new tab. Add it to your cart, then come back here."}
+      </div>
+
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={copy} style={{
-          background: "none", border: `1px solid ${C.line}`, color: C.dim, borderRadius: 9,
-          padding: "9px 14px", fontSize: 13, cursor: "pointer",
-        }}>{copied ? "Link copied" : "Copy cart link"}</button>
-        <button onClick={onDone} style={{
-          background: "none", border: `1px solid ${C.line}`, color: C.dim, borderRadius: 9,
-          padding: "9px 14px", fontSize: 13, cursor: "pointer",
-        }}>Done</button>
+        <button onClick={onAdded} style={{
+          ...pill, background: opened ? C.good : C.panel2, color: opened ? "#04241a" : C.text,
+          border: opened ? "none" : `1px solid ${C.line}`,
+        }}>Added ✓</button>
+        <button onClick={onSkip} style={{ ...pill, flex: "0 0 auto", color: C.dim }}>Skip</button>
       </div>
     </div>
   );
@@ -319,7 +384,7 @@ function Sent({ lines, url, onDone }) {
 // ----------------------------------------------------------------------------
 function App() {
   const [state, setState] = useState(loadState);
-  const [sent, setSent] = useState(null);
+  const [run, setRun] = useState(null);
 
   useEffect(() => { localStorage.setItem(LS, JSON.stringify(state)); }, [state]);
 
@@ -350,18 +415,26 @@ function App() {
       return { ...s, picked: p };
     });
 
-  const send = () => {
-    if (!cartable.length) return;
-    const url = cartUrl(cartable);
-    window.open(url, "_blank", "noopener");
+  const start = () => {
+    if (!picked.length) return;
+    setRun({ lines: picked, i: 0, opened: false, added: 0, skipped: 0 });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Marking one added stamps and deselects it immediately, so a run abandoned
+  // halfway still leaves the list in the right state.
+  const markAdded = () => {
+    const { item } = run.lines[run.i];
     const stamp = new Date().toISOString();
     setState((s) => {
-      const ordered = { ...s.ordered };
-      picked.forEach(({ item }) => { ordered[item.id] = stamp; });
-      return { ...s, ordered, picked: {} };
+      const p = { ...s.picked };
+      delete p[item.id];
+      return { ...s, picked: p, ordered: { ...s.ordered, [item.id]: stamp } };
     });
-    setSent({ lines: picked, url });
+    setRun((r) => ({ ...r, i: r.i + 1, opened: false, added: r.added + 1 }));
   };
+
+  const skip = () => setRun((r) => ({ ...r, i: r.i + 1, opened: false, skipped: r.skipped + 1 }));
 
   const shell = { maxWidth: 560, margin: "0 auto", padding: "26px 16px 130px" };
   const allOn = items.length > 0 && items.length === Object.keys(state.picked).length;
@@ -373,11 +446,19 @@ function App() {
       </div>
       <h1 style={{ letterSpacing: "-.025em", margin: "4px 0 6px", fontSize: 30 }}>Vitamin Reorder</h1>
       <div style={{ color: C.dim, fontSize: 13.5, lineHeight: 1.5, marginBottom: 18 }}>
-        Tap what ran out, then send it all to one Amazon cart. You sign in and place the
-        order — this never touches your account.
+        Tap what ran out, then walk the list — each one opens straight to its Amazon page,
+        already the right product. You add and check out there.
       </div>
 
-      {sent && <Sent lines={sent.lines} url={sent.url} onDone={() => setSent(null)} />}
+      {run && (
+        <Run
+          run={run}
+          onOpen={() => setRun((r) => ({ ...r, opened: true }))}
+          onAdded={markAdded}
+          onSkip={skip}
+          onClose={() => setRun(null)}
+        />
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <button onClick={selectAll} style={{
@@ -413,7 +494,19 @@ function App() {
         and paste the link above so it's here next time.
       </div>
 
-      {picked.length > 0 && (
+      {cartable.length > 1 && (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+          <a href={cartUrl(cartable)} target="_blank" rel="noreferrer" style={{
+            color: C.dim, fontSize: 12, textDecoration: "underline", textUnderlineOffset: 3,
+          }}>Try the all-at-once cart link ↗</a>
+          <div style={{ color: C.faint, fontSize: 11.5, lineHeight: 1.6, marginTop: 5 }}>
+            Amazon's old bulk-cart URL. It silently does nothing on most accounts now, but it
+            costs one tap to find out — sign in to Amazon first if you want to try it.
+          </div>
+        </div>
+      )}
+
+      {picked.length > 0 && !run && (
         <div style={{
           position: "fixed", left: 0, right: 0, bottom: 0, background: "rgba(14,17,22,.94)",
           borderTop: `1px solid ${C.line}`, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))",
@@ -421,24 +514,19 @@ function App() {
         }}>
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             <button
-              onClick={send}
-              disabled={!cartable.length}
+              onClick={start}
               style={{
                 width: "100%", border: "none", borderRadius: 12, padding: "16px",
-                fontSize: 16.5, fontWeight: 800, cursor: cartable.length ? "pointer" : "default",
-                background: cartable.length ? C.accent : C.panel2,
-                color: cartable.length ? "#20160a" : C.faint,
+                fontSize: 16.5, fontWeight: 800, cursor: "pointer",
+                background: C.accent, color: "#20160a",
               }}>
-              {cartable.length
-                ? `Add ${cartable.reduce((n, l) => n + l.qty, 0)} to Amazon cart →`
-                : "No linked items selected"}
+              Add {picked.length} to cart →
             </button>
-            {searchOnly.length > 0 && (
-              <div style={{ color: C.faint, fontSize: 11.5, textAlign: "center", marginTop: 7 }}>
-                {searchOnly.map((l) => l.item.name).join(", ")} — no listing yet, open{" "}
-                {searchOnly.length === 1 ? "it" : "them"} from the card.
-              </div>
-            )}
+            <div style={{ color: C.faint, fontSize: 11.5, textAlign: "center", marginTop: 7 }}>
+              {searchOnly.length > 0
+                ? `${searchOnly.map((l) => l.item.name).join(", ")} has no listing yet — that one opens a search.`
+                : "One tap per bottle, straight to the right product page."}
+            </div>
           </div>
         </div>
       )}
