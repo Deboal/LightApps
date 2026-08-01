@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Vitamin Reorder",
+  "version": "1.0.0",
+  "description": "Adds your usual vitamins to your Amazon cart in one click, using your own signed-in session.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["https://www.amazon.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "Vitamin Reorder",
+    "default_popup": "popup.html"
+  }
+}

@@ -18,6 +18,18 @@ for dir in apps/*/; do
     --define:process.env.NODE_ENV='"production"' \
     --jsx=transform --loader:.js=jsx --outfile="public/$name/bundle.js"
   cp "${dir}index.html" "public/$name/index.html"
+
+  # An app may ship a browser extension alongside it; publish it as a download.
+  # Guarded so a missing zip binary can never fail the deploy.
+  if [ -d "${dir}extension" ]; then
+    if command -v zip > /dev/null 2>&1; then
+      (cd "$dir" && zip -qr "../../public/$name/$name-extension.zip" extension) \
+        && echo "  packaged $name/extension"
+    else
+      echo "  skip $name extension (no zip binary)"
+    fi
+  fi
+
   names+=("$name")
 done
 

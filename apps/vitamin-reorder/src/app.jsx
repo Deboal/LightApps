@@ -1,85 +1,17 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
+// One shelf, shared with the browser extension in ../extension.
+import { SHELF, CART_VIEW, productUrl, parseAsin } from "../extension/shelf.js";
 
-// Vitamin Reorder — pick the bottles that ran out, send them to an Amazon cart
-// in one tap, then sign in and check out on Amazon. Fully self-contained: the
-// shelf is baked in, edits live in localStorage, nothing leaves the phone until
-// you open the cart link.
+// Vitamin Reorder — pick the bottles that ran out and walk them into an Amazon
+// cart. Nothing here can add to the cart directly: Amazon binds add-to-cart to a
+// session CSRF token, so the click has to happen on their page. On the phone
+// that means one tap per bottle; on a desktop the companion extension in
+// ../extension does the clicking for you.
+//
+// Self-contained: the shelf is baked in, edits live in localStorage.
 
-// ----------------------------------------------------------------------------
-// The shelf. Transcribed from the counter photos, matched to Amazon listings.
-// match: "exact"  = listing title matches the bottle spec exactly.
-//        "close"  = right product, but the listing has size/bundle variants —
-//                   worth a glance on Amazon before checking out.
-//        "none"   = no listing found; the card falls back to an Amazon search.
-// ----------------------------------------------------------------------------
-const SHELF = [
-  {
-    id: "alpha-gpc", brand: "Nutricost", name: "Alpha GPC 600mg",
-    size: "120 capsules · 60 servings", asin: "B076XNXLR2", match: "exact",
-    search: "Nutricost Alpha GPC 600mg 120 capsules",
-  },
-  {
-    id: "caffeine-theanine", brand: "SmarterVitamins", name: "Caffeine 200mg + L-Theanine",
-    size: "50 liquid softgels · with MCT oil", asin: "B07FP4KS3R", match: "exact",
-    search: "SmarterVitamins caffeine L-theanine MCT 50 softgels",
-  },
-  {
-    id: "probiotic", brand: "Proriginal", name: "Probiotic 100 Billion CFU",
-    size: "35 strains + 5 prebiotics · 60 capsules", asin: "B0BGRD3Q1D", match: "close",
-    note: "Brand sells 60ct and 120ct — confirm the count.",
-    search: "Proriginal probiotics 100 billion CFU 35 strains 60 capsules",
-  },
-  {
-    id: "iron", brand: "Nature Made", name: "Iron 65mg",
-    size: "325mg ferrous sulfate · 365 tablets", asin: "B01LB6808U", match: "close",
-    note: "Several 365ct listings exist, some bundled with junk.",
-    search: "Nature Made Iron 65mg 365 tablets",
-  },
-  {
-    id: "nad-resveratrol", brand: "Deal Supplement", name: "NAD+ Resveratrol 1,000mg",
-    size: "120 vegetarian capsules", asin: "B0DJWRXKPX", match: "exact",
-    search: "Deal Supplement NAD+ resveratrol 1000mg 120 veggie capsules",
-  },
-  {
-    id: "lions-mane", brand: "Real Mushrooms", name: "Lion's Mane Extract",
-    size: "120 capsules", asin: "B078SZX3ML", match: "exact",
-    search: "Real Mushrooms Lions Mane capsules 120ct",
-  },
-  {
-    id: "k2-d3", brand: "Nutricost", name: "Vitamin K2 (MK7) + D3",
-    size: "100mcg K2 / 5000 IU D3 · 120 softgels", asin: "B07K3VFVJC", match: "exact",
-    search: "Nutricost vitamin K2 D3 120 softgels",
-  },
-  {
-    id: "joint-defend", brand: "Clean Nutraceuticals", name: "Joint Defend",
-    size: "Glucosamine · Chondroitin · MSM · 120 capsules", asin: "B0CGFC5RCQ", match: "close",
-    note: "Single bottle vs. 2-pack listings look nearly identical.",
-    search: "Clean Nutraceuticals Joint Defend glucosamine chondroitin MSM 120",
-  },
-  {
-    id: "turmeric-ginger", brand: "Qunol", name: "Turmeric + Ginger 2400mg",
-    size: "Enhanced absorption · 105 capsules", asin: "B09YGG58LZ", match: "exact",
-    search: "Qunol turmeric ginger black pepper 2400mg 105 capsules",
-  },
-  {
-    id: "omega-3", brand: "MAV Nutrition", name: "Triple Strength Omega-3 3,600mg",
-    size: "1300mg EPA / 860mg DHA · 120 softgels", asin: "B01NBTJFJB", match: "exact",
-    search: "MAV Nutrition triple strength omega 3 fish oil 3600mg 120 softgels",
-  },
-  {
-    id: "tongkat-ali", brand: "ELMNT", name: "Tongkat Ali + Fadogia Agrestis",
-    size: "200:1 extract · 90 capsules", asin: "B0C4NV7Q2B", match: "close",
-    note: "ELMNT lists this without the brand name in the title.",
-    search: "ELMNT tongkat ali fadogia agrestis 200x strength",
-  },
-  {
-    id: "unknown-white", brand: "Unidentified", name: "White bottle, back right",
-    size: "120 count · label cut off in the photo", asin: null, match: "none",
-    note: "Send a clearer photo and this gets a real listing.",
-    search: "supplement",
-  },
-];
+const EXTENSION_ZIP = "vitamin-reorder-extension.zip";
 
 const C = {
   bg: "#0e1116", panel: "#171d26", panel2: "#1e2632", line: "#28323f",
@@ -112,21 +44,6 @@ function daysAgo(iso) {
   if (d < 60) return `ordered ${d}d ago`;
   return `ordered ${Math.round(d / 30)} months ago`;
 }
-
-// Accepts a bare ASIN or any Amazon product URL.
-function parseAsin(input) {
-  const s = (input || "").trim();
-  if (/^[A-Z0-9]{10}$/i.test(s)) return s.toUpperCase();
-  const m = s.match(/(?:\/dp\/|\/gp\/product\/|\/product\/|[?&]asin=)([A-Z0-9]{10})/i);
-  return m ? m[1].toUpperCase() : null;
-}
-
-const productUrl = (item) =>
-  item.asin
-    ? `https://www.amazon.com/dp/${item.asin}`
-    : `https://www.amazon.com/s?k=${encodeURIComponent(item.search || item.name)}`;
-
-const CART_VIEW = "https://www.amazon.com/gp/cart/view.html";
 
 // Amazon's legacy multi-item cart form. It quietly does nothing for a signed-out
 // session and for accounts without an Associates tag, so it is offered as a
@@ -494,15 +411,33 @@ function App() {
         and paste the link above so it's here next time.
       </div>
 
+      <div style={{
+        marginTop: 16, background: C.panel, border: `1px solid ${C.line}`,
+        borderRadius: 12, padding: 14,
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>On a computer? Skip the tapping.</div>
+        <div style={{ color: C.dim, fontSize: 12.5, lineHeight: 1.55, marginBottom: 10 }}>
+          The Chrome extension does the clicking for you — it drives amazon.com in a background
+          tab with your own signed-in session and actually lands everything in the cart. A website
+          can't do that: Amazon ties add-to-cart to a session token only its own pages hold.
+        </div>
+        <a href={EXTENSION_ZIP} download style={{
+          display: "inline-block", background: C.panel2, border: `1px solid ${C.line}`,
+          color: C.accent, borderRadius: 9, padding: "9px 13px", fontSize: 12.5,
+          fontWeight: 700, textDecoration: "none",
+        }}>Download the extension ↓</a>
+        <div style={{ color: C.faint, fontSize: 11, lineHeight: 1.55, marginTop: 8 }}>
+          Unzip it, then Chrome → Extensions → turn on Developer mode → Load unpacked → pick the
+          folder. Desktop Chrome or Edge only; iOS can't install it.
+        </div>
+      </div>
+
       {cartable.length > 1 && (
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+        <div style={{ marginTop: 14 }}>
           <a href={cartUrl(cartable)} target="_blank" rel="noreferrer" style={{
-            color: C.dim, fontSize: 12, textDecoration: "underline", textUnderlineOffset: 3,
-          }}>Try the all-at-once cart link ↗</a>
-          <div style={{ color: C.faint, fontSize: 11.5, lineHeight: 1.6, marginTop: 5 }}>
-            Amazon's old bulk-cart URL. It silently does nothing on most accounts now, but it
-            costs one tap to find out — sign in to Amazon first if you want to try it.
-          </div>
+            color: C.faint, fontSize: 11.5, textDecoration: "underline", textUnderlineOffset: 3,
+          }}>Try Amazon's old bulk-cart link ↗</a>
+          <span style={{ color: C.faint, fontSize: 11.5 }}> — usually does nothing now.</span>
         </div>
       )}
 
