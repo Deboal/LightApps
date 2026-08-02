@@ -54,20 +54,24 @@ default to 0 seats so they can't silently absorb people; each is adjustable.
 
 ## Building 2 — Upper Floor
 
-Traced by eye from a low-resolution image; **18 numbered spaces + 3 circulation
-areas, 28 seats** in an 85'-0" × 64'-0" envelope. Adjacency and rough proportion
+Traced by eye from a low-resolution image; **19 numbered spaces + 4 circulation
+areas, 29 seats** in an 85'-0" × 64'-0" envelope. Adjacency and rough proportion
 are meaningful here; individual dimensions are not.
 
 Codes are `U01–U18`, sequential with no gaps, numbered down each column from the
-left. They replaced the old `T..` series, which had grown gaps and A/B/C
+left, plus `U19` (Cry Room) added afterwards — appended rather than renumbering
+the floor a second time, since every rename costs a `was` mapping and risks the
+placements. They replaced the old `T..` series, which had grown gaps and A/B/C
 suffixes across five revisions. They stay **placeholders** — `201..` is the
 obvious "real" numbering and it is already taken on this board by B100's second
 floor.
 
 **Circulation carries no number**, by design: the hallways, the stair and the
 kitchen (which opens onto the corridor rather than closing off from it, so the
-two are one space). Their `C01–C03` codes are internal keys for the migration
-and are never drawn.
+two are one space), plus `C04`, the corridor cut out of the conference room's
+near side so the bathrooms and the conference room aren't separated by a blind
+wall. Their `C01–C04` codes are internal keys for the migration and are never
+drawn.
 
 ### Renumbering safely
 
@@ -109,8 +113,8 @@ have to be mapped back to as-traced coordinates before they go in the file.
 ## 821 Lawn Way — Building 100, Bottom Floor
 
 Added from *FLOOR PLAN – BOTTOM FLOOR, 821 Lawn Way, Red Bluff, CA (Approximate
-Layout)*, 1/8" = 1'-0". **20 spaces, 28 seats, 3,527 sf drawn** inside a
-131'-0" × 44'-6" envelope.
+Layout)*, 1/8" = 1'-0". **19 numbered spaces + 1 circulation area, 29 seats**
+inside a 131'-0" × 44'-6" envelope.
 
 This floor sits between B100 and the traced upper floor in how much it can be
 trusted, and the board says so in its own words rather than borrowing the traced
@@ -147,6 +151,18 @@ Two faults in the plan, resolved here and worth raising with whoever drew it:
 2. **Two rooms are labelled "Dining Room 1."** The dimension table names the
    lower one Dining Room 2 at 18'-0" × 13'-6", which is what is drawn.
 
+### Changes made against the plan
+
+The plan is the starting point, not the last word. Departures so far, all at
+Alex's direction:
+
+| | |
+|---|---|
+| Office names | The plan numbers offices in both tables, so `Office 1`/`2`/`3` each appear twice. Every generic office is now just **Office** — the `L`/`R` code is the identifier — and the plan's label survives in the room's tooltip. |
+| R05 | `Living Room 1` → **Inter-office space**. |
+| R09 | `Dining Room 2` → **Big Office**, and reclassified from support to an assignable office. Widened 18'-0" → 24'-0" so its far wall runs with R08's instead of stopping 6' short. |
+| R07 | `Office 5` → a **hallway**: circulation, so no number, no seats and no seat stepper. |
+
 Seat counts follow the desks the plan calls out — Reception 4, "1 Office with
 Two Desks" 2, Living Room 1 two ("1 Desk" twice), Open Office 4 four. Rooms too
 small for two (locked office, R03 at 57 sf, Office 5, Office 6) get one. Dining
@@ -161,6 +177,43 @@ The traced envelope's proportions don't agree, but that trace was explicitly
 eyeballed from a low-resolution image with only the area figure to anchor it, so
 it is the weaker evidence. Nothing was renamed on a guess: confirm it and the two
 become one building with one site, or leave them as two.
+
+## Reading a room card
+
+A card is drawn to scale, so a shallow room has very little height to spend. It
+spends it in a fixed order of priority, and **the seats always win**: a two-seat
+room that can only show one seat is the board failing at the one thing it is for.
+
+| Height available | What gives way |
+|---|---|
+| Enough | Code, name, area, every seat, seat stepper |
+| Not enough for that | `compact` — the area line goes, paddings tighten |
+| Still not enough | `tight` — the code and name share one line |
+
+Which tier applies is computed per card from its own seat count and drawn height,
+not from a fixed pixel threshold, so it stays right when the scale slider moves
+or a room is resized. The default scale is **14 px/ft** for the same reason: at
+11, a 7'-deep two-seat office could only ever show one seat.
+
+An L-shaped room is a bounding box with another room painted over its corner, so
+the cover would hide whatever is beneath it. Cards measure how far a cover
+reaches in from their top and bottom edges and keep that band clear — measured
+off the boxes rather than declared, so it survives a change of `rotateDeg`.
+
+## Adding names
+
+Commas separate **names**; a colon or tab introduces a **department**:
+
+```
+Karen Hinton, Stephanie Ruiz, Arianne Smith
+Casey Tingley: Maintenance
+```
+
+The dialog had always said "separated by commas" while the parser used the comma
+as the department divider, so pasting a real roster produced one person carrying
+everyone else as their department — and re-adding any of them did nothing
+visible, because a duplicate name is skipped. Adding nothing now says so instead
+of closing as though it worked.
 
 ## Files
 

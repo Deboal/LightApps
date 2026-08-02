@@ -25,8 +25,8 @@ var MARKUP = [
   '    <div class="sync" data-el="sync" data-state="idle" role="status" aria-live="polite"><i class="dot"></i><span data-el="sync-text">Starting</span></div>',
   '    <div class="zoom">',
   '      <span class="eyebrow">Scale</span>',
-  '      <input type="range" data-el="ppf" min="7" max="20" step="1" value="11" aria-label="Drawing scale, pixels per foot">',
-  '      <span class="eyebrow" data-el="ppf-out">11 px/ft</span>',
+  '      <input type="range" data-el="ppf" min="7" max="20" step="1" value="14" aria-label="Drawing scale, pixels per foot">',
+  '      <span class="eyebrow" data-el="ppf-out">14 px/ft</span>',
   '    </div>',
   '    <button class="primary" data-el="btn-names">Add names</button>',
   '    <button data-el="btn-space">Add space</button>',
@@ -55,8 +55,9 @@ var MARKUP = [
   '<dialog data-el="dlg-names">',
   '  <form method="dialog" class="dlg-body">',
   '    <h4>Add names</h4>',
-  '    <p>One per line, or separated by commas. Add a department after a comma or tab &mdash; <em>Casey Tingley, Maintenance</em> &mdash; and it shows on the chip. Names already on the roster are skipped.</p>',
-  '    <textarea data-el="names-in" rows="9" placeholder="Casey Tingley, Maintenance&#10;Travis Spooner, Flight Ops&#10;Ted Rawlings"></textarea>',
+  '    <p>One per line, or separated by commas. Add a department after a colon or tab &mdash; <em>Casey Tingley: Maintenance</em> &mdash; and it shows on the chip. Names already on the roster are skipped.</p>',
+  '    <textarea data-el="names-in" rows="9" placeholder="Casey Tingley: Maintenance&#10;Travis Spooner: Flight Ops&#10;Ted Rawlings"></textarea>',
+  '    <p class="dlg-msg" data-el="names-msg" hidden></p>',
   '  </form>',
   '  <div class="dlg-foot">',
   '    <button value="cancel" data-close="dlg-names">Cancel</button>',
@@ -106,7 +107,10 @@ export function mountBoard(container, hooks) {
   function nextId(p) { uid += 1; return p + uid; }
 
   var state = {
-    ppf: 11,
+    /* 14, not 11. At 11 a 7'-deep office is 77px and the head and foot leave
+       room for one seat, so a two-seat room could only ever show one — the
+       board's whole job, read at a glance, quietly stopped working. */
+    ppf: 14,
     groups: buildGroups(nextId),
     people: [],
     view: "unplaced",
@@ -144,28 +148,35 @@ export function mountBoard(container, hooks) {
     return whole + "'-" + inches + '"';
   }
 
-  /* "Casey Tingley, Maintenance" -> {name, dept}. Department is optional and
-     stays optional: no roster has arrived yet, so nothing depends on it. */
+  /* "Casey Tingley: Maintenance" -> {name, dept}.
+     The comma is NOT the department divider. The dialog has always told people
+     to separate names with commas, and pasting a real roster that way used to
+     produce one person carrying everyone else as their "department" — then
+     re-adding any of them looked like a dead button, because a duplicate name
+     is skipped in silence. Commas split names; a tab or a colon introduces the
+     department, which is what a paste out of a spreadsheet gives anyway. */
   function parseEntry(chunk) {
-    var parts = chunk.split(/\t|,/);
+    var parts = chunk.split(/\t|:/);
     var name = (parts.shift() || "").trim().replace(/\s+/g, " ");
     var dept = parts.join(" ").trim().replace(/\s+/g, " ");
     return { name: name, dept: dept };
   }
 
   function addPeople(raw) {
-    var added = [];
-    raw.split(/[\n;]+/).forEach(function (line) {
+    var added = [], skipped = [];
+    raw.split(/[\n;,]+/).forEach(function (line) {
       if (!line.trim()) return;
       var e = parseEntry(line);
       if (!e.name) return;
-      var dup = state.people.some(function (p) { return p.name.toLowerCase() === e.name.toLowerCase(); });
-      if (dup) return;
+      var dup = state.people.some(function (p) {
+        return (p.name || "").toLowerCase() === e.name.toLowerCase();
+      });
+      if (dup) { skipped.push(e.name); return; }
       var person = { id: nextId("p"), name: e.name, dept: e.dept || "", roomId: null };
       state.people.push(person);
       added.push(person);
     });
-    return added;
+    return { added: added, skipped: skipped };
   }
 
   /* A stable-ish hue per department, so chips read as groups at a glance. */
@@ -572,7 +583,16 @@ export function mountBoard(container, hooks) {
     if (occ.length > r.cap) cls += " over-cap";
     else if (r.cap > 0 && occ.length === r.cap) cls += " fill-full";
     else if (occ.length > 0) cls += " fill-part";
-    if (px(boxH) < 120) cls += " compact";
+    /* How tight the card is drawn follows from whether its seats actually fit,
+       not from a fixed height. A two-seat room that can only show one seat is
+       the board failing at the one thing it is for, so the head gives up its
+       area line, then its second line, before the seats give up anything.
+       Numbers are the measured cost of a head, a foot and one seat row at each
+       size. Circulation nobody is standing in needs none of it. */
+    var slots = r.circ && occ.length === 0 ? 0 : Math.max(r.cap, occ.length, 1);
+    var avail = px(boxH) - (inset ? px(inset.top) + px(inset.bottom) : 0);
+    if (avail < 75 + slots * 28) cls += " compact";
+    if (avail < 56 + slots * 21) cls += " tight";
     if (absolute) cls += " placed";
     if (r.open) cls += " open";
     if (r.circ) cls += " circ";
@@ -700,12 +720,24 @@ export function mountBoard(container, hooks) {
     b.addEventListener("click", function () { $(b.dataset.close).close(); });
   });
   $("btn-names").addEventListener("click", function () { $("dlg-names").showModal(); $("names-in").focus(); });
+  /* Say what happened. Adding nothing used to look exactly like adding
+     everything — the dialog closed either way — so a roster of names already
+     on the board read as a broken button. */
   $("names-save").addEventListener("click", function () {
-    var added = addPeople($("names-in").value);
+    var msg = $("names-msg");
+    var res = addPeople($("names-in").value);
+    if (!res.added.length) {
+      msg.hidden = false;
+      msg.textContent = res.skipped.length
+        ? "Already on the roster, so nothing was added: " + res.skipped.join(", ") + "."
+        : "No names found. Put one per line, or separate them with commas.";
+      return;
+    }
+    msg.hidden = true;
     $("names-in").value = "";
     $("dlg-names").close();
     render();
-    if (added.length) notify({ kind: "people", people: added });
+    notify({ kind: "people", people: res.added });
   });
   $("btn-space").addEventListener("click", function () { $("dlg-space").showModal(); });
   $("space-save").addEventListener("click", function () {

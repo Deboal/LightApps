@@ -157,7 +157,7 @@ export const TRACED = {
      accounting desks to the far corner of their L, kitchen + right hallway
      into one unnumbered space, and the left hallway run from the office at
      the top to the bottom wall, absorbing T27. */
-  geomRev: 6,
+  geomRev: 7,
   items: [
     /* ---- circulation ----
        Codes here are internal keys for the migration only. Circulation carries
@@ -172,6 +172,11 @@ export const TRACED = {
     T("C02", "Kitchen / Hallway", 24, 21, 59, 10, "support", 0,
       { circ: true, was: ["T08", "T09"] }),
     T("C03", "Stair", 58, 13, 8, 7, "support", 0, { circ: true, was: "T05" }),
+    /* The bathrooms and the conference room met at a shared wall with no way
+       between them. The corridor is cut out of the conference room's near side
+       — the only side with anything to give — and runs from the top hallway
+       down to the kitchen band, so the two join up rather than dead-ending. */
+    T("C04", "Hallway", 59, 31, 5, 26, "support", 0, { circ: true }),
 
     /* ---- first column: three offices, then the accounting block ---- */
     T("U01", "Office", 73, 50, 10, 7, "office", 2, { was: "T26" }),
@@ -185,7 +190,7 @@ export const TRACED = {
     T("U04", "Accounting — open", 67, 1, 17, 18, "office", 4,
       { sfOverride: 225, forceCap: true, was: "T02",
         sub: "L-shaped, wraps U05 — was drawn as three rooms" }),
-    T("U05", "Accounting — 2 desks", 75, 1, 9, 9, "office", 2,
+    T("U05", "Accounting — 2 desks", 75, 10, 9, 9, "office", 2,
       { was: "T01", sub: "Kept subdivision inside the accounting office" }),
 
     /* ---- second column ---- */
@@ -194,8 +199,11 @@ export const TRACED = {
     T("U08", "Bathroom", 64, 32, 8, 9, "support", 0, { was: "T21" }),
 
     /* ---- third column ---- */
-    T("U09", "Conference Room", 45, 32, 18, 20, "support", 0,
-      { was: "T18", sub: "No office seats" }),
+    T("U09", "Conference Room", 45, 32, 14, 20, "support", 0,
+      { was: "T18", sub: "Narrowed 18' to 14' to cut the corridor beside it — no office seats" }),
+    /* Behind the offices and above the conference room, off the new corridor. */
+    T("U19", "Cry Room", 45, 52, 14, 5, "office", 1,
+      { sub: "Shared — 70 sf, one desk. Numbered after U18 rather than renumbering the floor again" }),
 
     /* ---- fourth column: the offices, now on the cubicle grid ----
        Each one takes the width and the run of the cubicle beside it, so the
@@ -280,45 +288,49 @@ export const LAWN_WAY_BOTTOM = {
   caveat: "(sizes are the plan's own room tables, but the plan marks every " +
           "dimension approximate and its 36'-0\" depth string does not close " +
           "against them; room codes are placeholders)",
-  geomRev: 1,
+  geomRev: 2,
   items: [
     /* ---- left block — the plan's first ROOM DIMENSIONS table ----
        Top band is 11'-6" deep and closes across the block at 66'-6". */
-    T("L01", "Office 2", 0, 0, 9.5, 11.5, "office", 2),
-    T("L02", "Office 1", 9.5, 0, 9.5, 11.5, "office", 2),
-    T("L03", "Office (locked)", 19, 0, 6, 11.5, "office", 1,
+    T("L01", "Office", 0, 0, 9.5, 11.5, "office", 2, { sub: "Office 2 on the plan" }),
+    T("L02", "Office", 9.5, 0, 9.5, 11.5, "office", 2, { sub: "Office 1 on the plan" }),
+    T("L03", "Office", 19, 0, 6, 11.5, "office", 1,
       { sub: "“Locked when scanned” on the plan — the one room with no tabulated size" }),
-    T("L04", "Office 3", 25, 0, 11.5, 11.5, "office", 2),
-    T("L05", "Office 4", 36.5, 0, 10.5, 11.5, "office", 2),
+    T("L04", "Office", 25, 0, 11.5, 11.5, "office", 2, { sub: "Office 3 on the plan" }),
+    T("L05", "Office", 36.5, 0, 10.5, 11.5, "office", 2, { sub: "Office 4 on the plan" }),
     /* 23'-6" deep — it is the kitchen that sets the left block's depth. */
     T("L06", "Kitchen / Break Room", 47, 0, 19.5, 23.5, "support", 0),
     T("L07", "Filing", 0, 11.5, 21.5, 6, "support", 0),
-    T("L08", "Open Office 4", 21.5, 13.5, 15.5, 10, "office", 4,
+    T("L08", "Open Office", 21.5, 13.5, 15.5, 10, "office", 4,
       { sub: "Bottom-aligned to the block. Four workstations drawn — the seat count follows the desks" }),
 
     /* ---- right block — the plan's second ROOM DIMENSIONS table ---- */
     T("R01", "Reception", 67, 0, 28, 23.5, "office", 4,
       { sub: "“Reception — 4 Desks” on the plan" }),
-    T("R02", "Office 2", 95, 0, 11.5, 13.5, "office", 2),
+    T("R02", "Office", 95, 0, 11.5, 13.5, "office", 2, { sub: "Office 2 on the plan" }),
     /* 57 sf. The gap to its left is the unlabelled closet/hall on the plan. */
-    T("R03", "Office 1", 113, 0, 6, 9.5, "office", 1),
-    T("R04", "Office 3", 119, 0, 12, 11.5, "office", 2),
-    T("R05", "Living Room 1", 95, 13.5, 24, 17.5, "office", 2,
-      { sub: "Two “1 Desk” call-outs on the plan" }),
+    T("R03", "Office", 113, 0, 6, 9.5, "office", 1, { sub: "Office 1 on the plan — 57 sf" }),
+    T("R04", "Office", 119, 0, 12, 11.5, "office", 2, { sub: "Office 3 on the plan" }),
+    T("R05", "Inter-office space", 95, 13.5, 24, 17.5, "office", 2,
+      { sub: "Living Room 1 on the plan; two “1 Desk” call-outs" }),
     T("R06", "Dining Room 1", 119, 11.5, 12, 13.5, "support", 0,
       { sub: "Table and chairs drawn — no desks, so no seats" }),
-    T("R07", "Office 5", 119, 25, 12, 6, "office", 1),
-    T("R08", "Office (two desks)", 119, 31, 12, 11.5, "office", 2,
+    /* A hallway now, so it carries no number and no seat stepper. */
+    T("R07", "Hallway", 119, 25, 12, 6, "support", 0,
+      { circ: true, sub: "Office 5 on the plan" }),
+    T("R08", "Office", 119, 31, 12, 11.5, "office", 2,
       { sub: "Plan label: “1 Office with Two Desks”" }),
-    T("R09", "Dining Room 2", 95, 31, 18, 13.5, "support", 0,
-      { sub: "Drawn as a second “Dining Room 1”; the dimension table names it Dining Room 2" }),
+    /* Widened from 18' to 24' so its far wall runs with R08's rather than
+       stopping 6' short. The plan tabulates it at 18'-0" x 13'-6". */
+    T("R09", "Big Office", 95, 31, 24, 13.5, "office", 2,
+      { sub: "Dining Room 2 in the plan’s dimension table, drawn there as a second “Dining Room 1”" }),
 
     /* ---- the bump-out below the left block ----
        Bathroom 1 + Bathroom 2 stack to 15'-6", exactly Office 6's depth
        beside them, which is what fixes this group's position. */
     T("R10", "Bathroom 1", 63.5, 23.5, 6.5, 9.5, "support", 0),
     T("R11", "Bathroom 2", 63.5, 33, 6.5, 6, "support", 0),
-    T("R12", "Office 6", 70, 23.5, 6.5, 15.5, "office", 1,
+    T("R12", "Office", 70, 23.5, 6.5, 15.5, "office", 1,
       { sub: "100 sf and 6'-6\" wide — one desk" }),
   ],
 };
