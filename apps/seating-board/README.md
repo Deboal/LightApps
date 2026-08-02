@@ -1,14 +1,25 @@
 # Seating Board
 
-Seating assignment board for the PJ Helicopters B100 hangar office infill
-(903 Langley Rd, Red Bluff). Draws the 23 new spaces to scale from the plan set
-and lets you drag people from a roster into rooms. The point of the visual is the
-fill-state colouring: it makes "who is missing a desk" and "which room is
-over-seated" readable at a glance.
+Seating assignment board. Draws each floor to scale and lets you drag people
+from a roster into rooms. The point of the visual is the fill-state colouring:
+it makes "who is missing a desk" and "which room is over-seated" readable at a
+glance.
+
+Floors on the board, in decreasing order of how much the geometry can be
+trusted — the board labels each one accordingly and never lets an inferred
+dimension pass as a surveyed one:
+
+| Floors | Source |
+|---|---|
+| B100 1st + 2nd, 903 Langley Rd | Dimensioned plan set (below) |
+| Building 100 Bottom Floor, 821 Lawn Way | Dimensioned plan, marked approximate by its own author |
+| Building 2 Upper Floor | Traced by eye from a low-resolution image |
+
+Buildings are keyed by site, and the address prints once above each one.
 
 Live at `/<hub>/seating-board/`.
 
-## Design basis — don't break this
+## B100 design basis — don't break this
 
 Derived from `Rev1_FULL STATUS SET - PJ office infill - 4-9-26.pdf`. The geometry
 is not decorative; it's how the board gets reviewed.
@@ -40,6 +51,62 @@ Inventory: **18 private offices** (102, 103, 105–110 first floor; 202–211
 second) plus **5 support/shared spaces** (100 Vinyl Shop, 101 PJ Swag Store,
 104 Rigging Equip. Storage, 201 Training Room, Pilot Lockers). Support spaces
 default to 0 seats so they can't silently absorb people; each is adjustable.
+
+## 821 Lawn Way — Building 100, Bottom Floor
+
+Added from *FLOOR PLAN – BOTTOM FLOOR, 821 Lawn Way, Red Bluff, CA (Approximate
+Layout)*, 1/8" = 1'-0". **20 spaces, 28 seats, 3,527 sf drawn** inside a
+131'-0" × 44'-6" envelope.
+
+This floor sits between B100 and the traced upper floor in how much it can be
+trusted, and the board says so in its own words rather than borrowing the traced
+floor's "TRACED, NOT DIMENSIONED":
+
+- **Sizes are the plan's**, off its two ROOM DIMENSIONS tables, read as
+  width × depth. Only the locked office has no tabulated size.
+- **Positions are approximate**, from the drawn adjacency.
+- The plan's own note is *"All dimensions are approximate. Not for
+  construction,"* so every room stays `est` and the floor stays `approx`.
+
+Two places the plan doesn't close, both left visible:
+
+| | Plan says | Rooms say |
+|---|---|---|
+| Overall width | 131'-0" (string sums to 130'-6") | 66'-6" left block + 64'-0" right = **130'-6"** |
+| Right-hand depth | 36'-0" | **44'-6"** stacked down the right columns |
+
+The width reading is corroborated twice — the left block closes exactly on
+9'-6" + 9'-6" + 6'-0" + 11'-6" + 10'-6" + 19'-6" = 66'-6", which is also what
+confirms the tables are width × depth. The depth string is 8'-6" short of the
+rooms it dimensions; rooms are drawn at their tabulated depths and the envelope
+follows them, so the disagreement stays on the drawing.
+
+**Codes are placeholders**, as on the traced floor. `L01–L08` is the plan's
+left-hand dimension table, `R01–R12` the right-hand one. Page-relative, **not
+compass directions** — this plan has no north arrow either, and the same rule
+applies: don't add one without confirmation.
+
+Two faults in the plan, resolved here and worth raising with whoever drew it:
+
+1. **Office 1, 2 and 3 each appear twice**, as different rooms in the two
+   tables. That is what the L/R codes are for.
+2. **Two rooms are labelled "Dining Room 1."** The dimension table names the
+   lower one Dining Room 2 at 18'-0" × 13'-6", which is what is drawn.
+
+Seat counts follow the desks the plan calls out — Reception 4, "1 Office with
+Two Desks" 2, Living Room 1 two ("1 Desk" twice), Open Office 4 four. Rooms too
+small for two (locked office, R03 at 57 sf, Office 5, Office 6) get one. Dining
+rooms, bathrooms, Filing and the Kitchen carry 0, like every other support
+space. The unlabelled corner below Filing has furniture drawn but no label and
+no tabulated size, so it is left as blank floor rather than invented.
+
+**Open question: is this the same building as "Building 2 · Upper Floor"?** It
+may well be — both plans use the same residential room vocabulary (Living Room,
+Dining Room, Kitchen), and the traced floor's ~3,890 sf is close to this one's.
+The traced envelope's proportions don't agree, but that trace was explicitly
+eyeballed from a low-resolution image with only the area figure to anchor it, so
+it is the weaker evidence. Nothing was renamed on a guess: confirm it and the two
+become one building with one site, or leave them as two.
 
 ## Files
 
