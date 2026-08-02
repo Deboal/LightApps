@@ -22,8 +22,12 @@ export var LAYOUT_DOC = "b100";
 
 /* Rebuild a stored plan floor from a newer definition, keeping what the users
    own (room ids, so assignments still resolve; seat counts, which they edit)
-   and taking what the definition owns (position, size, name, open flag). */
-function reshape(storedGroup, def) {
+   and taking what the definition owns (position, size, name, open flag).
+
+   `absorbed` collects droppedRoomId -> survivingRoomId for every predecessor a
+   merge didn't keep, so the caller can walk people into the room that replaced
+   theirs. */
+function reshape(storedGroup, def, absorbed) {
   var prev = {};
   (storedGroup.items || []).forEach(function (it) {
     if (it.kind === "room") prev[it.code] = it;
@@ -35,12 +39,15 @@ function reshape(storedGroup, def) {
        this room used to carry. Codes are the only handle a stored room has, so
        a revision that renumbers has to say what became what — otherwise every
        room reads as new and every assignment to it is orphaned. A list, because
-       a merge has several predecessors; the first match wins and the rest are
-       dropped, which is the same thing the merge did to the rooms. */
-    var was = prev[it.code];
-    if (!was && it.was) {
-      var names = [].concat(it.was);
-      for (var k = 0; k < names.length && !was; k++) was = prev[names[k]];
+       a merge has several predecessors: the first keeps its id, and the rest
+       are recorded as absorbed rather than simply forgotten. */
+    var names = [it.code].concat(it.was ? [].concat(it.was) : []);
+    var was = null;
+    for (var k = 0; k < names.length; k++) {
+      var cand = prev[names[k]];
+      if (!cand) continue;
+      if (!was) was = cand;
+      else if (cand.id && was.id) absorbed[cand.id] = was.id;
     }
     if (was) {
       /* Id always carries, so assignments keep resolving. Seat count only
@@ -54,6 +61,15 @@ function reshape(storedGroup, def) {
     return it;
   });
   return out;
+}
+
+/* Every room id the board can still resolve an assignment against. */
+function liveRoomIds(groups) {
+  var ids = {};
+  groups.forEach(function (g) {
+    (g.items || []).forEach(function (it) { if (it.kind === "room") ids[it.id] = true; });
+  });
+  return ids;
 }
 
 export function createSync(opts) {
@@ -125,7 +141,7 @@ export function createSync(opts) {
        isn't already stored, and persist that once. This is the upgrade path for
        every floor added from here on. */
     var stored = layout && layout.groups ? layout.groups : null;
-    var groups, migrated = [], regeom = [];
+    var groups, migrated = [], regeom = [], absorbed = {};
     if (!stored) {
       groups = board.defaultGroups();
     } else {
@@ -143,13 +159,39 @@ export function createSync(opts) {
         if (!d || d.layout !== "plan") return sg;
         if ((d.geomRev || 0) <= (sg.geomRev || 0)) return sg;
         regeom.push(d.building + " " + d.floor);
-        return reshape(sg, d);
+        return reshape(sg, d, absorbed);
       });
 
       var have = {};
       stored.forEach(function (g) { have[g.id] = true; });
       migrated = defs.filter(function (g) { return !have[g.id]; });
       if (migrated.length) groups = groups.concat(migrated);
+    }
+
+    /* Walk anyone whose room was merged away into the room that replaced it.
+       This has to be written back, not just fixed on screen: once the new
+       layout is stored the absorbed ids are gone from it, and the next browser
+       to load would have no way left to work out where those people went. */
+    var moved = [];
+    Object.keys(where).forEach(function (pid) {
+      var to = absorbed[where[pid]];
+      if (to) { where[pid] = to; moved.push(pid); }
+    });
+
+    /* A room that vanished without saying what replaced it. Nobody should reach
+       this — every retired code is claimed — but an assignment pointing at an
+       id the layout no longer has makes that person invisible: in no room, and
+       not in Unplaced either, because their roomId is still set. Put them back
+       in the pool so they are at least visibly waiting for a desk. Not written
+       back, so the stored assignment survives if a later revision restores the
+       room. */
+    var live = liveRoomIds(groups), lost = [];
+    Object.keys(where).forEach(function (pid) {
+      if (where[pid] && !live[where[pid]]) { lost.push(pid); where[pid] = null; }
+    });
+    if (lost.length) {
+      console.warn("[seating] " + lost.length + " assignment(s) pointed at a room that no " +
+                   "longer exists; those people are back in the unplaced pool: " + lost.join(", "));
     }
 
     var data = {
@@ -170,6 +212,17 @@ export function createSync(opts) {
       status("saved", "Saved " + clockTime());
     } else if (migrated.length || regeom.length) {
       await enqueue("layout migration", function () { return writeLayout(); });
+      if (moved.length) {
+        await enqueue("assignment remap", async function () {
+          for (var i = 0; i < moved.length; i++) {
+            await db.set("assignments", {
+              roomId: where[moved[i]], at: new Date().toISOString(), by: whoami(),
+            }, moved[i]);
+          }
+        });
+        console.info("[seating] followed " + moved.length +
+                     " assignment(s) into the room that replaced theirs");
+      }
       if (migrated.length) {
         console.info("[seating] added floor(s): " +
           migrated.map(function (g) { return g.building + " " + g.floor; }).join(", "));

@@ -81,11 +81,22 @@ T("U16", "Office", 2, 49, 14, 14, "office", 2, { was: "T14" }),
 T("C01", "Hallway", 16, 57, 69, 6, "support", 0, { circ: true, was: ["T20", "T27"] }),
 ```
 
-`reshape()` matches on the current code first, then walks that list. A list
-because a merge has several predecessors — the first match wins, and the rest
-fall away exactly as the merge intended. **Every retired code must appear in
-exactly one `was`**; anything left out silently orphans whoever was sitting in
-it.
+`reshape()` matches on the current code first, then walks that list. **Every
+retired code must appear in exactly one `was`.**
+
+A list, because a merge has several predecessors. The first keeps its id; the
+rest are recorded as *absorbed*, and on load anyone sitting in one is walked
+into the room that replaced theirs. That has to be **written back**, not just
+fixed on screen — once the new layout is stored the absorbed ids are gone from
+it, and the next browser to load has nothing left to work out where those people
+went.
+
+A last backstop for a room that vanishes without saying what replaced it: an
+assignment pointing at an id the layout no longer has makes that person
+*invisible* — in no room, and not in Unplaced either, because their `roomId` is
+still set. Those go back in the pool with a console warning, and are deliberately
+**not** written back, so the stored assignment survives if a later revision
+restores the room.
 
 ### Orientation
 
