@@ -52,6 +52,49 @@ second) plus **5 support/shared spaces** (100 Vinyl Shop, 101 PJ Swag Store,
 104 Rigging Equip. Storage, 201 Training Room, Pilot Lockers). Support spaces
 default to 0 seats so they can't silently absorb people; each is adjustable.
 
+## Building 2 — Upper Floor
+
+Traced by eye from a low-resolution image; **18 numbered spaces + 3 circulation
+areas, 28 seats** in an 85'-0" × 64'-0" envelope. Adjacency and rough proportion
+are meaningful here; individual dimensions are not.
+
+Codes are `U01–U18`, sequential with no gaps, numbered down each column from the
+left. They replaced the old `T..` series, which had grown gaps and A/B/C
+suffixes across five revisions. They stay **placeholders** — `201..` is the
+obvious "real" numbering and it is already taken on this board by B100's second
+floor.
+
+**Circulation carries no number**, by design: the hallways, the stair and the
+kitchen (which opens onto the corridor rather than closing off from it, so the
+two are one space). Their `C01–C03` codes are internal keys for the migration
+and are never drawn.
+
+### Renumbering safely
+
+Codes are the only handle a stored room has, so a revision that renames them
+would otherwise read as a floor full of new rooms: every id reminted, every
+assignment pointing at nothing. Each room therefore declares the code(s) it used
+to carry:
+
+```js
+T("U16", "Office", 2, 49, 14, 14, "office", 2, { was: "T14" }),
+T("C01", "Hallway", 16, 57, 69, 6, "support", 0, { circ: true, was: ["T20", "T27"] }),
+```
+
+`reshape()` matches on the current code first, then walks that list. A list
+because a merge has several predecessors — the first match wins, and the rest
+fall away exactly as the merge intended. **Every retired code must appear in
+exactly one `was`**; anything left out silently orphans whoever was sitting in
+it.
+
+### Orientation
+
+`rotateDeg` turns the whole floor at build time. Coordinates in `basis.js` stay
+in their as-traced orientation so the trace remains comparable to the source
+image, and reorienting is a one-number change. Consequence worth knowing: **edits
+described as "left", "bottom right" and so on are orientation-dependent** and
+have to be mapped back to as-traced coordinates before they go in the file.
+
 ## 821 Lawn Way — Building 100, Bottom Floor
 
 Added from *FLOOR PLAN – BOTTOM FLOOR, 821 Lawn Way, Red Bluff, CA (Approximate

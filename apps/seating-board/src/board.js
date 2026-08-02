@@ -128,7 +128,11 @@ export function mountBoard(container, hooks) {
     var hit = null;
     allRooms().forEach(function (x) { if (x.room.id === id) hit = x.room; });
     if (!hit) return "";
-    return hit.code !== "—" ? hit.code : hit.name;
+    /* Circulation carries an internal key rather than a room number, and it is
+       never drawn. Showing it on a chip would leak a code the plan doesn't
+       have, so a mis-drop reads as "Hallway" instead of "C01". */
+    if (hit.circ || hit.code === "—") return hit.name;
+    return hit.code;
   }
   function px(ft) { return Math.round(ft * state.ppf); }
 
@@ -289,6 +293,27 @@ export function mountBoard(container, hooks) {
     return order;
   }
 
+  /* An L is drawn as a bounding box with another room painted over its corner,
+     so the covering room hides whatever is under it — the seat stepper, and any
+     chip that scrolls down that far. Measure how far the cover reaches in from
+     this card's top and bottom edges and keep those bands clear, so the content
+     sits in the part of the L you can actually see. Measured off the boxes
+     rather than declared on the room, so it survives a change of rotateDeg. A
+     cover on the left or right needs nothing: the head and foot are full-width
+     rows and stay legible beside it. */
+  function notchInset(items, i) {
+    var r = items[i], top = 0, bottom = 0;
+    for (var j = i + 1; j < items.length; j++) {
+      var o = items[j];
+      if (o.kind !== "room") continue;
+      if (Math.min(r.xFt + r.wFt, o.xFt + o.wFt) - Math.max(r.xFt, o.xFt) <= 0) continue;
+      if (Math.min(r.yFt + r.hFt, o.yFt + o.hFt) - Math.max(r.yFt, o.yFt) <= 0) continue;
+      if (o.yFt <= r.yFt) top = Math.max(top, o.yFt + o.hFt - r.yFt);
+      if (o.yFt + o.hFt >= r.yFt + r.hFt) bottom = Math.max(bottom, r.yFt + r.hFt - o.yFt);
+    }
+    return { top: top, bottom: bottom };
+  }
+
   /* A floor whose rooms carry their own x/y/w/h, drawn on a positioned canvas
      rather than as a single strip. Used for real 2-D footprints — L-shaped
      wings, interior rooms, varying depths — which the strip model can't hold. */
@@ -319,8 +344,8 @@ export function mountBoard(container, hooks) {
     cv.className = "plan-canvas" + (g.approx ? " approx" : "");
     cv.style.width = px(g.widthFt) + "px";
     cv.style.height = px(g.heightFt) + "px";
-    g.items.forEach(function (it) {
-      if (it.kind === "room") cv.appendChild(roomCard(it, it.wFt, it.hFt, true));
+    g.items.forEach(function (it, i) {
+      if (it.kind === "room") cv.appendChild(roomCard(it, it.wFt, it.hFt, true, notchInset(g.items, i)));
     });
     wrap.appendChild(cv);
 
@@ -538,7 +563,7 @@ export function mountBoard(container, hooks) {
 
   /* Strip mode passes the floor depth as the box height. Plan mode passes the
      room's own traced box and positions it absolutely. */
-  function roomCard(r, boxW, boxH, absolute) {
+  function roomCard(r, boxW, boxH, absolute, inset) {
     var card = document.createElement("div");
     var occ = occupants(r.id);
     var cls = "room";
@@ -559,6 +584,8 @@ export function mountBoard(container, hooks) {
       card.style.left = px(r.xFt) + "px";
       card.style.top = px(r.yFt) + "px";
     }
+    if (inset && inset.top) card.style.paddingTop = px(inset.top) + "px";
+    if (inset && inset.bottom) card.style.paddingBottom = px(inset.bottom) + "px";
     card.title = (r.code !== "—" ? r.code + " " : "") + r.name +
                  (r.sf ? " · " + r.sf + " sf" : "") + (r.sub ? " · " + r.sub : "");
 

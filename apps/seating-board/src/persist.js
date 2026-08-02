@@ -31,7 +31,17 @@ function reshape(storedGroup, def) {
   var out = JSON.parse(JSON.stringify(def));
   out.items = out.items.map(function (it) {
     if (it.kind !== "room") return it;
+    /* Match on the current code first, then on the code(s) the definition says
+       this room used to carry. Codes are the only handle a stored room has, so
+       a revision that renumbers has to say what became what — otherwise every
+       room reads as new and every assignment to it is orphaned. A list, because
+       a merge has several predecessors; the first match wins and the rest are
+       dropped, which is the same thing the merge did to the rooms. */
     var was = prev[it.code];
+    if (!was && it.was) {
+      var names = [].concat(it.was);
+      for (var k = 0; k < names.length && !was; k++) was = prev[names[k]];
+    }
     if (was) {
       /* Id always carries, so assignments keep resolving. Seat count only
          carries while the room is still the same KIND of room — if the

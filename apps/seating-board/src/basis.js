@@ -93,9 +93,10 @@ export const BASIS = [
    What that means in practice:
      - Room positions and sizes are APPROXIMATE. Adjacency and rough
        proportion are meaningful; individual dimensions are not.
-     - Room codes are trace placeholders (T01..), not real room numbers.
-       Inventing numbers that might collide with a real scheme would be
-       worse than obviously-fake ones. Rename from the real plan.
+     - Room codes are placeholders (U01..), not real room numbers. Inventing
+       numbers that might collide with a real scheme would be worse than
+       obviously-fake ones — and 201.. is already taken on this board, by
+       B100's second floor. Renumber from the real plan when it arrives.
      - Every room carries est:true, so the whole floor draws dashed —
        the board's existing signal for "this dimension is inferred".
      - The overall envelope is anchored to the ~361 m² (~3,890 sf) figure
@@ -133,10 +134,11 @@ export const TRACED = {
      or 270 the drawn canvas swaps to heightFt x widthFt. */
   widthFt: 85,
   heightFt: 64,
-  rotateDeg: 90,
+  rotateDeg: 180,
   /* Bump whenever the traced geometry changes. On load, a stored copy with a
      lower geomRev is rebuilt from this definition, carrying over each room's
-     id (so existing assignments survive) and seat count, matched by code.
+     id (so existing assignments survive) and seat count, matched by code — or
+     by the room's `was` code, for a rev that renames.
      rev 2 = rotated 90 CW, and Living Room 2 + Office 5 merged into T17.
      rev 3 = reapplies rev 2 now that seat counts only carry across when the
      room type is unchanged; T17 went support -> office, so it needed its
@@ -146,58 +148,75 @@ export const TRACED = {
      rev 5 = Alex's first naming pass. Merges (T14+T16, T10+T06+T07,
      T02+T03+T04 as an L around T01), the T17 open area split into three
      offices, and hallways/stair/server/storage/second bathroom reclassified.
-     T03, T04, T07, T10, T16 and T17 no longer exist as codes. */
-  geomRev: 5,
+     T03, T04, T07, T10, T16 and T17 no longer exist as codes.
+     rev 6 = Alex's second pass, and the whole T-series is retired for a
+     gap-free U01-U18. A further 90 CW (rotateDeg 90 -> 180) puts the floor
+     landscape. Everything Alex placed by eye was described in the orientation
+     he was looking at — the 64' x 85' portrait — so the edits below were
+     worked there and mapped back: the T17 offices onto the cubicle grid, the
+     accounting desks to the far corner of their L, kitchen + right hallway
+     into one unnumbered space, and the left hallway run from the office at
+     the top to the bottom wall, absorbing T27. */
+  geomRev: 6,
   items: [
-    /* ---- accounting block (drawn as T01-T04, really one office of five) ----
-       T02 is the L: the 2x2 block minus T01's corner. The renderer has no
-       L-shape primitive, so T02 is the full bounding box drawn FIRST and T01
-       is drawn over its corner — paint order carves the notch, and clicks in
-       that corner land on T01 because it sits on top. sfOverride is the real
-       L area, since the bounding box overstates it by T01's 81 sf.
-       Item order matters here; do not sort this list. */
-    T("T02", "Accounting — open", 67, 1, 17, 18, "office", 3,
-      { sfOverride: 225, forceCap: true,
-        sub: "L-shaped, wraps T01 — was drawn as T02 + T03 + T04" }),
-    T("T01", "Accounting — 2 desks", 67, 1, 9, 9, "office", 2,
-      { sub: "Kept subdivision inside the accounting office" }),
-    T("T05", "Stair", 58, 13, 8, 7, "support", 0, { circ: true }),
+    /* ---- circulation ----
+       Codes here are internal keys for the migration only. Circulation carries
+       no room number on the drawing, deliberately: a hallway with a code
+       invites someone to name and fill it. */
+    T("C01", "Hallway", 16, 57, 69, 6, "support", 0,
+      { circ: true, was: ["T20", "T27"],
+        sub: "Runs the length of the floor to U16 — absorbs the old T20 and T27" }),
+    /* The kitchen opens onto the corridor rather than closing off from it, so
+       the two are one space and it takes no number. The 4' the old T08 and T09
+       left between them was the wall that isn't there. */
+    T("C02", "Kitchen / Hallway", 24, 21, 59, 10, "support", 0,
+      { circ: true, was: ["T08", "T09"] }),
+    T("C03", "Stair", 58, 13, 8, 7, "support", 0, { circ: true, was: "T05" }),
 
-    /* ---- top band: two offices and the server room ----
-       The image drew this band as seven rooms. It is really two offices with
-       the server room between them. T07's divider ran perpendicular to every
-       other wall in the band; squaring it up is what lets T06 read as one
-       room, so T07's old protrusion is absorbed rather than kept. */
-    T("T06", "Office", 2, 21, 14, 19, "office", 2,
-      { sub: "Was drawn as Living Room 1 + T06 + T07" }),
-    T("T08", "Kitchen", 24, 21, 16, 10, "support", 0),
-    T("T09", "Hallway", 44, 21, 39, 10, "support", 0, { circ: true }),
-    T("T11", "Cubicles", 17, 32, 12, 8),
-    T("T12", "Server Room", 2, 41, 14, 7, "support", 0,
-      { sub: "Labelled for reference — not occupied" }),
-    T("T13", "Cubicles", 17, 41, 12, 7),
-    T("T14", "Office", 2, 49, 14, 14, "office", 2, { sub: "Was drawn as T14 + T16" }),
-    T("T15", "Cubicles", 17, 49, 12, 7),
+    /* ---- first column: three offices, then the accounting block ---- */
+    T("U01", "Office", 73, 50, 10, 7, "office", 2, { was: "T26" }),
+    T("U02", "Office", 73, 42, 10, 7, "office", 2, { was: "T24" }),
+    T("U03", "Office", 73, 32, 10, 9, "office", 2, { was: "T22" }),
+    /* The accounting L has no primitive. U04 is its bounding box drawn FIRST
+       and U05 paints over the corner, so paint order carves the notch and
+       clicks in that corner land on U05 because it sits on top. Item order
+       matters here; do not sort this list. sfOverride is the real L area,
+       since the bounding box overstates it by U05's 81 sf. */
+    T("U04", "Accounting — open", 67, 1, 17, 18, "office", 4,
+      { sfOverride: 225, forceCap: true, was: "T02",
+        sub: "L-shaped, wraps U05 — was drawn as three rooms" }),
+    T("U05", "Accounting — 2 desks", 75, 1, 9, 9, "office", 2,
+      { was: "T01", sub: "Kept subdivision inside the accounting office" }),
 
-    /* ---- centre ----
-       What the image drew as "Living Room 2 + Office 5" is three two-person
-       offices, not one open area. The conference room runs the full depth of
-       those three and carries no office seats. */
-    T("T17A", "Office", 31, 45, 13, 7),
-    T("T17B", "Office", 31, 39, 13, 6),
-    T("T17C", "Office", 31, 32, 13, 7),
-    T("T18", "Conference Room", 45, 32, 18, 20, "support", 0,
-      { sub: "No office seats — extends the full width of T17A–C" }),
-    T("T20", "Hallway", 31, 53, 32, 10, "support", 0, { circ: true }),
+    /* ---- second column ---- */
+    T("U06", "Bathroom", 64, 50, 8, 7, "support", 0, { was: "T25" }),
+    T("U07", "Storage", 64, 42, 8, 7, "support", 0, { was: "T23" }),
+    T("U08", "Bathroom", 64, 32, 8, 9, "support", 0, { was: "T21" }),
 
-    /* ---- right zone ---- */
-    T("T21", "Bathroom", 64, 32, 8, 9, "support", 0),
-    T("T22", "Office", 73, 32, 10, 9),
-    T("T23", "Storage", 64, 42, 8, 7, "support", 0),
-    T("T24", "Office", 73, 42, 10, 7),
-    T("T25", "Bathroom", 64, 50, 8, 7, "support", 0),
-    T("T26", "Office", 73, 50, 10, 7),
-    T("T27", "Hallway", 73, 58, 10, 5, "support", 0, { circ: true }),
+    /* ---- third column ---- */
+    T("U09", "Conference Room", 45, 32, 18, 20, "support", 0,
+      { was: "T18", sub: "No office seats" }),
+
+    /* ---- fourth column: the offices, now on the cubicle grid ----
+       Each one takes the width and the run of the cubicle beside it, so the
+       two columns line up instead of straddling each other's walls. This is
+       also what frees the strip the hallway runs down. */
+    T("U10", "Office", 31, 49, 13, 7, "office", 2, { was: "T17A" }),
+    T("U11", "Office", 31, 41, 13, 7, "office", 2, { was: "T17B" }),
+    T("U12", "Office", 31, 32, 13, 8, "office", 2, { was: "T17C" }),
+
+    /* ---- fifth column: cubicles, which set the grid ---- */
+    T("U13", "Cubicles", 17, 49, 12, 7, "office", 2, { was: "T15" }),
+    T("U14", "Cubicles", 17, 41, 12, 7, "office", 2, { was: "T13" }),
+    T("U15", "Cubicles", 17, 32, 12, 8, "office", 2, { was: "T11" }),
+
+    /* ---- sixth column ---- */
+    T("U16", "Office", 2, 49, 14, 14, "office", 2,
+      { was: "T14", sub: "Was drawn as two rooms" }),
+    T("U17", "Server Room", 2, 41, 14, 7, "support", 0,
+      { was: "T12", sub: "Labelled for reference — not occupied" }),
+    T("U18", "Office", 2, 21, 14, 19, "office", 2,
+      { was: "T06", sub: "Was drawn as three rooms" }),
   ],
 };
 
@@ -361,6 +380,10 @@ export function buildGroups(nextId) {
           room.open = !!it.open;
           room.circ = !!it.circ;
           if (it.forceCap) room.forceCap = true;
+          /* The code this room used to carry. Without it a renumbering pass
+             would look like 18 new rooms to the migration, every id would be
+             reminted, and every existing assignment would point at nothing. */
+          if (it.was) room.was = it.was;
         } else {
           room.widthFt = it.widthFt || (it.sf ? it.sf / depth : depth);
         }
