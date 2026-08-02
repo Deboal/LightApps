@@ -50,35 +50,68 @@ const setQty = (id, qty) => {
 // ---------------------------------------------------------------------------
 // Views
 // ---------------------------------------------------------------------------
+const DOT = { added: "✓", failed: "✕", blocked: "✕" };
+const TONE = { added: "ok", failed: "bad", blocked: "bad" };
+
+async function copyDiagnostics(run) {
+  const { debug } = await chrome.storage.local.get("debug");
+  const text = [
+    `vitamin-reorder run ${run.startedAt || ""}`,
+    `results:`,
+    ...(run.results || []).map((r) =>
+      `  ${r.status} — ${r.name}${r.detail ? ` — ${r.detail}` : ""}` +
+      (r.page ? `\n      page: ${r.page.title} | matched=${r.page.matched} | ${r.page.url}` : "")),
+    run.error ? `error: ${run.error}` : "",
+    `trail:`,
+    ...(debug || []).map((l) => `  ${l}`),
+  ].filter(Boolean).join("\n");
+  await navigator.clipboard.writeText(text);
+}
+
 function runPanel(run) {
   const results = run.results || [];
   const done = !run.active;
   const added = results.filter((r) => r.status === "added").length;
   const flagged = results.filter((r) => r.status !== "added");
+  const blocked = run.stopped === "botcheck";
 
-  return el("div", { class: `panel${done ? " done" : ""}` },
+  let headline;
+  if (!done) headline = run.current || "Starting…";
+  else if (blocked) headline = "Amazon showed a bot check";
+  else headline = `${added} added${flagged.length ? `, ${flagged.length} need${flagged.length === 1 ? "s" : ""} a look` : ""}`;
+
+  return el("div", { class: `panel${done && !blocked ? " done" : ""}` },
     el("div", { class: "kicker" },
-      done ? "RUN COMPLETE" : `ADDING ${Math.min(run.index + 1, run.total)} OF ${run.total}`),
-    el("div", { style: "font-size:16px;font-weight:750;margin-top:5px;letter-spacing:-.01em" },
-      done
-        ? `${added} added${flagged.length ? `, ${flagged.length} need${flagged.length === 1 ? "s" : ""} a look` : ""}`
-        : (run.current || "Starting…")),
+      done ? (blocked ? "RUN STOPPED" : "RUN COMPLETE") : `ADDING ${Math.min(run.index + 1, run.total)} OF ${run.total}`),
+    el("div", { style: "font-size:16px;font-weight:750;margin-top:5px;letter-spacing:-.01em" }, headline),
+    blocked
+      ? el("div", { class: "foot", style: "margin:6px 0 2px" },
+          "It stopped rather than keep tripping the check. Switch to the tab it opened, " +
+          "clear the challenge, then run again — a smaller batch usually goes through.")
+      : null,
     el("div", { class: "progress" },
       Array.from({ length: run.total }, (_, n) =>
         el("div", { class: `tick${n < results.length ? " done" : n === run.index && run.active ? " now" : ""}` }))),
     ...results.map((r) =>
       el("div", { class: "res" },
-        el("span", { class: `dot ${r.status === "added" ? "ok" : r.status === "failed" ? "bad" : "warn"}` },
-          r.status === "added" ? "✓" : r.status === "failed" ? "✕" : "!"),
+        el("span", { class: `dot ${TONE[r.status] || "warn"}` }, DOT[r.status] || "!"),
         el("div", { class: "rname" },
           r.name,
           r.detail ? el("div", { class: "rdetail" }, r.detail) : null))),
     run.error ? el("div", { class: "rdetail bad", style: "margin-top:8px" }, run.error) : null,
     done
-      ? el("button", {
-          class: "cta",
-          onclick: () => chrome.storage.local.remove("run").then(() => save({ run: null })),
-        }, "Back to the list")
+      ? el("div", { style: "display:flex;gap:6px;margin-top:10px" },
+          el("button", {
+            class: "cta", style: "margin-top:0",
+            onclick: () => chrome.storage.local.remove("run").then(() => save({ run: null })),
+          }, "Back to the list"),
+          el("button", {
+            class: "ghost",
+            onclick: async (e) => {
+              await copyDiagnostics(run);
+              e.target.textContent = "Copied";
+            },
+          }, "Copy diagnostics"))
       : el("div", { class: "foot" },
           "Working in a background tab. You can close this popup — it keeps going."),
   );
