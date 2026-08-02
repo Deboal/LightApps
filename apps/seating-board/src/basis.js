@@ -203,6 +203,109 @@ export const TRACED = {
 
 BASIS.push(TRACED);
 
+/* ============= 821 LAWN WAY — BUILDING 100, BOTTOM FLOOR =============
+   Source: "FLOOR PLAN – BOTTOM FLOOR / 821 Lawn Way, Red Bluff, CA
+   (Approximate Layout)", drawn at 1/8" = 1'-0" and carrying its own note:
+   "All dimensions are approximate. Not for construction."
+
+   Unlike the traced floor above, this one IS dimensioned. Every room but the
+   locked office comes from the plan's two ROOM DIMENSIONS tables, read as
+   width x depth — the reading the plan corroborates twice over (see the
+   closures below). Positions come from the drawn adjacency and are
+   approximate; the sizes are not guessed. Rooms still carry est:true and the
+   group is approx:true, because the plan itself declines to be authoritative.
+
+   Two places the plan does not close, both left visible rather than smoothed:
+
+     - The top dimension string reads 31'-6" + 6'-0" + 29'-0" + 28'-0" +
+       24'-0" + 12'-0" = 130'-6" against a stated 131'-0" overall. The room
+       widths back the split rather than the total: the left block closes
+       exactly on 66'-6" (9'-6" + 9'-6" + 6'-0" + 11'-6" + 10'-6" + 19'-6")
+       and the right block on 64'-0" (28 + 24 + 12).
+
+     - The right-hand depth string reads 36'-0", but the tabulated depths
+       stacked down that side need 44'-6" — 11'-6" + 13'-6" + 6'-0" + 11'-6"
+       on the far column, 13'-6" + 17'-6" + 13'-6" in the column beside it.
+       The rooms are drawn at their tabulated depths and the envelope follows
+       them, so the 8'-6" disagreement stays on the drawing instead of being
+       absorbed into a room nobody measured.
+
+   Codes are placeholders, as on the traced floor. L.. is the plan's left-hand
+   room-dimension table, R.. the right-hand one. They are page-relative, NOT
+   compass directions: the plan carries no north arrow and this board does not
+   invent one — see the B100 open items.
+
+   Two labelling faults in the plan, resolved here and worth raising with
+   whoever drew it:
+     - Office 1, 2 and 3 appear in BOTH tables as different rooms. Hence L/R.
+     - Two rooms are labelled "Dining Room 1". The dimension table names the
+       lower one Dining Room 2 at 18'-0" x 13'-6", which is what is used.
+
+   The bottom-left corner below Filing is drawn with furniture but is not
+   labelled or tabulated, so it is left as blank floor rather than invented.
+===================================================================== */
+export const LAWN_WAY_BOTTOM = {
+  id: "b100-lawnway-bottom",
+  site: "821 Lawn Way, Red Bluff, CA",
+  building: "Building 100",
+  floor: "Bottom Floor",
+  note: "Dimensioned from the plan tables — plan marks all dimensions approximate",
+  layout: "plan",
+  approx: true,
+  /* Width per the plan's overall string. Height follows the tabulated room
+     depths, which overrun the plan's 36'-0" string by 8'-6". */
+  widthFt: 131,
+  heightFt: 44.5,
+  rotateDeg: 0,
+  approxLabel: "DIMENSIONS APPROXIMATE — PER THE PLAN'S OWN NOTE",
+  caveat: "(sizes are the plan's own room tables, but the plan marks every " +
+          "dimension approximate and its 36'-0\" depth string does not close " +
+          "against them; room codes are placeholders)",
+  geomRev: 1,
+  items: [
+    /* ---- left block — the plan's first ROOM DIMENSIONS table ----
+       Top band is 11'-6" deep and closes across the block at 66'-6". */
+    T("L01", "Office 2", 0, 0, 9.5, 11.5, "office", 2),
+    T("L02", "Office 1", 9.5, 0, 9.5, 11.5, "office", 2),
+    T("L03", "Office (locked)", 19, 0, 6, 11.5, "office", 1,
+      { sub: "“Locked when scanned” on the plan — the one room with no tabulated size" }),
+    T("L04", "Office 3", 25, 0, 11.5, 11.5, "office", 2),
+    T("L05", "Office 4", 36.5, 0, 10.5, 11.5, "office", 2),
+    /* 23'-6" deep — it is the kitchen that sets the left block's depth. */
+    T("L06", "Kitchen / Break Room", 47, 0, 19.5, 23.5, "support", 0),
+    T("L07", "Filing", 0, 11.5, 21.5, 6, "support", 0),
+    T("L08", "Open Office 4", 21.5, 13.5, 15.5, 10, "office", 4,
+      { sub: "Bottom-aligned to the block. Four workstations drawn — the seat count follows the desks" }),
+
+    /* ---- right block — the plan's second ROOM DIMENSIONS table ---- */
+    T("R01", "Reception", 67, 0, 28, 23.5, "office", 4,
+      { sub: "“Reception — 4 Desks” on the plan" }),
+    T("R02", "Office 2", 95, 0, 11.5, 13.5, "office", 2),
+    /* 57 sf. The gap to its left is the unlabelled closet/hall on the plan. */
+    T("R03", "Office 1", 113, 0, 6, 9.5, "office", 1),
+    T("R04", "Office 3", 119, 0, 12, 11.5, "office", 2),
+    T("R05", "Living Room 1", 95, 13.5, 24, 17.5, "office", 2,
+      { sub: "Two “1 Desk” call-outs on the plan" }),
+    T("R06", "Dining Room 1", 119, 11.5, 12, 13.5, "support", 0,
+      { sub: "Table and chairs drawn — no desks, so no seats" }),
+    T("R07", "Office 5", 119, 25, 12, 6, "office", 1),
+    T("R08", "Office (two desks)", 119, 31, 12, 11.5, "office", 2,
+      { sub: "Plan label: “1 Office with Two Desks”" }),
+    T("R09", "Dining Room 2", 95, 31, 18, 13.5, "support", 0,
+      { sub: "Drawn as a second “Dining Room 1”; the dimension table names it Dining Room 2" }),
+
+    /* ---- the bump-out below the left block ----
+       Bathroom 1 + Bathroom 2 stack to 15'-6", exactly Office 6's depth
+       beside them, which is what fixes this group's position. */
+    T("R10", "Bathroom 1", 63.5, 23.5, 6.5, 9.5, "support", 0),
+    T("R11", "Bathroom 2", 63.5, 33, 6.5, 6, "support", 0),
+    T("R12", "Office 6", 70, 23.5, 6.5, 15.5, "office", 1,
+      { sub: "100 sf and 6'-6\" wide — one desk" }),
+  ],
+};
+
+BASIS.push(LAWN_WAY_BOTTOM);
+
 /* Expand the terse basis into the runtime shape (ids, derived widths). */
 export function buildGroups(nextId) {
   return BASIS.map(function (g) {
@@ -226,6 +329,11 @@ export function buildGroups(nextId) {
       heightFt: turned ? envW : envH,
       rotateDeg: deg,
       geomRev: g.geomRev || 0,
+      /* Both default to the traced floor's wording, which was the only kind of
+         approximate floor when the flag was introduced. A floor that is
+         dimensioned but declared approximate says so in its own words. */
+      approxLabel: g.approxLabel || "",
+      caveat: g.caveat || "",
       hangarLabel: g.hangarLabel || "",
       items: g.items.map(function (it) {
         if (it.kind !== "room") return JSON.parse(JSON.stringify(it));

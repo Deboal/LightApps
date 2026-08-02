@@ -345,8 +345,11 @@ export function mountBoard(container, hooks) {
     var ov = document.createElement("div");
     ov.className = "overall";
     ov.style.width = px(g.widthFt) + "px";
+    /* Why a floor is approximate differs per floor — one is traced by eye, one
+       is dimensioned by a plan that declines to be authoritative — so the
+       caveat is the group's to word. */
     ov.textContent = (g.approx ? "≈ " : "") + ftIn(g.widthFt) + " × " + ftIn(g.heightFt) +
-      (g.approx ? "  ·  TRACED, NOT DIMENSIONED" : "");
+      (g.approx ? "  ·  " + (g.approxLabel || "TRACED, NOT DIMENSIONED") : "");
     wrap.appendChild(ov);
     return wrap;
   }
@@ -365,6 +368,15 @@ export function mountBoard(container, hooks) {
     canvas.style.width = px(widest) + 160 + "px";
 
     buildingsOf(state.groups).forEach(function (b) {
+      /* Buildings are keyed by site, so with more than one address on the board
+         the floor bands alone no longer say where you are. Printed once per
+         building rather than per floor, so B100's two floors don't repeat it. */
+      if (b.site) {
+        var sh = document.createElement("div");
+        sh.className = "eyebrow site-head";
+        sh.textContent = b.site;
+        canvas.appendChild(sh);
+      }
       /* Plan-mode floors are drawn on their own positioned canvas and have no
          corridor band, stair enclosures or overall dimension string. */
       b.groups.filter(function (g) { return g.layout === "plan"; })
@@ -490,7 +502,9 @@ export function mountBoard(container, hooks) {
           Math.round(a).toLocaleString() + " sf of rooms drawn inside a " +
           ftIn(g.widthFt) + " × " + ftIn(g.heightFt) + " envelope" +
           (g.approx
-            ? ' <span style="color:var(--flag)">(traced from an image — every dimension approximate, room codes are placeholders)</span>'
+            ? ' <span style="color:var(--flag)">' +
+              (g.caveat || "(traced from an image — every dimension approximate, room codes are placeholders)") +
+              "</span>"
             : "") + "</li>";
       }
       var stairFt = g.stairFt || 7.67;
@@ -818,6 +832,7 @@ export function mountBoard(container, hooks) {
         id: g.id, site: g.site || "", building: g.building, floor: g.floor, note: g.note || "",
         layout: plan ? "plan" : "strip", approx: !!g.approx,
         rotateDeg: g.rotateDeg || 0, geomRev: g.geomRev || 0,
+        approxLabel: g.approxLabel || "", caveat: g.caveat || "",
         depthFt: depth, overallFt: g.overallFt || 145, stairFt: g.stairFt || 7.67,
         widthFt: g.widthFt || 0, heightFt: g.heightFt || 0,
         hangarLabel: g.hangarLabel || "",
