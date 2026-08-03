@@ -288,7 +288,7 @@ export const LAWN_WAY_BOTTOM = {
   caveat: "(sizes are the plan's own room tables, but the plan marks every " +
           "dimension approximate and its 36'-0\" depth string does not close " +
           "against them; room codes are placeholders)",
-  geomRev: 3,
+  geomRev: 4,
   items: [
     /* ---- left block — the plan's first ROOM DIMENSIONS table ----
        Top band is 11'-6" deep and closes across the block at 66'-6". */
@@ -313,8 +313,8 @@ export const LAWN_WAY_BOTTOM = {
     T("R04", "Office", 119, 0, 12, 11.5, "office", 2, { sub: "Office 3 on the plan" }),
     T("R05", "Inter-office space", 95, 13.5, 24, 17.5, "office", 2,
       { sub: "Living Room 1 on the plan; two “1 Desk” call-outs" }),
-    T("R06", "Dining Room 1", 119, 11.5, 12, 13.5, "support", 0,
-      { sub: "Table and chairs drawn — no desks, so no seats" }),
+    T("R06", "Office", 119, 11.5, 12, 13.5, "office", 2,
+      { sub: "Dining Room 1 on the plan, drawn with a table and chairs" }),
     /* A hallway now, so it carries no number and no seat stepper. */
     T("R07", "Hallway", 119, 25, 12, 6, "support", 0,
       { circ: true, sub: "Office 5 on the plan" }),
