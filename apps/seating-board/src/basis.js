@@ -157,7 +157,7 @@ export const TRACED = {
      accounting desks to the far corner of their L, kitchen + right hallway
      into one unnumbered space, and the left hallway run from the office at
      the top to the bottom wall, absorbing T27. */
-  geomRev: 7,
+  geomRev: 8,
   items: [
     /* ---- circulation ----
        Codes here are internal keys for the migration only. Circulation carries
@@ -190,7 +190,7 @@ export const TRACED = {
     T("U04", "Accounting — open", 67, 1, 17, 18, "office", 4,
       { sfOverride: 225, forceCap: true, was: "T02",
         sub: "L-shaped, wraps U05 — was drawn as three rooms" }),
-    T("U05", "Accounting — 2 desks", 75, 10, 9, 9, "office", 2,
+    T("U05", "Accounting — 2 desks", 67, 10, 9, 9, "office", 2,
       { was: "T01", sub: "Kept subdivision inside the accounting office" }),
 
     /* ---- second column ---- */
