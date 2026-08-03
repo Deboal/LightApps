@@ -113,7 +113,7 @@ have to be mapped back to as-traced coordinates before they go in the file.
 ## 821 Lawn Way — Building 100, Bottom Floor
 
 Added from *FLOOR PLAN – BOTTOM FLOOR, 821 Lawn Way, Red Bluff, CA (Approximate
-Layout)*, 1/8" = 1'-0". **19 numbered spaces + 1 circulation area, 29 seats**
+Layout)*, 1/8" = 1'-0". **18 numbered spaces + 2 circulation areas, 30 seats**
 inside a 131'-0" × 44'-6" envelope.
 
 This floor sits between B100 and the traced upper floor in how much it can be
@@ -149,7 +149,8 @@ Two faults in the plan, resolved here and worth raising with whoever drew it:
 1. **Office 1, 2 and 3 each appear twice**, as different rooms in the two
    tables. That is what the L/R codes are for.
 2. **Two rooms are labelled "Dining Room 1."** The dimension table names the
-   lower one Dining Room 2 at 18'-0" × 13'-6", which is what is drawn.
+   lower one Dining Room 2 at 18'-0" × 13'-6". Both are offices now, so the
+   clash no longer reaches the board — but it is still a fault in the sheet.
 
 ### Changes made against the plan
 
@@ -160,6 +161,7 @@ Alex's direction:
 |---|---|
 | Office names | The plan numbers offices in both tables, so `Office 1`/`2`/`3` each appear twice. Every generic office is now just **Office** — the `L`/`R` code is the identifier — and the plan's label survives in the room's tooltip. |
 | R05 | `Living Room 1` → **Inter-office space**. |
+| R06 | `Dining Room 1` → **Office**, reclassified from support to assignable. |
 | R09 | `Dining Room 2` → **Big Office**, and reclassified from support to an assignable office. Widened 18'-0" → 24'-0" so its far wall runs with R08's instead of stopping 6' short. |
 | R07 | `Office 5` → a **hallway**: circulation, so no number, no seats and no seat stepper. |
 | R12 | `Office 6` → a **hallway**, same treatment. |
