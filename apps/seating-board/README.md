@@ -162,6 +162,7 @@ Alex's direction:
 | R05 | `Living Room 1` → **Inter-office space**. |
 | R09 | `Dining Room 2` → **Big Office**, and reclassified from support to an assignable office. Widened 18'-0" → 24'-0" so its far wall runs with R08's instead of stopping 6' short. |
 | R07 | `Office 5` → a **hallway**: circulation, so no number, no seats and no seat stepper. |
+| R12 | `Office 6` → a **hallway**, same treatment. |
 
 Seat counts follow the desks the plan calls out — Reception 4, "1 Office with
 Two Desks" 2, Living Room 1 two ("1 Desk" twice), Open Office 4 four. Rooms too
@@ -247,6 +248,34 @@ Because there's no signed-in identity, the `by` field on an assignment comes
 from a name the user sets via the **Who am I?** button, kept in `localStorage`.
 It's a courtesy label so changes are readable later — nothing verifies it, and
 it is not a credential. Rows written anonymously have a null `owner`.
+
+## Room and person ids
+
+`occupants()` matches people to rooms **by id alone**, so two rooms holding one
+id are one room as far as the board is concerned: each renders the other's
+people, and a name appears to be in two places at once.
+
+That was reachable. Ids came from a plain counter, and `load()` calls
+`defaultGroups()` — which mints ids for any room a new release added — *before*
+the counter has ever seen the server's ids. Stored ids don't run 1..N either;
+each floor folded in over time was minted from an already-bumped counter, so
+they reach far past the room count. The two ranges overlap, and a new room could
+be minted straight onto an id an existing room already held.
+
+Three things now hold the invariant:
+
+1. **`reserveIds(stored, people)` runs before `defaultGroups()`**, so nothing is
+   minted onto an id already in use.
+2. **Ids carry a per-session random suffix.** The counter alone is only unique
+   within one browser — two people adding a name at the same moment on a shared
+   board would otherwise mint the same `p`-id and one write would silently
+   overwrite the other.
+3. **Load repairs a layout where it already happened.** The room the stored
+   layout names for that id keeps it; the other is reminted and the layout
+   written back. Where the stored layout is too corrupted to say which room
+   owned the id, the tie-break is arbitrary — the guarantee is that each person
+   lands in exactly one room, not that it's the right one. The console names
+   what moved.
 
 ## Persistence
 

@@ -103,8 +103,15 @@ export function mountBoard(container, hooks) {
   container.innerHTML = MARKUP;
   function $(name) { return container.querySelector('[data-el="' + name + '"]'); }
 
+  /* Ids have to be unique across BROWSERS, not just within this one. The
+     counter alone isn't: two people adding a name at the same moment both mint
+     the same p-id and one write silently overwrites the other, and a room added
+     by a new release is minted before the counter has ever seen the server's
+     ids. The counter keeps ids ordered and readable; the per-session suffix is
+     what makes them unique. */
   var uid = 0;
-  function nextId(p) { uid += 1; return p + uid; }
+  var seed = Math.random().toString(36).slice(2, 6);
+  function nextId(p) { uid += 1; return p + uid + seed; }
 
   var state = {
     /* 14, not 11. At 11 a 7'-deep office is 77px and the head and foot leave
@@ -917,14 +924,23 @@ export function mountBoard(container, hooks) {
     });
   }
 
-  function bumpUid() {
+  function bumpUid() { reserveIds(state.groups, state.people); }
+
+  /* Push the counter past every id in the given data, so nothing minted after
+     this can land on one already in use. Must run BEFORE defaultGroups() on a
+     load, not only after: rooms for a newly shipped floor are minted during the
+     load, and until the counter has seen the server's ids it can hand one of
+     them out twice. Two rooms sharing an id show each other's people. */
+  function reserveIds(groups, people) {
     var max = 0;
     function scan(id) {
-      var m = /^[rp](\d+)$/.exec(id || "");
+      var m = /^[rp](\d+)/.exec(id || "");
       if (m) max = Math.max(max, parseInt(m[1], 10));
     }
-    state.groups.forEach(function (g) { g.items.forEach(function (it) { if (it.kind === "room") scan(it.id); }); });
-    state.people.forEach(function (p) { scan(p.id); });
+    (groups || []).forEach(function (g) {
+      (g.items || []).forEach(function (it) { if (it.kind === "room") scan(it.id); });
+    });
+    (people || []).forEach(function (p) { scan(p.id); });
     if (max > uid) uid = max;
   }
 
@@ -951,6 +967,8 @@ export function mountBoard(container, hooks) {
     setSync: setSync,
     setHeader: setHeader,
     defaultGroups: function () { return buildGroups(nextId); },
+    reserveIds: reserveIds,
+    mintRoomId: function () { return nextId("r"); },
     destroy: function () {
       document.removeEventListener("keydown", onKeydown);
       container.innerHTML = "";

@@ -145,6 +145,12 @@ export function createSync(opts) {
     if (!stored) {
       groups = board.defaultGroups();
     } else {
+      /* Before minting anything. defaultGroups() hands out ids from a counter
+         that has never seen the server's, and a floor gains rooms between
+         releases — so a new room could be minted straight onto an id an
+         existing room already holds. Two rooms with one id are one room as far
+         as occupants() is concerned: each shows the other's people. */
+      board.reserveIds(stored, people);
       var defs = board.defaultGroups();
       var defById = {};
       defs.forEach(function (g) { defById[g.id] = g; });
@@ -166,6 +172,38 @@ export function createSync(opts) {
       stored.forEach(function (g) { have[g.id] = true; });
       migrated = defs.filter(function (g) { return !have[g.id]; });
       if (migrated.length) groups = groups.concat(migrated);
+    }
+
+    /* Repair a board that already has two rooms on one id — reserving ids stops
+       it happening again but does nothing for a layout where it already did.
+       The room that keeps the id is the one the stored layout says owns it,
+       matched by code; the impostor is reminted, so the people stay where they
+       actually are instead of following whichever card drew last. */
+    var storedCode = {};
+    (stored || []).forEach(function (g) {
+      (g.items || []).forEach(function (it) { if (it.kind === "room") storedCode[it.id] = it.code; });
+    });
+    var claimed = {}, impostors = [], repaired = [];
+    groups.forEach(function (g) {
+      (g.items || []).forEach(function (it) {
+        if (it.kind !== "room") return;
+        if (!claimed[it.id]) { claimed[it.id] = it; return; }
+        /* Second one here. Whichever of the two the stored layout doesn't name
+           gives up the id; if neither matches, the later one does. */
+        var incumbent = claimed[it.id];
+        var loser = storedCode[it.id] === it.code && storedCode[it.id] !== incumbent.code ? incumbent : it;
+        if (loser === incumbent) claimed[it.id] = it;
+        impostors.push(loser);
+      });
+    });
+    impostors.forEach(function (it) {
+      var from = it.id;
+      it.id = board.mintRoomId();
+      repaired.push(it.code + " " + from + " -> " + it.id);
+    });
+    if (repaired.length) {
+      console.warn("[seating] " + repaired.length + " room(s) shared an id with another room " +
+                   "and showed each other's people; reassigned: " + repaired.join(", "));
     }
 
     /* Walk anyone whose room was merged away into the room that replaced it.
@@ -210,7 +248,7 @@ export function createSync(opts) {
     if (!layout) {
       await enqueue("seed layout", function () { return writeLayout(); });
       status("saved", "Saved " + clockTime());
-    } else if (migrated.length || regeom.length) {
+    } else if (migrated.length || regeom.length || repaired.length) {
       await enqueue("layout migration", function () { return writeLayout(); });
       if (moved.length) {
         await enqueue("assignment remap", async function () {
@@ -228,6 +266,7 @@ export function createSync(opts) {
           migrated.map(function (g) { return g.building + " " + g.floor; }).join(", "));
       }
       if (regeom.length) console.info("[seating] reshaped floor(s): " + regeom.join(", "));
+      if (repaired.length) console.info("[seating] duplicate room id(s) repaired and saved");
       status("saved", "Saved " + clockTime());
     } else {
       status("saved", "Loaded " + clockTime());
