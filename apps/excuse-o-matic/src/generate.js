@@ -29,13 +29,13 @@ export function fill(str, memo) {
   });
 }
 
-// Words that must keep their capital even mid-sentence: every proper noun that
-// can start an excuse body (names, weekdays, stores) plus the "I" forms.
-export const KEEP_CAPS = new Set(["I", "I'm", "I'd", "I'll", "I've", "Bible", "VBS", "AWANA", "AC", "FFA"]);
+// Openings that keep their capital even mid-sentence. Matched as PHRASES, not
+// bare words: "Tractor Supply" must stay capitalized while a body starting
+// "Tractor pull…" must not — checking only the first word confuses the two.
+export const KEEP_CAPS = new Set(["I", "I'm", "I'd", "I'll", "I've", "Bible", "VBS", "AWANA", "AC", "FFA", "AWANA's"]);
 for (const vals of Object.values(SLOTS)) {
   for (const v of vals) {
-    const first = v.split(" ")[0];
-    if (/^[A-Z]/.test(first)) KEEP_CAPS.add(first);
+    if (/^[A-Z]/.test(v)) KEEP_CAPS.add(v);
   }
 }
 
@@ -43,14 +43,22 @@ for (const vals of Object.values(SLOTS)) {
 // body, so the body's first word drops its capital — unless it's a proper noun.
 const RUNS_ON = /(?:[—,;-]|\b(?:because|but|so|and|since|that|if|when|while|until))$/i;
 
+function startsProper(body) {
+  for (const phrase of KEEP_CAPS) {
+    if (!body.startsWith(phrase)) continue;
+    // Must end on a word boundary so "Ruby" doesn't match inside "Rubycon".
+    const next = body.charAt(phrase.length);
+    if (next === "" || /[^\w]/.test(next) || next === "'") return true;
+  }
+  return false;
+}
+
 // Join fragments into one blob, fixing only the opener→body seam. Deliberately
 // not a global regex: mid-sentence commas ("Yes, I raised my hand") must survive.
 export function stitch(opener, body, kicker, promise) {
   let b = body;
-  const seam = opener.trim();
-  if (RUNS_ON.test(seam)) {
-    const word = b.split(/\s+/)[0].replace(/['’]s$/, "").replace(/[^\w'’]/g, "");
-    if (!KEEP_CAPS.has(word)) b = b.charAt(0).toLowerCase() + b.slice(1);
+  if (RUNS_ON.test(opener.trim()) && !startsProper(b)) {
+    b = b.charAt(0).toLowerCase() + b.slice(1);
   }
   return [opener, b, kicker, promise].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }

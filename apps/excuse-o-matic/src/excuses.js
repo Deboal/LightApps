@@ -1,32 +1,81 @@
-// The Excuse Library.
-//
-// Every excuse is { t, c, x } where:
-//   t = temperature 1..4  (1 airtight → 4 legendary)
-//   c = category key (see CATEGORIES)
-//   x = text, with {slots} filled at generation time
-//
-// Slots resolve ONCE per generated excuse, so {kid} is the same kid throughout.
-// Combined with openers, kickers and promises, the library generates well into
-// the tens of thousands of distinct excuses.
+// Excuse-O-Matic configuration: slots, taxonomies, and the fragments that wrap
+// an excuse body. The bodies themselves live in library.js.
 
+export { EXCUSES } from "./library.js";
+
+// Slot vocabularies. Keep these WIDE — a narrow list is what makes a generator
+// feel repetitive ("everything is a hamster, everything is the county line").
 export const SLOTS = {
   kid: ["Gavin", "Ruby", "Paisley"],
   daughter: ["Ruby", "Paisley"],
   son: ["Gavin"],
   wife: ["Lindsey"],
-  kids: ["the kids", "Gavin and Ruby", "Ruby and Paisley", "Gavin and Paisley", "all three kids", "the girls"],
-  day: ["Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"],
-  sport: ["baseball", "basketball", "soccer", "volleyball", "wrestling", "flag football", "softball", "track"],
-  animal: ["goat", "rabbit", "barn cat", "beagle", "hamster", "bearded dragon", "rooster", "pot-bellied pig", "corn snake", "guinea pig"],
-  church: ["church", "the church", "Wednesday night youth group", "the men's group", "small group"],
+  kids: [
+    "the kids", "Gavin and Ruby", "Ruby and Paisley", "Gavin and Paisley",
+    "all three kids", "the girls", "both girls", "the little ones",
+  ],
+  day: ["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Monday"],
+  sport: [
+    "baseball", "basketball", "soccer", "volleyball", "wrestling", "flag football",
+    "softball", "track", "cross country", "swim", "tennis", "golf", "cheer", "gymnastics",
+  ],
+  animal: [
+    "goat", "rabbit", "barn cat", "beagle", "hamster", "bearded dragon", "rooster",
+    "pot-bellied pig", "corn snake", "guinea pig", "duck", "turkey", "llama",
+    "miniature donkey", "ferret", "parakeet", "tortoise", "hedgehog", "pony",
+    "border collie", "steer", "lamb", "peacock", "chinchilla", "gecko", "cockatiel",
+    "basset hound", "milk cow", "emu", "coonhound",
+  ],
+  town: [
+    "two towns over", "clear around the lake", "up in the mountains",
+    "an hour up the highway", "clear across the state", "down in the valley",
+    "out by the reservoir", "over the pass", "three exits up", "past the grain elevator",
+    "clear across the river", "up a gravel road I've never been down",
+    "somewhere north of the state line", "out where the pavement ends",
+    "way out past the fairgrounds", "out past the last stoplight",
+    "forty minutes the wrong direction", "up at the lake house", "out in the sticks",
+    "out where there's no cell service", "over by the old mill",
+    "clear on the other end of the county",
+  ],
+  church: [
+    "church", "the church", "Wednesday night youth group", "the men's group",
+    "small group", "the church council", "our Sunday school class",
+  ],
+  far: [
+    "two towns over", "an hour", "forty minutes", "thirty miles", "a solid hour",
+    "twenty-five minutes", "clear across the county", "half an hour",
+  ],
+  store: [
+    "Hobby Lobby", "Tractor Supply", "Walmart", "Academy", "Costco", "Lowe's",
+    "the feed store", "the party store", "the hardware store", "the outlet mall",
+  ],
   relative: [
     "Lindsey's mom", "Lindsey's aunt", "my mother-in-law", "Lindsey's sister",
     "Lindsey's cousin", "Lindsey's grandma", "my father-in-law", "Lindsey's uncle",
+    "Lindsey's brother", "Lindsey's stepdad", "my sister-in-law", "Lindsey's godmother",
   ],
-  town: ["two towns over", "out past the county line", "the other side of the lake", "the next county", "an hour up the highway", "clear across the state"],
-  store: ["Hobby Lobby", "Tractor Supply", "the Walmart", "Academy", "the party store", "Costco"],
-  vehicle: ["the truck", "the Suburban", "Lindsey's van", "the old Silverado", "the minivan"],
-  hours: ["two hours", "three hours", "four hours", "most of the afternoon", "the entire morning"],
+  vehicle: [
+    "the truck", "the Suburban", "Lindsey's van", "the old Silverado", "the minivan",
+    "the flatbed", "the work truck", "the wagon",
+  ],
+  hours: [
+    "two hours", "three hours", "four hours", "most of the afternoon",
+    "the entire morning", "a solid six hours", "all day", "the better part of a day",
+  ],
+  weather: [
+    "a hailstorm", "an ice storm", "four inches of rain", "a wind advisory",
+    "a hard freeze", "a heat index of 108", "a tornado watch", "wildfire smoke",
+    "flash flooding", "a snow squall", "a derecho", "fog you could not see through",
+  ],
+  dish: [
+    "a brisket", "forty pounds of pulled pork", "six dozen cinnamon rolls",
+    "a turkey", "three pans of lasagna", "a whole hog", "eight pies",
+    "a batch of jam", "two hundred tamales", "a wedding cake", "a smoked salmon",
+  ],
+  tool: [
+    "the chainsaw", "the pressure washer", "the log splitter", "the welder",
+    "the post-hole digger", "the tiller", "the skid steer", "the come-along",
+  ],
 };
 
 export const CATEGORIES = [
@@ -38,6 +87,11 @@ export const CATEGORIES = [
   { key: "body", label: "Medical-ish", emoji: "🩹" },
   { key: "logistics", label: "Scheduling Chaos", emoji: "📅" },
   { key: "town", label: "Small Town Duty", emoji: "🚜" },
+  { key: "work", label: "Work & Side Hustle", emoji: "💼" },
+  { key: "weather", label: "Acts of God", emoji: "🌪️" },
+  { key: "food", label: "Food & Potluck", emoji: "🍖" },
+  { key: "tech", label: "Tech Trouble", emoji: "📱" },
+  { key: "vehicle", label: "Truck & Trailer", emoji: "🛻" },
 ];
 
 export const TEMPS = [
@@ -50,7 +104,7 @@ export const TEMPS = [
 export const CIRCUMSTANCES = [
   { key: "work", label: "Work thing", emoji: "💼" },
   { key: "guys", label: "Guys night", emoji: "🍗" },
-  { key: "golf", label: "Golf / round", emoji: "⛳" },
+  { key: "mountain", label: "Mountaineering trip", emoji: "🏔️" },
   { key: "help", label: "Helping you move", emoji: "📦" },
   { key: "dinner", label: "Dinner plans", emoji: "🍽️" },
   { key: "trip", label: "The trip", emoji: "🧳" },
@@ -60,6 +114,8 @@ export const CIRCUMSTANCES = [
   { key: "ghost", label: "Why he ghosted", emoji: "📵" },
   { key: "party", label: "The party", emoji: "🎉" },
   { key: "chores", label: "The favor you asked", emoji: "🙏" },
+  { key: "hunt", label: "Hunting / fishing", emoji: "🎣" },
+  { key: "game", label: "Watching the game", emoji: "📺" },
 ];
 
 // Circumstance-specific lead-ins. Temperature-agnostic on purpose — the body
@@ -72,6 +128,8 @@ export const OPENERS = {
     "Man, I've gotta burn a PTO day. Here's the deal:",
     "I'm not gonna make it in until at least noon.",
     "Tell them I'll dial in if I can, but",
+    "Put me down as remote today.",
+    "I need somebody to cover my morning.",
   ],
   guys: [
     "I'm out for tonight, brother. Genuinely gutted.",
@@ -80,13 +138,18 @@ export const OPENERS = {
     "Save me a seat next time. Tonight is cooked because",
     "I can't do wings tonight and it's killing me.",
     "Rain check on tonight —",
+    "Do not wait on me. Order without me.",
+    "I'm a no for tonight, and you're gonna laugh:",
   ],
-  golf: [
-    "I've gotta drop off the tee time —",
-    "Take me out of the foursome.",
-    "I can't play Saturday, and I already feel bad about it.",
-    "Somebody's gonna have to play my spot, because",
-    "Not gonna make the round —",
+  mountain: [
+    "I've gotta drop off the mountaineering trip —",
+    "Take me off the climb.",
+    "Somebody else needs my spot on the summit push, because",
+    "I can't do the mountain this year and it is genuinely killing me.",
+    "I trained all year for this and I still can't go.",
+    "Give my permit to somebody on the list —",
+    "I'm out for the climb, and it's not the conditioning.",
+    "Pull my name off the roster for the trip.",
   ],
   help: [
     "I feel awful about this, but I can't help you move —",
@@ -94,6 +157,7 @@ export const OPENERS = {
     "I'm not gonna be able to load anything Saturday.",
     "Please tell me you've got other guys, because",
     "I'd be there with the trailer, but",
+    "You're gonna need one more body, and it can't be me.",
   ],
   dinner: [
     "We're gonna have to reschedule dinner —",
@@ -101,6 +165,7 @@ export const OPENERS = {
     "So we can't do Friday anymore.",
     "I hate doing this the day of, but",
     "Push it a week? The situation is:",
+    "Cancel the reservation, unfortunately.",
   ],
   trip: [
     "I don't think we can make the trip —",
@@ -108,18 +173,21 @@ export const OPENERS = {
     "I've been trying to make the dates work and I can't, because",
     "We're gonna have to sit this one out.",
     "So the trip is a no for us, and it's not for lack of trying.",
+    "Go without us and send pictures.",
   ],
   gym: [
     "Skipping the gym this morning —",
     "I'm not gonna make the 5 a.m.",
     "Go without me, I'll catch the afternoon session if",
     "No lift today.",
+    "Take my spot in the class.",
   ],
   early: [
     "There's no way I'm up that early —",
     "Anything before nine is out for me right now.",
     "I'd have to leave the house at 4:30, and I can't, because",
     "Mornings are shot for me this week.",
+    "Make it an afternoon and I'm in. Right now,",
   ],
   late: [
     "I'm running behind — I'll be there, just late.",
@@ -127,6 +195,7 @@ export const OPENERS = {
     "Sorry, sorry, I know. On my way. So",
     "Almost there. The holdup was that",
     "Pulling in soon. Long story short,",
+    "Give me twenty minutes.",
   ],
   ghost: [
     "Sorry I went dark on you —",
@@ -134,18 +203,34 @@ export const OPENERS = {
     "I know, I know, three days. In my defense:",
     "Not ignoring you, I promise.",
     "My phone's been in a drawer, and here's why:",
+    "Digging out of about ninety texts. Reason being,",
   ],
   party: [
     "We're gonna miss the party —",
     "Put us down as a no, sadly.",
     "We tried everything to make it work.",
     "Tell everybody we said happy birthday, because",
+    "We'll drop the gift off another day.",
   ],
   chores: [
     "I'm not gonna get to that favor this week —",
     "I know I owe you. Here's my problem:",
     "It's still on my list, I swear. But",
     "Gonna need one more week on that.",
+    "I have not forgotten. What I have is",
+  ],
+  hunt: [
+    "I'm gonna have to give up my spot in the blind —",
+    "Can't make it out to the lease this weekend.",
+    "Fish without me —",
+    "I'm out for opening morning, which tells you how bad it is.",
+    "Somebody take my tag, because",
+  ],
+  game: [
+    "I'm gonna miss the game —",
+    "Record it for me, don't text me the score.",
+    "I won't be watching, and I'm sick about it.",
+    "Y'all enjoy it. I'll be busy, because",
   ],
 };
 
@@ -158,6 +243,8 @@ export const KICKERS = {
     "Wish it were more interesting than that.",
     "Boring, I know.",
     "Next one's on me.",
+    "That's all it is.",
+    "No drama, just the calendar.",
   ],
   2: [
     "I did not volunteer for this, for the record.",
@@ -167,6 +254,8 @@ export const KICKERS = {
     "This is my life now.",
     "Ask me how much say I had in it.",
     "Anyway. That's where I'm at.",
+    "It made more sense when I agreed to it.",
+    "I'm told this is a privilege.",
   ],
   3: [
     "I've reread that sentence four times and it's still true.",
@@ -177,6 +266,8 @@ export const KICKERS = {
     "There's a group chat about it now.",
     "I'm typing this from a parking lot, if that helps paint the picture.",
     "Somebody's filming it, so eventually you'll just see it.",
+    "I've stopped asking questions.",
+    "At some point you just go along with it.",
   ],
   4: [
     "And that's the SHORT version.",
@@ -188,6 +279,8 @@ export const KICKERS = {
     "There is a signup sheet with my name on it in three places and I signed none of them.",
     "I want you to know I fought this.",
     "This is a real thing that is really happening to me.",
+    "I have read this back to myself out loud. It did not help.",
+    "Every word of that is true and I hate all of them.",
   ],
 };
 
@@ -199,430 +292,6 @@ export const PROMISES = [
   "Put me down for the next one, no take-backs.",
   "First round's on me when I resurface.",
   "I'm free literally any other day.",
+  "Give me a date and I'll write it in pen.",
+  "I owe you one and I know it.",
 ];
-
-export const EXCUSES = [
-  // ==========================================================================
-  // CHURCH & BIBLE CAMP
-  // ==========================================================================
-  { t: 1, c: "church", x: "{daughter}'s church group has a service project that morning and I signed up to drive the van." },
-  { t: 1, c: "church", x: "I'm on the setup rotation at {church} this week and nobody else knows how the sound board works." },
-  { t: 1, c: "church", x: "We've got small group at our house and {wife} already bought all the food." },
-  { t: 1, c: "church", x: "It's my week in the nursery and they're short two volunteers." },
-  { t: 1, c: "church", x: "{son}'s youth group is doing a car wash fundraiser and I promised to bring the hoses." },
-  { t: 1, c: "church", x: "I'm running slides for both services and the guy who normally does it is out of town." },
-  { t: 1, c: "church", x: "Church directory photos got moved to that day and {wife} has been trying to schedule it since March." },
-  { t: 1, c: "church", x: "I signed up to grill for the men's breakfast and I'm the only one with a griddle that big." },
-  { t: 1, c: "church", x: "We're doing a meal train for a family at {church} and I've got the {day} slot." },
-  { t: 1, c: "church", x: "I told the pastor I'd help stack chairs after the funeral luncheon and those things take {hours}." },
-
-  { t: 2, c: "church", x: "The daddy-daughter dance at church got moved and now it's that same night. {daughter} already has the dress." },
-  { t: 2, c: "church", x: "Bible camp drop-off got pushed to {day} and it's two hours each way." },
-  { t: 2, c: "church", x: "I'm chaperoning the youth lock-in. Yes, all night. Yes, I raised my hand." },
-  { t: 2, c: "church", x: "VBS is that week and I somehow got assigned to be the puppet guy." },
-  { t: 2, c: "church", x: "I have to pick {son} up from Bible camp early because he 'lost privileges' and they want him gone by noon." },
-  { t: 2, c: "church", x: "Our small group is doing a marriage retreat and {wife} put the deposit down back in the spring." },
-  { t: 2, c: "church", x: "I'm the designated driver for the senior saints' bus trip to the passion play." },
-  { t: 2, c: "church", x: "They asked me to do the announcements at both services and I've been practicing in {vehicle} all week." },
-  { t: 2, c: "church", x: "I'm the emergency backup for the baptism, which apparently means I have to be there in a swimsuit either way." },
-  { t: 2, c: "church", x: "The church is repainting the fellowship hall and I made the mistake of owning a ladder." },
-  { t: 2, c: "church", x: "{daughter} is getting an award at the AWANA ceremony and she asked me specifically, in front of people." },
-  { t: 2, c: "church", x: "I'm hauling the youth group's mission trip luggage {town} in the trailer." },
-
-  { t: 3, c: "church", x: "There are two daddy-daughter dances the same night — Ruby's at church and Paisley's at the school — so I'm doing both. I've got a suit change in {vehicle}." },
-  { t: 3, c: "church", x: "The Bible camp bus broke down {town} and I'm the closest parent with a hitch." },
-  { t: 3, c: "church", x: "I got volun-told to play Goliath in the VBS skit and rehearsal is that exact window." },
-  { t: 3, c: "church", x: "{daughter} won the church cakewalk and now we have to deliver eleven cakes to shut-ins." },
-  { t: 3, c: "church", x: "The youth pastor quit Wednesday and I'm running the lesson until they find somebody. I have no notes and forty teenagers." },
-  { t: 3, c: "church", x: "I'm in the church Easter drama and they moved me from 'crowd' to 'Roman guard #2,' which has lines." },
-  { t: 3, c: "church", x: "We're hosting three Bible camp kids whose ride fell through, and one of them has an allergy I don't fully understand yet." },
-  { t: 3, c: "church", x: "The church van's inspection lapsed, so I'm the church van now." },
-  { t: 3, c: "church", x: "I have to drive the Bible camp lost-and-found back {town} because {daughter}'s retainer is somewhere in it." },
-  { t: 3, c: "church", x: "The men's retreat is doing a sunrise service on a mountain and I'm the guy with the coffee percolator." },
-  { t: 3, c: "church", x: "I said 'sure' to helping with the church garage sale and it turns out that means I own a storage unit key now." },
-  { t: 3, c: "church", x: "Somebody has to sit with the {church} pageant sheep overnight and the list got down to me." },
-  { t: 3, c: "church", x: "{wife} signed me up to judge the youth group's chili cook-off, and there are nineteen chilis." },
-
-  { t: 4, c: "church", x: "The daddy-daughter dance at Bible camp got double-booked with the mother-son cake auction, and since {wife} is on the committee, I have to attend both — one as a chaperone, one as a dessert." },
-  { t: 4, c: "church", x: "I'm playing the donkey in the live nativity. In August. There's a rehearsal. Don't ask." },
-  { t: 4, c: "church", x: "Somebody put me down for the chili cook-off, the deacon vote, and a baptism in the same afternoon, and two of those require me to be dry." },
-  { t: 4, c: "church", x: "They're doing a full-immersion baptism in the Hendersons' pond and I'm the guy who has to check it for snapping turtles first." },
-  { t: 4, c: "church", x: "Bible camp added a father-daughter archery tournament and {daughter} and I are seeded second. Withdrawing at this point is a testimony issue." },
-  { t: 4, c: "church", x: "I got elected to the church building committee in absentia — I wasn't even there — and the only hour all nine of them could meet is that exact hour." },
-  { t: 4, c: "church", x: "The Bible camp's canoe trailer jackknifed and now I'm responsible for eleven canoes, two counselors, and a kid named Braxton who will not stop crying." },
-  { t: 4, c: "church", x: "{wife} volunteered me to be the surprise mystery guest at Bible camp. I don't know what that means. I have to wear something." },
-
-  // ==========================================================================
-  // KID LOGISTICS
-  // ==========================================================================
-  { t: 1, c: "kids", x: "{kid} has a {sport} game that got moved up and I'm the only one who can get there." },
-  { t: 1, c: "kids", x: "Parent-teacher conferences got scheduled that afternoon and {wife} has to work." },
-  { t: 1, c: "kids", x: "{kid} has a dentist appointment I've already rescheduled twice." },
-  { t: 1, c: "kids", x: "I've got carpool duty and the other family bailed." },
-  { t: 1, c: "kids", x: "It's {kid}'s field trip and I'm on the chaperone list." },
-  { t: 1, c: "kids", x: "{daughter} has a recital and I'm not missing another one." },
-  { t: 1, c: "kids", x: "School called — {kid} is running a fever and I'm the one on the pickup list today." },
-  { t: 1, c: "kids", x: "{son} has {sport} practice on one side of town and {daughter} has dance on the other, and there's a 15-minute overlap." },
-  { t: 1, c: "kids", x: "It's {kid}'s birthday week and {wife} has the whole thing mapped out on the fridge." },
-  { t: 1, c: "kids", x: "I promised {kid} I'd be at the awards assembly and I've got a bad track record on assemblies." },
-
-  { t: 2, c: "kids", x: "{kid}'s travel {sport} team added a 6 a.m. practice and I'm the only dad with a truck bed big enough for the equipment." },
-  { t: 2, c: "kids", x: "{daughter} has a science fair project due Monday and it involves a live specimen. We're going to {store}." },
-  { t: 2, c: "kids", x: "The school play needs a set built and I said one sentence too many at the PTA meeting." },
-  { t: 2, c: "kids", x: "{son} made the all-star team, which sounds great until you see the schedule." },
-  { t: 2, c: "kids", x: "{kid} lost a tooth in the bounce house and we are, as a family, looking for it." },
-  { t: 2, c: "kids", x: "Both girls got invited to different birthday parties at the same time {town} from each other." },
-  { t: 2, c: "kids", x: "{kid}'s class has a 'bring your dad to career day' and I have to bring visual aids." },
-  { t: 2, c: "kids", x: "I'm hauling {kid}'s {sport} team to a tournament and one of the kids gets carsick, so it's a slow trip." },
-  { t: 2, c: "kids", x: "{daughter} joined the robotics team and it turns out the parents build the robot." },
-  { t: 2, c: "kids", x: "{kid} volunteered me to coach. Not asked. Volunteered. The first practice is that day." },
-  { t: 2, c: "kids", x: "{son} has to do twelve hours of service for a school thing and I'm the transportation." },
-  { t: 2, c: "kids", x: "Paisley's kindergarten does a 'muffins with dad' and Ruby's grade does 'donuts with dad' and they are, inexplicably, the same morning." },
-
-  { t: 3, c: "kids", x: "{kid}'s {sport} tournament went to a losers' bracket and now we might be there through {day}." },
-  { t: 3, c: "kids", x: "{daughter} is in the 4-H {animal} showmanship class and we have to wash a {animal} at 5 a.m." },
-  { t: 3, c: "kids", x: "{son} got a part in the school musical as a tree, and trees apparently rehearse." },
-  { t: 3, c: "kids", x: "{kid} entered us in a father-child pancake eating contest without telling me and there's a bracket posted at the school." },
-  { t: 3, c: "kids", x: "Paisley's class hamster is spending the weekend at our house and Gavin has already lost it once." },
-  { t: 3, c: "kids", x: "{kid}'s science project needs a working potato battery and every potato in this house is now a legal exhibit." },
-  { t: 3, c: "kids", x: "We're driving {town} because {daughter}'s dance competition moved venues and nobody told the parents until last night." },
-  { t: 3, c: "kids", x: "{son} superglued something to something and we're going to have a conversation about it that will take {hours}." },
-  { t: 3, c: "kids", x: "{kid}'s field trip lost a bus, so seven parents are convoying twenty-three second graders {town}. I'm vehicle four." },
-  { t: 3, c: "kids", x: "The girls started a lemonade stand, made forty dollars, and now there's a business dispute I have to mediate." },
-  { t: 3, c: "kids", x: "{kid} signed our family up for the elementary school talent show. We do not have a talent. We have {hours} to get one." },
-  { t: 3, c: "kids", x: "{son}'s {sport} game got rained out, rescheduled, rained out again, and now it's a doubleheader in a town I've never heard of." },
-  { t: 3, c: "kids", x: "Ruby's guinea pig had babies. Nobody knew Ruby's guinea pig could have babies. We're at the vet." },
-
-  { t: 4, c: "kids", x: "All three kids have something at the exact same hour {town} from each other, {wife} is at work, and I have been given a color-coded map." },
-  { t: 4, c: "kids", x: "{kid}'s class did a fundraiser where you bid on a dad, and I got bought. I have to go be somebody's dad for a day." },
-  { t: 4, c: "kids", x: "Gavin's {sport} team won something they were not supposed to win and now we're going to state, which nobody budgeted time or money for." },
-  { t: 4, c: "kids", x: "Ruby is in the county fair {animal} show, {son} is in the tractor pull, and Paisley entered a pie. I am the pit crew for all three." },
-  { t: 4, c: "kids", x: "{kid} told her whole class I'd come demonstrate my job, and I have somehow been booked for four consecutive sessions with a sign-in sheet." },
-  { t: 4, c: "kids", x: "There is a daddy-daughter dance, a father-son campout, and a mother's-day-out drop-off, all in an eight-hour window, and I have three children and one body." },
-  { t: 4, c: "kids", x: "{son} started a petition at school and it worked, and now there's a meeting with the principal that I have to attend as, quote, 'the responsible adult.'" },
-
-  // ==========================================================================
-  // LINDSEY SAID SO
-  // ==========================================================================
-  { t: 1, c: "lindsey", x: "{wife} has something on the calendar I apparently agreed to." },
-  { t: 1, c: "lindsey", x: "It's our anniversary weekend and I am not touching that." },
-  { t: 1, c: "lindsey", x: "{wife} has an appointment and somebody's got to be with the kids." },
-  { t: 1, c: "lindsey", x: "We've got a date night that got rescheduled onto that exact evening." },
-  { t: 1, c: "lindsey", x: "{wife}'s car is in the shop so I'm the whole transportation department this week." },
-  { t: 1, c: "lindsey", x: "{relative} is in town and {wife} would like me visible." },
-  { t: 1, c: "lindsey", x: "{wife} is out of town and I'm solo with all three." },
-  { t: 1, c: "lindsey", x: "We've got a thing with {wife}'s work people and attendance is, let's say, encouraged." },
-
-  { t: 2, c: "lindsey", x: "{wife} committed us to something and I found out about it from a group text." },
-  { t: 2, c: "lindsey", x: "{wife} is doing a girls' trip and I've got all three kids and a schedule with times on it." },
-  { t: 2, c: "lindsey", x: "{relative} is having surgery and we're driving {town} for it." },
-  { t: 2, c: "lindsey", x: "{wife} started a home project and I've been reassigned." },
-  { t: 2, c: "lindsey", x: "{wife} signed us up to host, and hosting starts about {hours} before people show up." },
-  { t: 2, c: "lindsey", x: "There's a baby shower and I've been told my role is 'chairs and ice.'" },
-  { t: 2, c: "lindsey", x: "{wife} volunteered me for something at {church} and told me after the deadline to back out." },
-  { t: 2, c: "lindsey", x: "{wife} has been planning this since February. I saw the spreadsheet. There's a spreadsheet." },
-  { t: 2, c: "lindsey", x: "{relative} is moving and we said yes back when it felt far away." },
-  { t: 2, c: "lindsey", x: "{wife} booked a family photo session and coordinating outfits is, evidently, an all-day job." },
-  { t: 2, c: "lindsey", x: "It's {wife}'s birthday week and I have overcorrected into a four-day itinerary." },
-
-  { t: 3, c: "lindsey", x: "{wife} started a small business on Tuesday and I am now the warehouse." },
-  { t: 3, c: "lindsey", x: "{wife} is doing a craft fair booth and I've been building shelving since Thursday." },
-  { t: 3, c: "lindsey", x: "{wife} found a deal on a hutch {town} and it does not fit in {vehicle}, which we learned the hard way." },
-  { t: 3, c: "lindsey", x: "{wife} entered us in a couples' thing at {church} and there is a scoring component." },
-  { t: 3, c: "lindsey", x: "{wife} committed our family to a 30-day challenge and day nine is a big one." },
-  { t: 3, c: "lindsey", x: "{relative} is having a milestone birthday and there's a slideshow I've been assigned to make. I do not know how to make a slideshow." },
-  { t: 3, c: "lindsey", x: "{wife} bought a camper. There is a camper in the driveway now. It has needs." },
-  { t: 3, c: "lindsey", x: "{wife} decided we're painting the whole downstairs this weekend and the primer is already open." },
-  { t: 3, c: "lindsey", x: "{wife} is running a booth at the fall festival and I got demoted from 'help' to 'setup crew, 5 a.m.'" },
-  { t: 3, c: "lindsey", x: "{wife} and {relative} are doing a garage sale and I am, and I quote, 'the muscle and the pricing gun.'" },
-  { t: 3, c: "lindsey", x: "{wife} signed us up for a marriage class at {church} and missing week one means missing the whole thing." },
-  { t: 3, c: "lindsey", x: "{wife} got us on a waitlist a year ago for something and it just came through, and it's that day." },
-
-  { t: 4, c: "lindsey", x: "{wife} entered our family in a local parade. We have a float. I have to be on the float." },
-  { t: 4, c: "lindsey", x: "{wife} is throwing a surprise party for {relative} and I've been made the decoy, which means I have a script and a start time." },
-  { t: 4, c: "lindsey", x: "{wife} booked a couples' 5K, a couples' cooking class, and a couples' photo shoot in one weekend, and I found out via a shared calendar invite titled 'FUN!!'" },
-  { t: 4, c: "lindsey", x: "{wife} bought a fixer-upper {animal} barn at auction. I want you to sit with that sentence as long as I have." },
-  { t: 4, c: "lindsey", x: "{wife} volunteered me to emcee the {church} auction. There's a microphone and an expectation of jokes." },
-  { t: 4, c: "lindsey", x: "{wife} is doing a themed birthday party for Paisley and I have a costume fitting. A fitting. For a costume. For a five-year-old's party." },
-  { t: 4, c: "lindsey", x: "{wife} and {relative} started planning something in a group chat I'm not in, and my name came out of it with a time attached." },
-
-  // ==========================================================================
-  // HOME DISASTER
-  // ==========================================================================
-  { t: 1, c: "home", x: "Waiting on a repair guy and they gave me a four-hour window." },
-  { t: 1, c: "home", x: "Water heater's out and I've got somebody coming." },
-  { t: 1, c: "home", x: "The internet's been down since Tuesday and the tech window is that morning." },
-  { t: 1, c: "home", x: "{vehicle} is in the shop and I'm down to one vehicle for five people." },
-  { t: 1, c: "home", x: "AC quit and it's supposed to be 98 that day." },
-  { t: 1, c: "home", x: "Got a delivery I have to sign for and they won't narrow the window." },
-  { t: 1, c: "home", x: "The dryer died mid-load and I've got a laundry situation to resolve." },
-  { t: 1, c: "home", x: "Garage door's stuck halfway open and I can't leave the house like that." },
-
-  { t: 2, c: "home", x: "Something's leaking under the house and I have to go find out what." },
-  { t: 2, c: "home", x: "A tree came down across the driveway and I'm the guy with the chainsaw." },
-  { t: 2, c: "home", x: "{son} put something down the toilet and we have moved into the plumbing phase of the weekend." },
-  { t: 2, c: "home", x: "The septic guy can only come that day and I've been on his list for three weeks." },
-  { t: 2, c: "home", x: "Storm took shingles off and I've got a tarp and a ladder and about {hours} of daylight." },
-  { t: 2, c: "home", x: "{vehicle} won't start and I'm troubleshooting it in the driveway with {son} handing me the wrong wrench." },
-  { t: 2, c: "home", x: "Somebody hit our mailbox overnight and the post office won't deliver until it's back up." },
-  { t: 2, c: "home", x: "Well pump's acting up, which in this house means everything stops until it isn't." },
-  { t: 2, c: "home", x: "We've got a wasp situation in the soffit and {daughter} is allergic, so it's a today problem." },
-  { t: 2, c: "home", x: "Fence blew down and the {animal} is technically out." },
-
-  { t: 3, c: "home", x: "The washing machine walked itself across the laundry room and took a piece of drywall with it." },
-  { t: 3, c: "home", x: "A pipe let go in the wall and now there is a hole in my house that I made on purpose." },
-  { t: 3, c: "home", x: "Bats. In the attic. There's a whole permitting thing because you can't just remove them." },
-  { t: 3, c: "home", x: "I hit the water line putting in a fence post and the whole street knows about it." },
-  { t: 3, c: "home", x: "The kids' trampoline ended up in the neighbor's yard and retrieving it requires three men and a diplomacy summit." },
-  { t: 3, c: "home", x: "I started a 'quick' bathroom project Thursday and there is currently no bathroom." },
-  { t: 3, c: "home", x: "{vehicle} died {town} with the {sport} equipment still in it and now there are two problems." },
-  { t: 3, c: "home", x: "Squirrel got in through the dryer vent and it is loose in the house and it is winning." },
-  { t: 3, c: "home", x: "The riding mower threw a belt in the tall part of the yard and I can't even find the mower right now." },
-  { t: 3, c: "home", x: "We had a grease fire — everybody's fine — but the kitchen has been decommissioned pending {wife}'s review." },
-  { t: 3, c: "home", x: "I backed the trailer into the porch post. The porch is fine. The post is not. The porch will not be fine for long." },
-
-  { t: 4, c: "home", x: "A deer came through the sliding glass door. Into the living room. It left on its own, but the story does not end there." },
-  { t: 4, c: "home", x: "The propane guy filled the wrong tank at the wrong house and now three families are involved and one of them is a lawyer." },
-  { t: 4, c: "home", x: "I was pressure-washing the siding and discovered our house has been slightly on fire, in a slow way, for possibly years." },
-  { t: 4, c: "home", x: "{son} launched something off the roof for a physics project and it landed in the pond and the pond is not ours." },
-  { t: 4, c: "home", x: "A sinkhole opened up in the back yard. Small one. Still a sinkhole. There's a man coming to look at it with a stick." },
-  { t: 4, c: "home", x: "The chest freezer in the garage lost power sometime last week and I now have to personally account for an entire deer." },
-
-  // ==========================================================================
-  // ANIMAL SITUATION
-  // ==========================================================================
-  { t: 1, c: "animals", x: "The {animal} has a vet appointment and it took a month to get in." },
-  { t: 1, c: "animals", x: "Our {animal} got out and I'm driving the neighborhood." },
-  { t: 1, c: "animals", x: "{kid}'s {animal} is sick and she's a wreck about it." },
-  { t: 1, c: "animals", x: "We're picking up a rescue {animal} that day. Yes, another one." },
-  { t: 1, c: "animals", x: "Dog's got stitches and can't be left alone." },
-  { t: 1, c: "animals", x: "We're {animal}-sitting for {relative} and it's a whole thing." },
-
-  { t: 2, c: "animals", x: "The {animal} got into something and we're at the emergency vet at midnight, so tomorrow's a wash." },
-  { t: 2, c: "animals", x: "{daughter}'s 4-H {animal} has to be weighed and registered that morning." },
-  { t: 2, c: "animals", x: "We have a {animal} loose in the neighborhood and I'm the guy everybody calls, because it's my {animal}." },
-  { t: 2, c: "animals", x: "The barn cat had kittens under the porch and now we're doing porch surgery." },
-  { t: 2, c: "animals", x: "{son} brought home a {animal} and we have to figure out where it goes and whose it is." },
-  { t: 2, c: "animals", x: "Our {animal} figured out the gate latch, so I'm rebuilding a gate before I do anything else." },
-  { t: 2, c: "animals", x: "We're driving {town} to pick up a {animal} that {wife} found online at 11 p.m." },
-  { t: 2, c: "animals", x: "The {animal} needs medicine twice a day and it takes two people and a towel." },
-
-  { t: 3, c: "animals", x: "A {animal} got into the church nursery and I am, for reasons involving a prior incident, the guy they call." },
-  { t: 3, c: "animals", x: "Our {animal} escaped, got picked up {town}, and is currently being held at a facility with limited hours." },
-  { t: 3, c: "animals", x: "{daughter}'s show {animal} won't load in the trailer and we've been at it since 4 a.m." },
-  { t: 3, c: "animals", x: "The neighbor's {animal} and our {animal} have started something and there's a fence conversation happening at 7 a.m." },
-  { t: 3, c: "animals", x: "{kid}'s {animal} got out at the county fair and there are eleven people looking for it, one of whom is a judge." },
-  { t: 3, c: "animals", x: "We have a raccoon that has learned to open our chicken coop and I'm on night watch." },
-  { t: 3, c: "animals", x: "The {animal} ate a whole thing of Halloween candy — wrappers included — and I've been assigned to monitor the outcome." },
-  { t: 3, c: "animals", x: "There's a snake in the crawlspace and {wife} has declared the house unusable until it is resolved by me, specifically." },
-  { t: 3, c: "animals", x: "Our {animal} got skunked at 5 a.m. and I have now been part of six tomato-juice baths and counting." },
-
-  { t: 4, c: "animals", x: "{wife} bought a {animal} at a livestock auction 'as a joke' and the joke is now in my yard and requires shelter by nightfall." },
-  { t: 4, c: "animals", x: "Somebody's {animal} got loose during the {church} picnic, got into the sanctuary, and I've been asked to be part of the follow-up conversation." },
-  { t: 4, c: "animals", x: "Our {animal} is pregnant and nobody, including a licensed veterinarian, can explain how." },
-  { t: 4, c: "animals", x: "{kid}'s class {animal} died on our watch and we are currently {town} at a pet store attempting a swap before Monday." },
-  { t: 4, c: "animals", x: "There's a {animal} on the roof. On the actual roof. It got up there and it will not discuss coming down." },
-
-  // ==========================================================================
-  // MEDICAL-ISH
-  // ==========================================================================
-  { t: 1, c: "body", x: "Threw my back out and I can barely get in {vehicle}." },
-  { t: 1, c: "body", x: "Something's going around the house and I'm not bringing it to you." },
-  { t: 1, c: "body", x: "Got a doctor's appointment I've put off twice already." },
-  { t: 1, c: "body", x: "Tweaked my knee and I'm supposed to stay off it {hours} a day." },
-  { t: 1, c: "body", x: "{kid} has pink eye, which means we all have pink eye by {day}." },
-  { t: 1, c: "body", x: "I'm getting a tooth looked at and they said plan for the whole afternoon." },
-  { t: 1, c: "body", x: "{wife} is having a procedure and I'm the ride." },
-
-  { t: 2, c: "body", x: "I did something to my shoulder helping {son} move a couch and now I can't lift my arm past here." },
-  { t: 2, c: "body", x: "Stepped on a nail in the yard and I'm getting a tetanus shot and a lecture." },
-  { t: 2, c: "body", x: "I've got a rash from something in the yard and I'm not confident about it." },
-  { t: 2, c: "body", x: "Got stung about nine times clearing brush and one eye is doing something." },
-  { t: 2, c: "body", x: "I fell off the ladder at {church}. I'm fine. I am not fine enough for {day}." },
-  { t: 2, c: "body", x: "Ate something at the church potluck and I've made peace with my choices." },
-  { t: 2, c: "body", x: "Pulled something in my calf at {kid}'s {sport} practice trying to demonstrate a thing I should not have demonstrated." },
-  { t: 2, c: "body", x: "I've got a kidney stone situation that is either resolving or not, and I won't know until it does." },
-
-  { t: 3, c: "body", x: "I got hit in the face with a {sport} ball at {son}'s practice and I look like a witness to something." },
-  { t: 3, c: "body", x: "Doctor put me in a boot for two weeks and the boot has opinions about stairs." },
-  { t: 3, c: "body", x: "I'm having an allergic reaction to something and we're doing the process of elimination the slow way." },
-  { t: 3, c: "body", x: "I threw my back out at the daddy-daughter dance doing a move I have not done since 2009." },
-  { t: 3, c: "body", x: "Got poison ivy in a place that makes sitting a negotiation." },
-  { t: 3, c: "body", x: "I have to do one of those 24-hour monitor things and I can't be anywhere loud or exciting." },
-  { t: 3, c: "body", x: "I burned my hand on the men's breakfast griddle and I'm typing this with one thumb." },
-  { t: 3, c: "body", x: "Whatever {kid} brought home from Bible camp has gone through five of us and I am number five." },
-
-  { t: 4, c: "body", x: "I got a concussion in the church softball league. Slow-pitch. I'd rather not walk you through it." },
-  { t: 4, c: "body", x: "There's a family stomach thing making its way through the house in a specific order and I'm scheduled for {day}." },
-  { t: 4, c: "body", x: "I tore something doing the worm at {daughter}'s dance and there is video, and the video is being shared." },
-  { t: 4, c: "body", x: "A goat headbutted me in the sternum at the fair and I have been advised to avoid 'sudden enthusiasm' for a week." },
-  { t: 4, c: "body", x: "I have to get a mole looked at, and because of how our insurance works, that appointment is {town} at 6:40 in the morning on a {day}." },
-
-  // ==========================================================================
-  // SCHEDULING CHAOS
-  // ==========================================================================
-  { t: 1, c: "logistics", x: "I double-booked myself and the other thing was first." },
-  { t: 1, c: "logistics", x: "The dates shifted on me and now it overlaps." },
-  { t: 1, c: "logistics", x: "I've got a hard stop that afternoon that I can't move." },
-  { t: 1, c: "logistics", x: "Flight got moved and now the whole day is different." },
-  { t: 1, c: "logistics", x: "I'm covering for somebody and I owed them one." },
-  { t: 1, c: "logistics", x: "{wife} and I looked at the calendar together and it's just not there." },
-
-  { t: 2, c: "logistics", x: "I've got three things that day and only one of them can be moved, and it's not this one." },
-  { t: 2, c: "logistics", x: "My phone didn't sync the calendar and I've been operating on a version of this week that doesn't exist." },
-  { t: 2, c: "logistics", x: "The rescheduled thing got rescheduled onto the thing I rescheduled it away from." },
-  { t: 2, c: "logistics", x: "I'm driving {town} and back that same day, which is {hours} in {vehicle} minimum." },
-  { t: 2, c: "logistics", x: "We're down to one working vehicle and {wife} has it, and she has it for a reason I've been told twice." },
-  { t: 2, c: "logistics", x: "Something got scheduled during church, so the whole rest of the day slid." },
-  { t: 2, c: "logistics", x: "I lost my wallet, which means I lost my license, which means I'm not driving anywhere until {day}." },
-
-  { t: 3, c: "logistics", x: "I said yes to four things in one week and they have all converged on a single afternoon like a weather system." },
-  { t: 3, c: "logistics", x: "There's a wedding, a funeral, and a graduation this weekend, and I'm related to all three parties." },
-  { t: 3, c: "logistics", x: "My phone auto-accepted a bunch of invites and I'm now committed to things I have never heard of." },
-  { t: 3, c: "logistics", x: "{wife} and I both told a different set of people yes for the same window and we found out at dinner." },
-  { t: 3, c: "logistics", x: "I have to be in three places, and two of them are {town} from each other, and one of them has a five-year-old in it." },
-  { t: 3, c: "logistics", x: "I got the date wrong by exactly one week and everything downstream of that is now wrong too." },
-  { t: 3, c: "logistics", x: "Somebody put me on a group text that turned into a commitment and I still don't know who." },
-  { t: 3, c: "logistics", x: "The trip got moved up two days and nobody told me until I saw a photo." },
-
-  { t: 4, c: "logistics", x: "I have a wedding at 2, a Bible camp pickup at 3:30, a daddy-daughter dance at 6, and all three require a different outfit and one requires a boutonniere." },
-  { t: 4, c: "logistics", x: "Time zones. I don't want to talk about it. It's a two-hour drive and apparently also an hour of my life." },
-  { t: 4, c: "logistics", x: "I have been triple-booked by three different people who all thought they'd cleared it with {wife}, and {wife} cleared all three." },
-  { t: 4, c: "logistics", x: "My calendar, {wife}'s calendar, and the {church} calendar all say something different about that day, and all three are wrong." },
-
-  // ==========================================================================
-  // SMALL TOWN DUTY
-  // ==========================================================================
-  { t: 1, c: "town", x: "I've got jury duty. Actual, real jury duty." },
-  { t: 1, c: "town", x: "It's the {day} of the school fundraiser and I'm on the setup list." },
-  { t: 1, c: "town", x: "Helping a buddy with a roof and I already said yes." },
-  { t: 1, c: "town", x: "I'm on the volunteer fire department call list that weekend." },
-  { t: 1, c: "town", x: "There's a booster club meeting and I'm the treasurer, unfortunately." },
-  { t: 1, c: "town", x: "I told the neighbor I'd help him get his hay in before the rain." },
-
-  { t: 2, c: "town", x: "I'm running the clock at the {sport} game and there's nobody else certified." },
-  { t: 2, c: "town", x: "They need umpires for the youth league and it got down to whoever answered the phone." },
-  { t: 2, c: "town", x: "The community center flooded and half the town is over there with shop vacs." },
-  { t: 2, c: "town", x: "I'm helping run the concession stand and it's a home doubleheader." },
-  { t: 2, c: "town", x: "I got roped into the parade committee and there's a route walk-through that morning." },
-  { t: 2, c: "town", x: "I'm hauling somebody's hay {town} because I'm the only one with a flatbed." },
-  { t: 2, c: "town", x: "There's a benefit dinner for a family in town and I've got the grill." },
-
-  { t: 3, c: "town", x: "I got drafted to judge the {store} parking lot car show and there is a trophy and a controversy already." },
-  { t: 3, c: "town", x: "The volunteer fire department has a training burn and they need bodies, and I said yes in a moment of weakness." },
-  { t: 3, c: "town", x: "I'm in the dunk tank at the fall festival. Two-hour shift. There's a sign with my face on it." },
-  { t: 3, c: "town", x: "The town's demolition derby needs a flagger and the guy who normally does it got in the derby." },
-  { t: 3, c: "town", x: "I'm hauling the homecoming float and the float is not structurally where it needs to be yet." },
-  { t: 3, c: "town", x: "Somebody nominated me for the school board and there's a candidate forum I now have to attend." },
-  { t: 3, c: "town", x: "I've been asked to be the auctioneer's spotter at the FFA banquet and I have to be there for the whole thing." },
-  { t: 3, c: "town", x: "There's a tractor stuck in the creek and it is a four-truck problem." },
-
-  { t: 4, c: "town", x: "I'm the mascot. The high school mascot. The kid quit and I'm 6'2\" and it fits, and that's the entire reason." },
-  { t: 4, c: "town", x: "Our town's founders' day committee has scheduled a reenactment and I have been cast as a founder." },
-  { t: 4, c: "town", x: "I got voted 'honorary grand marshal' as a prank and the prank has fully committed — there's a convertible and a sash." },
-  { t: 4, c: "town", x: "The county fair's greased pig contest lost its ref, and because of an incident three years ago I am both the most qualified and the least willing person available." },
-
-  // ==========================================================================
-  // SECOND PASS — more of everything
-  // ==========================================================================
-  { t: 1, c: "church", x: "I'm on the coffee-and-donuts rotation and it's an early call." },
-  { t: 1, c: "church", x: "We're doing a hospital visit with the pastor and I said I'd drive." },
-  { t: 1, c: "church", x: "{son} is getting baptized and family's coming in for it." },
-  { t: 1, c: "church", x: "I'm counting the offering that week and it has to be two people." },
-  { t: 2, c: "church", x: "The church softball team is one man short of a forfeit and that man is me." },
-  { t: 2, c: "church", x: "I'm hauling the Bible camp mattresses back to storage and there are sixty of them." },
-  { t: 2, c: "church", x: "{daughter}'s Bible camp does a father-daughter breakfast on the last morning and skipping it is not a thing you do." },
-  { t: 2, c: "church", x: "I got put in charge of the Trunk-or-Treat and my trunk has a theme now." },
-  { t: 2, c: "church", x: "We're doing a work day at {church} and I'm the one with the tools." },
-  { t: 3, c: "church", x: "I have to teach the middle school class because the regular teacher lost her voice, and the lesson is on a chapter I have questions about myself." },
-  { t: 3, c: "church", x: "The Bible camp's water pump failed and they're asking dads to bring coolers {town}." },
-  { t: 3, c: "church", x: "I'm the human scarecrow at the {church} fall festival. That's a real assignment with a real time slot." },
-  { t: 3, c: "church", x: "I have to sit in on a meeting about whether the youth group can keep doing the thing they did at Bible camp." },
-  { t: 3, c: "church", x: "{daughter} signed us up for the father-daughter cake decorating contest and she has a vision I don't have the hands for." },
-  { t: 4, c: "church", x: "The daddy-daughter dance and the Bible camp closing ceremony are 90 minutes apart {town} apart, and {daughter} intends to attend both, in two different dresses, and I am the transportation and the date." },
-  { t: 4, c: "church", x: "I have been asked to grow a beard for the Christmas program. It is currently spring. They plan ahead." },
-  { t: 4, c: "church", x: "The Bible camp talent show needs a closing act and the counselors put me down for a magic trick I performed one time in 2016." },
-
-  { t: 1, c: "kids", x: "{kid} has a makeup lesson that got moved to that slot." },
-  { t: 1, c: "kids", x: "It's picture day and somebody has to do {daughter}'s hair, and that somebody is not me, but I'm the ride." },
-  { t: 1, c: "kids", x: "{son} has a project due and I promised I'd help him finish it." },
-  { t: 1, c: "kids", x: "School's out that day for a teacher thing and I've got all three." },
-  { t: 2, c: "kids", x: "{kid} made the honor roll and there's a breakfast, and I've missed the last two." },
-  { t: 2, c: "kids", x: "{daughter} has a sleepover here and there are six of them and one of me." },
-  { t: 2, c: "kids", x: "I'm building a pinewood derby car and I am, at present, losing to a nine-year-old." },
-  { t: 2, c: "kids", x: "{son}'s {sport} team is doing a fundraiser car wash and I'm the water supply." },
-  { t: 2, c: "kids", x: "{kid} left her cleats {town} at the last game and we have to go get them before {day}." },
-  { t: 3, c: "kids", x: "Gavin's {sport} team and Ruby's dance recital are the same afternoon, so {wife} and I are splitting up and I've got the one with the longer drive." },
-  { t: 3, c: "kids", x: "Paisley told her teacher I'd read to the class, and now there's a date on the classroom calendar in marker." },
-  { t: 3, c: "kids", x: "{kid}'s science project involves mold, and the mold is on a schedule that I did not set." },
-  { t: 3, c: "kids", x: "{son} joined the fishing club and the tournament starts at 4:30 in the morning, in the dark, on purpose." },
-  { t: 3, c: "kids", x: "I have to go to the school because of something Gavin said, and it's the kind of thing they want to discuss in person." },
-  { t: 3, c: "kids", x: "The girls are doing a lemonade-stand-slash-bake-sale for the {animal} shelter and I've been made the supply run and the cashier." },
-  { t: 4, c: "kids", x: "{son} entered our whole family in a cardboard boat race. We have to build a boat. It has to hold five people. It is due {day}." },
-  { t: 4, c: "kids", x: "Ruby and Paisley are both in the pageant, in different age brackets, with overlapping rehearsals, and Gavin has a {sport} game, and {wife} is at work." },
-  { t: 4, c: "kids", x: "{kid} put my name down as a volunteer for field day and I'm now running an event called the Sponge Relay for four hours in the sun." },
-
-  { t: 1, c: "lindsey", x: "{wife} needs the house quiet that afternoon and I'm taking the kids out." },
-  { t: 1, c: "lindsey", x: "{wife} has a work thing and I'm on kid duty." },
-  { t: 1, c: "lindsey", x: "We've got a family thing on {wife}'s side that I can't skip." },
-  { t: 2, c: "lindsey", x: "{wife} is redoing the pantry and there's a load of stuff going {town}." },
-  { t: 2, c: "lindsey", x: "{wife}'s book club is at our place and I'm supposed to be scarce but also nearby." },
-  { t: 2, c: "lindsey", x: "{wife} made an appointment for both of us and told me it was a surprise." },
-  { t: 2, c: "lindsey", x: "{relative} is visiting and {wife} has a to-do list on the counter with my name on half of it." },
-  { t: 3, c: "lindsey", x: "{wife} joined a MLM-adjacent thing and there's a launch party, and I'm the one carrying the folding tables." },
-  { t: 3, c: "lindsey", x: "{wife} found a barn wedding venue for {relative} and we're doing a site visit {town}, which is a whole day in {vehicle}." },
-  { t: 3, c: "lindsey", x: "{wife} has decided we're doing a family theme for Halloween and my costume requires a fitting and a rehearsal." },
-  { t: 3, c: "lindsey", x: "{wife} started sourdough. I don't want to explain how that affects my calendar, but it does." },
-  { t: 4, c: "lindsey", x: "{wife} put our family in a local commercial for a car dealership. There is a call time. I have lines." },
-  { t: 4, c: "lindsey", x: "{wife} signed us up for a couples' ballroom class because of the daddy-daughter dance, so now I'm training for a dance." },
-  { t: 4, c: "lindsey", x: "{wife} and {relative} bought a food truck together. On a whim. It is being delivered. That day." },
-
-  { t: 1, c: "home", x: "Appliance delivery got scheduled and somebody's got to be here." },
-  { t: 1, c: "home", x: "The gutters are full and it's supposed to rain all week." },
-  { t: 2, c: "home", x: "Power's been flickering and the electrician can only do that morning." },
-  { t: 2, c: "home", x: "Our sump pump quit and there is now a decision to make about the basement." },
-  { t: 2, c: "home", x: "I'm splitting and stacking wood before the weather turns and it's a two-day job I've got one day for." },
-  { t: 3, c: "home", x: "The dishwasher flooded the kitchen overnight and we're pulling up flooring, which is how it always starts." },
-  { t: 3, c: "home", x: "I found out our chimney is home to something and the guy who handles that only comes on {day}s." },
-  { t: 3, c: "home", x: "{son} threw a {sport} ball through the window, which is fine, except it's the window that doesn't come in a standard size." },
-  { t: 3, c: "home", x: "I locked the keys in {vehicle} with it running, {town}, with the {animal} inside." },
-  { t: 4, c: "home", x: "A neighbor's tree fell on our fence, our fence fell on their shed, and there are now two insurance adjusters and one very tense text thread." },
-  { t: 4, c: "home", x: "I rented a stump grinder for four hours, hit something metal, and now there's a man from the county coming to look at it." },
-
-  { t: 1, c: "animals", x: "The dog's got to get shots and it's the only slot they had." },
-  { t: 2, c: "animals", x: "One of the chickens is doing something and {daughter} has named her, which raises the stakes considerably." },
-  { t: 2, c: "animals", x: "We're fostering a litter and they eat every four hours, including during the part of the day you were asking about." },
-  { t: 3, c: "animals", x: "The {animal} got into the neighbor's garden and there is now a produce-based debt I'm working off." },
-  { t: 3, c: "animals", x: "{kid}'s {animal} has to be at the fairgrounds by 6 a.m. and weighed by 7, and I'm the only one who can back a trailer." },
-  { t: 3, c: "animals", x: "Our dog ate a whole rotisserie chicken, bones and all, and I've been told to watch him closely for 24 hours." },
-  { t: 4, c: "animals", x: "There is a peacock in our yard. Nobody in this county owns a peacock. Everyone has an opinion. There's now a group chat and I'm in it." },
-  { t: 4, c: "animals", x: "{wife} agreed to keep {relative}'s {animal} 'for a few days' eight months ago, and today is the day it becomes a legal and emotional conversation." },
-
-  { t: 1, c: "body", x: "I'm on antibiotics for something and they're wiping me out." },
-  { t: 1, c: "body", x: "Got a physical that day and they want me fasting, so I'll be useless." },
-  { t: 2, c: "body", x: "I slept wrong and can only turn my head one direction, which rules out driving." },
-  { t: 2, c: "body", x: "I've got a splinter situation from the {church} deck project that has escalated." },
-  { t: 3, c: "body", x: "I got sunburned so badly at {kid}'s {sport} tournament that {wife} took a picture and sent it to her family." },
-  { t: 3, c: "body", x: "I tried to keep up with the teenagers at the youth lock-in and something in my hip has been clicking since." },
-  { t: 4, c: "body", x: "I got bit by something at Bible camp and the nurse said 'huh' and then went and got another nurse." },
-  { t: 4, c: "body", x: "I threw out my back lifting a {animal} into {vehicle} and now I'm lying on the floor of a {store} composing this message." },
-
-  { t: 1, c: "logistics", x: "I've got a thing before and a thing after and no room in between." },
-  { t: 1, c: "logistics", x: "The window's too tight — I'd get there for twenty minutes and have to leave." },
-  { t: 2, c: "logistics", x: "I put it in my calendar for the wrong month and I've built the whole week around the wrong week." },
-  { t: 2, c: "logistics", x: "We're down a driver because {wife} has {vehicle} {town} all day." },
-  { t: 3, c: "logistics", x: "I agreed to this back when it was theoretical and now it's {day} and it is extremely not theoretical." },
-  { t: 3, c: "logistics", x: "Three different people asked me for that same window and I said yes to all three because they asked on three different days." },
-  { t: 4, c: "logistics", x: "Between Bible camp pickup, a {sport} tournament, a daddy-daughter dance, and a {animal} at the vet, I have accounted for every hour of that day and there are, by my math, negative two hours available." },
-
-  { t: 1, c: "town", x: "I'm working the ticket gate at the game and they're short." },
-  { t: 2, c: "town", x: "There's a search party for somebody's missing {animal} and half the town's out." },
-  { t: 2, c: "town", x: "The school needs drivers for the away game and I've got the biggest vehicle on the list." },
-  { t: 3, c: "town", x: "I'm judging the pie contest at the fall festival, which sounds fun until you learn {relative} entered a pie." },
-  { t: 3, c: "town", x: "The FFA needs somebody to haul the {animal} pens and I have the only trailer that fits them." },
-  { t: 4, c: "town", x: "I got picked to be the 'celebrity' bagger at the grocery store fundraiser, and I want to be clear that no part of that sentence was my idea." },
-  { t: 4, c: "town", x: "Our town started a Christmas parade committee in July, put me on it without asking, and scheduled the first meeting during the only free afternoon I had this month." },
-];
-
-export const CIRCUMSTANCE_KEYS = CIRCUMSTANCES.map((c) => c.key);
-export const CATEGORY_KEYS = CATEGORIES.map((c) => c.key);

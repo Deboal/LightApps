@@ -137,9 +137,18 @@ function Bubble({ text }) {
 function App() {
   const boot = useMemo(() => loadState() || {}, []);
   const [tab, setTab] = useState("gen");
-  const [circumstance, setCircumstance] = useState(boot.circ || "guys");
+  // Saved prefs can name options that no longer exist (golf became the
+  // mountaineering trip); fall back rather than render a selection nobody sees.
+  const [circumstance, setCircumstance] = useState(() => {
+    const ok = boot.circ === "random" || CIRCUMSTANCES.some((c) => c.key === boot.circ);
+    return ok ? boot.circ : "guys";
+  });
   const [temp, setTemp] = useState(boot.temp || 3);
-  const [cats, setCats] = useState(boot.cats && boot.cats.length ? boot.cats : CATEGORIES.map((c) => c.key));
+  const [cats, setCats] = useState(() => {
+    const keys = CATEGORIES.map((c) => c.key);
+    const kept = (boot.cats || []).filter((k) => keys.includes(k));
+    return kept.length ? kept : keys;
+  });
   const [result, setResult] = useState(null);
   const [saved, setSaved] = useState(boot.saved || []);
   const [history, setHistory] = useState([]);
@@ -405,7 +414,7 @@ function App() {
 
       <div style={{ flex: 1 }} />
       <div style={{ textAlign: "center", color: C.faint, fontSize: 11.5, marginTop: 26, lineHeight: 1.6 }}>
-        {EXCUSES.length} hand-written excuses · thousands of combinations<br />
+        {EXCUSES.length} hand-written excuses · hundreds of thousands of combinations<br />
         Works offline. No sign-in. Seth cannot see this app.
       </div>
 
