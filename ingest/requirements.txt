@@ -1,0 +1,10 @@
+# Ingestion job only. Deliberately NOT in package.json / the Netlify build —
+# nothing here ships to the browser.
+requests>=2.32,<3
+
+# Unofficial Garmin Connect client. Pinned to a floor of 0.3.5, the first release
+# after Garmin's March 2026 auth change that logs in again (rebuilt on curl_cffi
+# to impersonate the Android app at the TLS layer). Left open above that on
+# purpose: when Garmin breaks it, the fix arrives as a new release and a pin would
+# just mean the job stays broken until someone notices.
+garminconnect>=0.3.5

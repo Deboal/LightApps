@@ -1,0 +1,45 @@
+name: Supabase check
+
+# Read-only diagnostic. Exists because the dev environment's network policy blocks
+# supabase.co, so a runner is the only thing here that can actually reach the
+# project.
+#
+# Triggered on push to the feature branch as well as manually, because
+# workflow_dispatch only appears in the UI once a workflow exists on the default
+# branch — and the point is to be able to run this BEFORE merging.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - "ingest/check_supabase.py"
+      - ".github/workflows/supabase-check.yml"
+      - "shared/config.js"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Check Supabase
+        env:
+          # Tier 0 needs none of these; it falls back to the public values in
+          # shared/config.js. Missing secrets are reported, never fatal.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          COACH_USER_EMAIL: ${{ secrets.COACH_USER_EMAIL }}
+          WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
+          WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
+          WHOOP_REFRESH_TOKEN: ${{ secrets.WHOOP_REFRESH_TOKEN }}
+          GARMIN_TOKENS_B64: ${{ secrets.GARMIN_TOKENS_B64 }}
+        run: python ingest/check_supabase.py
