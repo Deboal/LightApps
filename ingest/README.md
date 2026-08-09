@@ -54,10 +54,20 @@ are denied everything and only the service_role key can read it. WHOOP refresh
 tokens have no business being reachable from a frontend bundle, which is why this
 is not in `app_data`.
 
-### 2. Sign in to the coach app once
+### 2. Merge, deploy, then sign in to the coach app once
 
-Visit `/cocodona-coach/` and complete the magic-link sign-in. The job resolves
-your `owner` UUID from your email, so the auth user has to exist first.
+Order matters here and it is easy to get stuck. The app only exists on the live
+site after the PR merges and Netlify builds, so: **merge → wait for the deploy →
+visit `/cocodona-coach/` → complete the magic-link sign-in.** The ingestion job
+resolves your `owner` UUID from `auth.users`, so that account has to exist before
+the first run, and it cannot exist until you have signed in somewhere real.
+
+Once sign-in is confirmed working on the live site, run `schema-auth-enforce.sql`
+too. Until you do, the `anon all app_data` policy from `schema.sql` is still
+active, which means anyone holding the publishable key — committed in
+`shared/config.js` and present in every deployed bundle — can read every row in
+`app_data`. That is fine for a seating chart. It is not fine once the coach app
+starts storing resting heart rate and sleep.
 
 ### 3. Install locally
 
