@@ -11,6 +11,7 @@
 // Hard rules are evaluated first and cannot be outranked.
 
 import { DAY_ROLES, weekFor, mondayOf } from "./plan.js";
+import { dayPlan, classify } from "./daily.js";
 
 // Severity ladder. Higher wins when several rules fire.
 export const VERDICTS = {
@@ -22,7 +23,9 @@ export const VERDICTS = {
   STOP: { rank: 5, label: "Do not run",              tone: "bad" },
 };
 
-const isKey = (kind) => kind === "long" || kind === "b2b" || kind === "quality";
+// A "key session" is one the §8 rules are about: the ones worth converting or
+// cutting. Races count — a hard stop on race morning is still a hard stop.
+const isKey = (kind) => kind === "long" || kind === "b2b" || kind === "quality" || kind === "race";
 
 // `history` is newest-last, each entry a check-in: {date, rhr, hrv, sleepHrs, energy, ...}
 function baselineOf(history, field, days = 21) {
@@ -68,27 +71,28 @@ export function advise({ date, history = [], limits, weekActualHrs = 0 }) {
   const d = new Date(date + "T12:00:00");
   const dow = d.getDay();
   const week = weekFor(date);
-  const role = DAY_ROLES[dow];
+
+  // The plan's own entry for this date is the authority. DAY_ROLES is the
+  // Monday-to-Sunday architecture from §6 and is only a fallback for dates
+  // outside the plan window.
+  const plan = dayPlan(date);
+  const role = plan
+    ? { role: plan.session, kind: classify(plan.session), note: plan.details, fromPlan: true }
+    : { ...DAY_ROLES[dow], fromPlan: false };
 
   const findings = [];
   const push = (f) => findings.push(f);
 
-  // Planned session for the day, from the week's numbers.
-  let plannedHrs = null;
-  if (week) {
-    if (role.kind === "long") plannedHrs = week.longHr;
-    else if (role.kind === "b2b") plannedHrs = week.b2bHr;
-    else if (week.planned && week.target) {
-      // Weekday sessions are not itemised in the weekly summary. Spread whatever
-      // the week's planned total leaves after the weekend double across Mon-Fri,
-      // then respect the weekday ceiling. Flagged as an estimate in the UI.
-      const weekend = (week.longHr || 0) + (week.b2bHr || 0);
-      const weekdayPool = Math.max(0, week.planned - weekend);
-      const perDay = weekdayPool / 5;
-      plannedHrs = role.kind === "recovery" ? +(perDay * 0.6).toFixed(1) : +perDay.toFixed(1);
-    }
+  // Planned hours come straight from the tracker's Daily Log. An earlier version
+  // spread a week's planned total evenly across Mon-Fri, which is an average of
+  // the plan rather than the plan — it could not tell a Tuesday hill session from
+  // a Wednesday strength day, and invented durations the tracker states outright.
+  let plannedHrs = plan ? plan.hrs : null;
+  if (plannedHrs == null && !plan && week) {
+    if (DAY_ROLES[dow].kind === "long") plannedHrs = week.longHr;
+    else if (DAY_ROLES[dow].kind === "b2b") plannedHrs = week.b2bHr;
   }
-  const plannedEstimated = !!week && role.kind !== "long" && role.kind !== "b2b";
+  const plannedEstimated = !plan;
 
   // ---------------------------------------------------------------------------
   // HARD RULES — evaluated first, cannot be outranked.
@@ -208,11 +212,16 @@ export function advise({ date, history = [], limits, weekActualHrs = 0 }) {
 
   const weekday = dow >= 1 && dow <= 5;
   if (weekday && plannedHrs && plannedHrs > limits.weekdayMaxHrs) {
+    // Advisory, not a cut. The plan states the 4 AM weekday budget AND prescribes
+    // 2.3-2.5 hr midweek sessions in the peak block. Those are in tension, and the
+    // plan's author already made that call — the app's job is to name the
+    // collision on the morning it lands, not to quietly override either side.
     push({
-      verdict: "CUT",
-      rule: `Weekday sessions capped at ${limits.weekdayMaxHrs} hr`, source: "Plan §1",
-      says: "Weekday runs are budgeted around the 4 AM start before a 6 AM work day. Move the overflow to the weekend rather than shortening sleep.",
-      evidence: `Estimated ${plannedHrs} hr on a weekday.`,
+      verdict: "GO",
+      rule: `Exceeds your ${limits.weekdayMaxHrs} hr weekday budget`, source: "Plan §1 vs §9",
+      says: "The plan prescribes this anyway. Either start earlier or move it to the weekend — but do not solve it by cutting sleep, which is what the budget exists to protect.",
+      evidence: `${plannedHrs} hr on a weekday, against a ${limits.weekdayMaxHrs} hr budget built around the 4 AM start.`,
+      advisory: true,
     });
   }
 
@@ -224,7 +233,12 @@ export function advise({ date, history = [], limits, weekActualHrs = 0 }) {
   const verdict = pool.reduce((acc, f) => (VERDICTS[f.verdict].rank > VERDICTS[acc].rank ? f.verdict : acc), "GO");
 
   // Translate the verdict into an actual session.
-  let session = { hrs: plannedHrs, effort: role.kind === "quality" ? "quality" : "easy", note: role.note };
+  let session = {
+    hrs: plannedHrs,
+    effort: role.kind === "quality" ? "quality" : role.kind === "race" ? "race"
+          : role.kind === "rest" ? "rest" : "easy",
+    note: role.note,
+  };
   if (verdict === "STOP" || verdict === "REST") {
     session = { hrs: 0, effort: "rest", note: verdict === "STOP" ? "No running today." : "Full rest day." };
   } else if (verdict === "CUT") {
@@ -240,7 +254,7 @@ export function advise({ date, history = [], limits, weekActualHrs = 0 }) {
 
   return {
     date, dow, role, week, verdict, verdictInfo: VERDICTS[verdict],
-    plannedHrs, plannedEstimated, session, findings,
+    plannedHrs, plannedEstimated, session, findings, plan,
     baselines: { rhr: rhrBase, hrv: hrvBase },
     checkedIn: !!today,
     weekActualHrs,

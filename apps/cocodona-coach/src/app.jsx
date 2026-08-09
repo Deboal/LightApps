@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { store } from "../../../shared/store.js";
 import { AuthGate, signOut } from "../../../shared/auth.js";
 import { WEEKS, DAY_ROLES, weekFor, mondayOf, daysToRace, zones, HR, RACE_DATE, TOTAL_TARGET_HOURS } from "./plan.js";
+import { weekPlannedHours, PLAN_DAY_COUNT, PLAN_FIRST_DAY, PLAN_LAST_DAY } from "./daily.js";
 import { loadLimits, LIMIT_DOCS, HARD_RULES, DEFAULTS } from "./limits.js";
 import { advise, VERDICTS } from "./advise.js";
 import { SOURCES, STATUS_LABEL, FIELDS, mergeDay } from "./sources.js";
@@ -233,7 +234,10 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
 
       <Card style={{ borderLeft: `4px solid ${tone}`, background: `linear-gradient(160deg,${tone}12,${C.panel})` }}>
         <div style={{ fontSize: 11, letterSpacing: ".14em", color: C.faint, fontWeight: 700 }}>
-          {fmtDate(date).toUpperCase()} · {rec.role.role.toUpperCase()}
+          {fmtDate(date).toUpperCase()}
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 650, color: C.text, marginTop: 3 }}>
+          {rec.role.role}
         </div>
         <div style={{ fontSize: 26, fontWeight: 800, color: tone, marginTop: 6, letterSpacing: "-.02em" }}>
           {rec.verdictInfo.label}
@@ -264,8 +268,20 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
           )}
         </div>
         {rec.session.note && (
-          <div style={{ fontSize: 13, color: C.dim, marginTop: 12, lineHeight: 1.6, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
-            {rec.session.note}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+            {rec.plan && (
+              <div style={{ fontSize: 10, letterSpacing: ".1em", color: C.faint, fontWeight: 700,
+                            textTransform: "uppercase", marginBottom: 5 }}>
+                From your plan · week {rec.plan.wk} · {rec.plan.block}
+              </div>
+            )}
+            <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.65 }}>{rec.session.note}</div>
+          </div>
+        )}
+        {rec.plannedEstimated && (
+          <div style={{ fontSize: 12, color: C.warm, marginTop: 10, lineHeight: 1.6 }}>
+            This date is outside the plan window ({PLAN_FIRST_DAY} to {PLAN_LAST_DAY}), so the session
+            shown is inferred from the weekly architecture rather than read from the plan.
           </div>
         )}
         <Provenance reading={reading} />
@@ -295,6 +311,7 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{f.rule}</div>
                   <div style={{ display: "flex", gap: 5 }}>
                     {f.hard && <Pill color={C.danger}>HARD STOP</Pill>}
+                    {f.advisory && <Pill color={C.blue}>HEADS UP</Pill>}
                     {f.interpreted && <Pill color={C.faint}>INTERPRETED</Pill>}
                     <Pill color={C.faint}>{f.source}</Pill>
                   </div>
@@ -339,7 +356,7 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
             <div style={{ fontSize: 13.5, lineHeight: 1.7 }}>{wk.focus}</div>
             <div style={{ display: "flex", gap: 18, marginTop: 13, flexWrap: "wrap", fontSize: 12.5, color: C.dim }}>
               <span>target <b style={{ color: C.text }}>{wk.target ?? "—"} hr</b></span>
-              <span>planned <b style={{ color: C.text }}>{wk.planned} hr</b></span>
+              <span>planned <b style={{ color: C.text }}>{weekPlannedHours(wk.weekOf)} hr</b></span>
               <span>long <b style={{ color: C.text }}>{wk.longHr ?? "—"} hr</b></span>
               <span>B2B <b style={{ color: C.text }}>{wk.b2bHr ?? "—"} hr</b></span>
             </div>
@@ -387,7 +404,7 @@ function PlanView({ date, history }) {
 
   return (
     <div>
-      <SectionTitle note={`47 training weeks, 7 blocks, ${TOTAL_TARGET_HOURS.toFixed(0)} target hours from June 2026 to race day. Logged hours come from your check-ins.`}>
+      <SectionTitle note={`47 training weeks, 7 blocks, ${TOTAL_TARGET_HOURS.toFixed(0)} target hours from June 2026 to race day, across ${PLAN_DAY_COUNT} planned days. Logged hours come from your check-ins.`}>
         The whole plan
       </SectionTitle>
       <div style={{ display: "grid", gap: 3 }}>
