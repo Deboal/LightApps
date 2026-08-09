@@ -5,7 +5,7 @@ import { AuthGate, signOut } from "../../../shared/auth.js";
 import { WEEKS, DAY_ROLES, weekFor, mondayOf, daysToRace, zones, HR, RACE_DATE, TOTAL_TARGET_HOURS } from "./plan.js";
 import { loadLimits, LIMIT_DOCS, HARD_RULES, DEFAULTS } from "./limits.js";
 import { advise, VERDICTS } from "./advise.js";
-import { SOURCES, STATUS_LABEL, FIELDS } from "./sources.js";
+import { SOURCES, STATUS_LABEL, FIELDS, mergeDay } from "./sources.js";
 
 // Cocodona Coach — private training log and next-day recommendation.
 //
@@ -17,8 +17,17 @@ import { SOURCES, STATUS_LABEL, FIELDS } from "./sources.js";
 // autoregulation table against the day's numbers and shows which rules fired.
 
 const db = store("cocodona-coach");
-const CHECKINS = "checkins";
+const CHECKINS = "checkins";       // typed by hand; the ingestion job never writes here
+const FEED_WHOOP = "feed-whoop";   // written by .github/workflows/ingest-wearables.yml
+const FEED_GARMIN = "feed-garmin";
+const FEED_STATUS = "feed-status";
 const SETTINGS = "settings";
+
+// A feed that quietly stops is worse than one that visibly breaks, because the
+// recommendation keeps looking authoritative while running on stale numbers.
+const STALE_DAYS = 2;
+const staleness = (iso) =>
+  iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400e3) : null;
 
 const C = {
   bg: "#0f1318", panel: "#161c23", panel2: "#1b232b", line: "#2a333d",
@@ -128,9 +137,82 @@ function CheckIn({ date, existing, onSave, busy }) {
 }
 
 // ---------------------------------------------------------------------------
+// Where today's numbers came from. Shown because a recommendation built partly
+// on a scrape and partly on typed values should say which is which.
+// ---------------------------------------------------------------------------
+const SRC_COLOR = { manual: C.accent, whoop: C.blue, garmin: C.warm };
+
+function Provenance({ reading }) {
+  if (!reading) return null;
+  const shown = FIELDS.filter((f) => typeof reading[f.key] === "number");
+  if (!shown.length) return null;
+  const conflicts = reading.conflicts || [];
+  const conflicted = new Set(conflicts.map((c) => c.field));
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {shown.map((f) => {
+          const src = (reading.source || {})[f.key] || "manual";
+          const clash = conflicted.has(f.key);
+          return (
+            <div key={f.key} style={{ background: C.panel2,
+                                      border: `1px solid ${clash ? C.warm + "88" : C.line}`,
+                                      borderRadius: 8, padding: "6px 9px", minWidth: 76 }}>
+              <div style={{ fontSize: 9.5, letterSpacing: ".08em", color: C.faint, fontWeight: 700,
+                            textTransform: "uppercase" }}>{f.label}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {reading[f.key]}<span style={{ fontSize: 10, color: C.faint }}> {f.unit}</span>
+                {clash && <span style={{ color: C.warm, fontSize: 12 }}> ⚠</span>}
+              </div>
+              <div style={{ fontSize: 9.5, color: SRC_COLOR[src] || C.faint, fontWeight: 700,
+                            textTransform: "uppercase", letterSpacing: ".06em" }}>{src}</div>
+            </div>
+          );
+        })}
+      </div>
+      {conflicts.length > 0 && (
+        <div style={{ background: "#2a1f12", border: `1px solid ${C.warm}55`, borderRadius: 9,
+                      padding: "10px 12px", marginTop: 10, fontSize: 12, color: "#f0d9a8", lineHeight: 1.6 }}>
+          <b style={{ color: C.warm }}>Sources disagree.</b>{" "}
+          {conflicts.map((c) =>
+            `${c.label}: kept ${c.kept}${c.unit ? " " + c.unit : ""} from ${c.keptFrom}, ` +
+            `${c.otherFrom} said ${c.other}`).join("; ")}.
+          {" "}The kept value is what the rules ran on. Worth a look before trusting the verdict —
+          a wearable reading you typed over is still a reading.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StaleBanner({ feedStatus }) {
+  const providers = (feedStatus && feedStatus.providers) || {};
+  const problems = Object.entries(providers)
+    .filter(([, st]) => st.configured !== false)
+    .map(([name, st]) => {
+      const age = staleness(st.lastSuccess);
+      if (!st.ok) return { name, msg: st.error ? `last run errored: ${st.error}` : "last run errored", st };
+      if (age != null && age >= STALE_DAYS) return { name, msg: `no successful sync for ${age} days`, st };
+      return null;
+    })
+    .filter(Boolean);
+  if (!problems.length) return null;
+  return (
+    <div style={{ background: "#2a1f12", border: `1px solid ${C.warm}55`, borderRadius: 10,
+                  padding: "11px 13px", marginBottom: 12, fontSize: 12.5, color: "#f0d9a8", lineHeight: 1.6 }}>
+      <b style={{ color: C.warm }}>Feed problem.</b>{" "}
+      {problems.map((p) => `${p.name} — ${p.msg}`).join("; ")}.
+      {" "}Numbers below may be stale or missing. The morning check-in still works and takes priority,
+      so nothing is blocked{problems.some((p) => p.st.unofficial)
+        ? " — and Garmin has no official API, so it breaks on their schedule, not yours." : "."}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab: Today
 // ---------------------------------------------------------------------------
-function Today({ rec, date, setDate, existing, onSave, busy, history }) {
+function Today({ rec, date, setDate, existing, onSave, busy, history, reading, feedStatus }) {
   const tone = TONE[rec.verdictInfo.tone];
   const wk = rec.week;
 
@@ -146,6 +228,8 @@ function Today({ rec, date, setDate, existing, onSave, busy, history }) {
           {daysToRace(date)} days to Cocodona
         </div>
       </div>
+
+      <StaleBanner feedStatus={feedStatus} />
 
       <Card style={{ borderLeft: `4px solid ${tone}`, background: `linear-gradient(160deg,${tone}12,${C.panel})` }}>
         <div style={{ fontSize: 11, letterSpacing: ".14em", color: C.faint, fontWeight: 700 }}>
@@ -184,10 +268,17 @@ function Today({ rec, date, setDate, existing, onSave, busy, history }) {
             {rec.session.note}
           </div>
         )}
+        <Provenance reading={reading} />
         {!rec.checkedIn && (
           <div style={{ fontSize: 12.5, color: C.warm, marginTop: 12, lineHeight: 1.6 }}>
-            No check-in for this date, so only the structural rules could be evaluated. Enter the morning numbers
-            below to run the full autoregulation table.
+            Nothing recorded for this date from any source, so only the structural rules could be evaluated.
+            Enter the morning numbers below to run the full autoregulation table.
+          </div>
+        )}
+        {rec.checkedIn && reading && !reading.source?.energy && (
+          <div style={{ fontSize: 12.5, color: C.dim, marginTop: 12, lineHeight: 1.6 }}>
+            Wearable data is in, but energy, soreness, pain and load are yours to type — no device measures them,
+            and three of the plan's §8 rules depend on them.
           </div>
         )}
       </Card>
@@ -421,45 +512,102 @@ function LimitsView({ limits, setLimits }) {
 // ---------------------------------------------------------------------------
 // Tab: Feeds
 // ---------------------------------------------------------------------------
-function Feeds() {
-  const color = { live: C.good, "available-not-wired": C.warm, "unofficial-only": C.danger };
+function Feeds({ feedStatus, feeds }) {
+  const baseColor = { live: C.good, "available-not-wired": C.warm, "unofficial-only": C.danger };
+  const providers = (feedStatus && feedStatus.providers) || {};
+
+  // Live status from the ingestion job overrides the static description. Before
+  // the job has ever run there is nothing to override with, which is itself the
+  // honest answer.
+  const liveFor = (id) => {
+    const st = providers[id];
+    if (!st || st.configured === false) return null;
+    const age = staleness(st.lastSuccess);
+    return {
+      ok: !!st.ok, error: st.error, days: st.days, age,
+      stale: age != null && age >= STALE_DAYS,
+      label: st.ok ? (age === 0 ? "Synced today" : age === 1 ? "Synced yesterday" : `Synced ${age} days ago`)
+                   : "Last run failed",
+    };
+  };
+
   return (
     <div>
-      <SectionTitle note="What the recommendation can read from, and what each feed actually costs to set up. Researched August 2026.">
+      <SectionTitle note="What the recommendation reads from, and the live state of each feed.">
         Data sources
       </SectionTitle>
+
+      {feedStatus && feedStatus.ranAt && (
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.6 }}>
+            Ingestion job last ran <b style={{ color: C.text }}>{new Date(feedStatus.ranAt).toLocaleString()}</b>
+            {feedStatus.window && <> over {feedStatus.window.from} to {feedStatus.window.to}</>}.
+            {" "}Rows held: {Object.keys(feeds.whoop || {}).length} WHOOP, {Object.keys(feeds.garmin || {}).length} Garmin.
+          </div>
+        </Card>
+      )}
+      {!feedStatus && (
+        <Card style={{ marginBottom: 12, borderLeft: `3px solid ${C.warm}` }}>
+          <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.65 }}>
+            <b style={{ color: C.warm }}>The ingestion job has never reported in.</b> Either it has not run yet or
+            the secrets are not set. See <span style={{ fontFamily: mono }}>ingest/README.md</span> for the one-time
+            setup. The morning check-in works regardless.
+          </div>
+        </Card>
+      )}
+
       <div style={{ display: "grid", gap: 10 }}>
-        {SOURCES.map((s) => (
-          <Card key={s.id} style={{ borderLeft: `3px solid ${color[s.status]}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{s.label}</div>
-              <Pill color={color[s.status]}>{STATUS_LABEL[s.status]}</Pill>
-            </div>
-            <div style={{ fontSize: 13, color: C.dim, marginTop: 8, lineHeight: 1.65 }}>{s.detail}</div>
-            {s.blockedBy && (
-              <div style={{ fontSize: 12, color: color[s.status], marginTop: 9, lineHeight: 1.6 }}>
-                <b>Next step:</b> {s.blockedBy}
+        {SOURCES.map((s) => {
+          const live = liveFor(s.id);
+          const color = live ? (live.ok && !live.stale ? C.good : live.ok ? C.warm : C.danger)
+                             : baseColor[s.status];
+          return (
+            <Card key={s.id} style={{ borderLeft: `3px solid ${color}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{s.label}</div>
+                <Pill color={color}>{live ? live.label : STATUS_LABEL[s.status]}</Pill>
               </div>
-            )}
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 10 }}>
-              {s.provides.map((p) => {
-                const f = FIELDS.find((x) => x.key === p);
-                return <Pill key={p} color={C.faint}>{f ? f.label : p}</Pill>;
-              })}
-            </div>
-          </Card>
-        ))}
+              {live && live.ok && (
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 7, fontFamily: mono }}>
+                  {live.days} day(s) written on the last run
+                </div>
+              )}
+              {live && !live.ok && (
+                <div style={{ fontSize: 12, color: C.danger, marginTop: 7, lineHeight: 1.6, fontFamily: mono,
+                              wordBreak: "break-word" }}>
+                  {live.error || "no error recorded"}
+                </div>
+              )}
+              <div style={{ fontSize: 13, color: C.dim, marginTop: 8, lineHeight: 1.65 }}>{s.detail}</div>
+              {s.blockedBy && !live && (
+                <div style={{ fontSize: 12, color: baseColor[s.status], marginTop: 9, lineHeight: 1.6 }}>
+                  <b>Next step:</b> {s.blockedBy}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 10 }}>
+                {s.provides.map((p) => {
+                  const f = FIELDS.find((x) => x.key === p);
+                  return <Pill key={p} color={C.faint}>{f ? f.label : p}</Pill>;
+                })}
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
-      <SectionTitle>Why this app cannot fetch either one itself</SectionTitle>
+      <SectionTitle>How this works</SectionTitle>
       <Card>
         <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.7 }}>
-          This is a static bundle served from Netlify. There is no server to hold an OAuth client secret, no
-          scheduler, and no browser to automate. The ingestion has to live somewhere with credentials and a clock —
-          a scheduled GitHub Action in this repo, writing into the same Supabase table this app already reads.
-          That job would refresh WHOOP tokens on a documented API, attempt the Garmin scrape, and write whatever it
-          got. This app then treats all three feeds identically, and a Garmin break degrades one field instead of
-          the whole recommendation.
+          This app is a static bundle on Netlify: no server to hold an OAuth secret, no scheduler, no browser to
+          automate. So a scheduled GitHub Action (<span style={{ fontFamily: mono }}>ingest-wearables.yml</span>)
+          runs daily at 06:10 Arizona time, refreshes WHOOP on its documented API, attempts the Garmin scrape, and
+          writes both into separate feed collections here.
+        </div>
+        <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.7, marginTop: 11 }}>
+          Your typed check-ins live in their own collection and are never written by the job.
+          <b style={{ color: C.text }}> Manual values win every field they supply</b>, so a scrape can fill in what
+          you did not type but can never overwrite what you did. A Garmin break costs one field, not the
+          recommendation.
         </div>
       </Card>
     </div>
@@ -479,7 +627,9 @@ const TABS = [
 function Coach({ user }) {
   const [tab, setTab] = useState("today");
   const [date, setDate] = useState(todayISO);
-  const [history, setHistory] = useState([]);
+  const [manual, setManual] = useState([]);
+  const [feeds, setFeeds] = useState({ whoop: {}, garmin: {} });
+  const [feedStatus, setFeedStatus] = useState(null);
   const [limits, setLimits] = useState(() => loadLimits());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -488,13 +638,38 @@ function Coach({ user }) {
   useEffect(() => {
     (async () => {
       try {
-        const [rows, s] = await Promise.all([db.list(CHECKINS), db.get(SETTINGS, "limits")]);
-        setHistory(rows.filter((r) => r.date).sort((a, b) => a.date.localeCompare(b.date)));
+        // Feeds are additive: a missing or empty feed collection is normal before
+        // the ingestion job has ever run, and must not break the page.
+        const [rows, w, g, st, s] = await Promise.all([
+          db.list(CHECKINS),
+          db.list(FEED_WHOOP).catch(() => []),
+          db.list(FEED_GARMIN).catch(() => []),
+          db.get(FEED_STATUS, "status").catch(() => null),
+          db.get(SETTINGS, "limits"),
+        ]);
+        setManual(rows.filter((r) => r.date).sort((a, b) => a.date.localeCompare(b.date)));
+        const byDate = (arr) => Object.fromEntries((arr || []).filter((r) => r.date).map((r) => [r.date, r]));
+        setFeeds({ whoop: byDate(w), garmin: byDate(g) });
+        setFeedStatus(st);
         if (s) setLimits(loadLimits(s));
       } catch (e) { setErr(e.message || String(e)); }
       setLoading(false);
     })();
   }, []);
+
+  // One reading per day, merged across all three sources. Manual wins every
+  // field it supplies — see mergeDay's priority order. A scrape can add what you
+  // did not type but can never overwrite what you did.
+  const history = useMemo(() => {
+    const manualByDate = Object.fromEntries(manual.map((m) => [m.date, m]));
+    const dates = [...new Set([
+      ...Object.keys(manualByDate), ...Object.keys(feeds.whoop), ...Object.keys(feeds.garmin),
+    ])].sort();
+    return dates.map((d) => ({
+      date: d,
+      ...mergeDay({ manual: manualByDate[d], whoop: feeds.whoop[d], garmin: feeds.garmin[d] }),
+    }));
+  }, [manual, feeds]);
 
   const saveLimits = async (next) => {
     setLimits(next);
@@ -506,7 +681,7 @@ function Coach({ user }) {
     setBusy(true); setErr(null);
     try {
       await db.set(CHECKINS, entry, entry.date); // one row per day, keyed by date
-      setHistory((h) => {
+      setManual((h) => {
         const rest = h.filter((x) => x.date !== entry.date);
         return [...rest, { id: entry.date, ...entry }].sort((a, b) => a.date.localeCompare(b.date));
       });
@@ -518,7 +693,10 @@ function Coach({ user }) {
   // looking back at a past day shows what would have been advised then, not a
   // verdict contaminated by data recorded afterwards.
   const upto = useMemo(() => history.filter((h) => h.date <= date), [history, date]);
-  const existing = history.find((h) => h.date === date);
+  // The form edits MANUAL data only. Prefilling it from a feed would turn scraped
+  // values into typed ones on the next save and destroy the provenance.
+  const existing = manual.find((h) => h.date === date);
+  const reading = history.find((h) => h.date === date);
   const weekActualHrs = useMemo(() => {
     const mo = mondayOf(date);
     return history.filter((h) => mondayOf(h.date) === mo && h.date <= date)
@@ -561,10 +739,11 @@ function Coach({ user }) {
         ) : (
           <>
             {tab === "today" && <Today rec={rec} date={date} setDate={setDate} existing={existing}
-                                       onSave={saveCheckIn} busy={busy} history={upto} />}
+                                       onSave={saveCheckIn} busy={busy} history={upto}
+                                       reading={reading} feedStatus={feedStatus} />}
             {tab === "plan" && <PlanView date={date} history={history} />}
             {tab === "limits" && <LimitsView limits={limits} setLimits={saveLimits} />}
-            {tab === "feeds" && <Feeds />}
+            {tab === "feeds" && <Feeds feedStatus={feedStatus} feeds={feeds} />}
           </>
         )}
         <div style={{ marginTop: 34, paddingTop: 14, borderTop: `1px solid ${C.line}`,

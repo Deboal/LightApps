@@ -72,13 +72,36 @@ never with `Date`'s local-time getters. Arizona is MST year-round (UTC-7, no DST
 and these files get opened on phones in other timezones. An earlier draft used
 `getHours()` and shifted every split by the viewer's offset.
 
+## Wearable ingestion
+
+`ingest/` plus `.github/workflows/ingest-wearables.yml` pull WHOOP and Garmin into
+the coach app nightly. See `ingest/README.md` for the one-time setup — it needs
+`schema-integrations.sql` run once, a WHOOP developer app, and a local Garmin login
+to get past MFA.
+
+The job writes `feed-whoop` and `feed-garmin` collections and never touches your
+typed `checkins`. The app merges all three with manual winning, and surfaces any
+material disagreement rather than silently discarding the loser: if WHOOP measured
+a resting HR of 52 and you typed 44, manual wins the value and the app says so.
+
+WHOOP is an official API. Garmin is not, and will break again — a total Garmin
+failure is a warning, never a blocked recommendation.
+
 ## Tests
 
 Not wired to CI; run them by hand after touching the data or the engine.
 They live outside the repo (no test-only deps in `package.json`) — see the
-session scratchpad for `verify.mjs` (course + all three split tables) and
+session scratchpad for `verify.mjs` (course + all three split tables),
 `advise-test.mjs` (the recommendation engine, including that hard stops cannot be
-outranked by good numbers elsewhere).
+outranked by good numbers elsewhere), `merge-test.mjs` (source priority and
+conflict detection), and `ingest_test.py` (WHOOP response mapping, HRV unit
+coercion, token round-tripping).
+
+There is also a signed-in browser harness: copy `apps/cocodona-coach/src/` to a
+temp dir, point the two `shared/` imports at stubs that fake `AuthGate` and
+`store`, and bundle from the repo root so `react` resolves. That is the only way to
+exercise the Today tab, provenance strip and stale-feed banner without a real
+Supabase session.
 
 ## Still open
 
