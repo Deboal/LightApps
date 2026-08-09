@@ -34,7 +34,11 @@ import intervals_feed
 import whoop_feed
 from common import Supabase, days_back, env, log
 
-WINDOW_DAYS = int(os.environ.get("INGEST_DAYS", "7"))
+# `or` rather than a get() default throughout: an unset GitHub Actions secret
+# arrives as an EMPTY STRING, not as an absent key, so environ.get(k, "7") returns
+# "" and the default never applies. This cost one failed run — the athlete id
+# resolved to "" and produced a request to /api/v1/athlete//wellness.
+WINDOW_DAYS = int(os.environ.get("INGEST_DAYS") or "7")
 
 
 def main() -> int:
@@ -66,8 +70,8 @@ def main() -> int:
     failed = 0
 
     # ---------------------------------------------------------------- WHOOP --
-    wid = os.environ.get("WHOOP_CLIENT_ID")
-    wsecret = os.environ.get("WHOOP_CLIENT_SECRET")
+    wid = (os.environ.get("WHOOP_CLIENT_ID") or "").strip() or None
+    wsecret = (os.environ.get("WHOOP_CLIENT_SECRET") or "").strip() or None
     if wid and wsecret:
         configured += 1
         try:
@@ -107,14 +111,15 @@ def main() -> int:
     # Preferred Garmin path: intervals.icu is an approved Garmin partner, so this
     # is Garmin's own data arriving over supported APIs the whole way. Tried
     # before the scrape below, and if it works the scrape is unnecessary.
-    intervals_key = os.environ.get("INTERVALS_API_KEY")
+    intervals_key = (os.environ.get("INTERVALS_API_KEY") or "").strip() or None
     if intervals_key:
         configured += 1
         try:
             who = intervals_feed.whoami(intervals_key)
             log(f"intervals: authenticated as athlete {who.get('id')} ({who.get('name')})")
-            data = intervals_feed.fetch(intervals_key, dates,
-                                        os.environ.get("INTERVALS_ATHLETE_ID", "0"))
+            # "0" means the authenticated athlete, which is what we want by default.
+            athlete = (os.environ.get("INTERVALS_ATHLETE_ID") or "0").strip() or "0"
+            data = intervals_feed.fetch(intervals_key, dates, athlete)
             for d, row in sorted(data.items()):
                 sb.upsert_doc(owner, "feed-intervals", d, {"date": d, **row})
             log(f"intervals: wrote {len(data)} day(s)")
@@ -140,7 +145,7 @@ def main() -> int:
     except Exception as e:
         log(f"garmin: could not read stored tokens ({e})")
         stored_g = {}
-    blob = stored_g.get("tokens_b64") or os.environ.get("GARMIN_TOKENS_B64")
+    blob = stored_g.get("tokens_b64") or (os.environ.get("GARMIN_TOKENS_B64") or "").strip() or None
     if blob and status.get("intervals", {}).get("ok"):
         log("garmin: skipping the direct scrape — intervals.icu already supplied Garmin data")
         status["garmin"] = {"skipped": "intervals.icu succeeded"}

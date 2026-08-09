@@ -57,6 +57,10 @@ def _session(api_key: str) -> requests.Session:
 
 def fetch(api_key: str, dates: list[str], athlete_id: str = "0") -> dict[str, dict]:
     """Return {date: {metric: value}} for the requested window."""
+    # An empty athlete id builds /api/v1/athlete//wellness, which 404s with a
+    # message that looks like a permissions problem and is not one. Refuse to
+    # construct that URL at all.
+    athlete_id = (athlete_id or "").strip() or "0"
     s = _session(api_key)
     oldest, newest = dates[0], dates[-1]
     days: dict[str, dict] = {}
