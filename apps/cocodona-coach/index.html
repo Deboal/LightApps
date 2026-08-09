@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1318" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Cocodona Coach</title>
+  <style>
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html,body{margin:0;background:#0f1318;color:#e7edf2;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      -webkit-text-size-adjust:100%;}
+    #root{min-height:100vh;min-height:100dvh;}
+    button,input,select{font-family:inherit;}
+    /* Reset the iOS chrome on text fields and selects only. Applying this to
+       every input collapses checkboxes to zero size and makes them invisible. */
+    input[type="text"],input[type="email"],input:not([type]),select{
+      -webkit-appearance:none;appearance:none;}
+    input[type="checkbox"]{accent-color:#33c2b0;width:16px;height:16px;}
+    table{-webkit-text-size-adjust:100%;}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Private: signed in, per-user data. Holds health metrics, unlike the
+       crew-facing cocodona app which is deliberately offline and shareable. -->
+  <script src="bundle.js"></script>
+</body>
+</html>

@@ -53,10 +53,12 @@ Iterating is the same loop: edit → PR → merge → redeploys shortly after.
 ## Offline single-file export (for self-contained apps)
 
 For an app with no backend, you can hand the user one file that runs offline
-(great for spotty signal). After `bash build.sh`, inline `public/<name>/bundle.js`
-into a `<script>` in a copy of the app's `index.html` — one self-contained
-`.html` the user can save to their phone and "Add to Home Screen." Verify it by
-loading it as a `file://` URL with all network requests blocked.
+(great for spotty signal): `bash make-offline.sh <name>` writes
+`offline/<name>.html` with the bundle inlined. It refuses apps that import
+`shared/client|store|auth`, since a `file://` page needing Supabase just spins.
+Verify the result by loading it as a `file://` URL with all network requests
+blocked. `offline/` is gitignored; the file is a build artifact to hand over,
+not something to commit.
 
 ## Conventions
 
