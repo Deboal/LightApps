@@ -3,3 +3,5 @@ public/
 package-lock.json
 .DS_Store
 offline/
+__pycache__/
+*.pyc
