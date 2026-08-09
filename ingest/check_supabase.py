@@ -92,13 +92,32 @@ def main() -> int:
 
     anon = {"apikey": pub_key or "", "Authorization": f"Bearer {pub_key or ''}"}
 
-    r = requests.get(f"{url}/rest/v1/app_data", params={"select": "app", "limit": 1},
+    # Probing anon access by status code alone is WRONG and gave a false negative
+    # the first time this ran. Dropping an RLS policy does not make PostgREST
+    # reject the request — RLS filters rows, so a locked-down table answers
+    # 200 with an empty array. (integration_secrets answers 401 only because it
+    # additionally revokes the table grant, which is a different mechanism.)
+    #
+    # The real test is comparative: if service_role can see rows and anon sees
+    # none, RLS is doing its job. That verdict is resolved in tier 1; tier 0 can
+    # only report what anon got.
+    anon_rows = None
+    r = requests.get(f"{url}/rest/v1/app_data", params={"select": "app", "limit": 5},
                      headers=anon, timeout=TIMEOUT)
     if r.status_code == 200:
-        line(WARN, "app_data readable by anon", "HTTP 200 — schema-auth-enforce.sql has NOT been run, "
-                                                "so hub data is readable without signing in")
+        try:
+            anon_rows = len(r.json())
+        except Exception:
+            anon_rows = None
+        if anon_rows:
+            line(BAD, "app_data READABLE by anon", f"returned {anon_rows} row(s) with the publishable "
+                                                   f"key — schema-auth-enforce.sql has not taken effect")
+        else:
+            line(OK, "app_data returns nothing to anon",
+                 "HTTP 200 with 0 rows — RLS is filtering (confirmed against service_role in tier 1)")
     elif r.status_code in (401, 403):
-        line(OK, "app_data denied to anon", f"HTTP {r.status_code} — sign-in is enforced")
+        anon_rows = 0
+        line(OK, "app_data denied to anon", f"HTTP {r.status_code} — blocked at the grant level")
     elif r.status_code == 404:
         line(BAD, "app_data does not exist", "run schema.sql")
     else:
@@ -142,6 +161,27 @@ def main() -> int:
         line(BAD, "service_role cannot read app_data", f"HTTP {r.status_code}: {r.text[:200]}")
         return 0
     line(OK, "service_role can read app_data")
+
+    # Resolve the anon verdict properly, now that we can see ground truth.
+    rc = requests.get(f"{url}/rest/v1/app_data", params={"select": "app"},
+                      headers={**svc, "Prefer": "count=exact", "Range": "0-0"}, timeout=TIMEOUT)
+    total = None
+    cr = rc.headers.get("content-range", "")
+    if "/" in cr:
+        tail = cr.split("/")[-1]
+        total = int(tail) if tail.isdigit() else None
+    if total is None:
+        line(WARN, "could not count app_data rows", f"content-range: {cr!r}")
+    elif anon_rows is None:
+        line(WARN, "anon verdict inconclusive", "the anon probe did not return a usable body")
+    elif total == 0:
+        line(INFO, "app_data is empty", "cannot confirm RLS either way with no rows to filter")
+    elif anon_rows == 0:
+        line(OK, "SIGN-IN IS ENFORCED",
+             f"service_role sees {total} row(s), anon sees 0 — schema-auth-enforce.sql is in effect")
+    else:
+        line(BAD, "SIGN-IN IS NOT ENFORCED",
+             f"anon read {anon_rows} of {total} row(s) with the publishable key — run schema-auth-enforce.sql")
 
     owner_uuid = None
     if coach_email:
