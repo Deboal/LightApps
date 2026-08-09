@@ -37,6 +37,17 @@ WINDOW_DAYS = int(os.environ.get("INGEST_DAYS", "7"))
 
 
 def main() -> int:
+    # Not-yet-configured is a normal state, not a failure. The nightly cron goes
+    # live as soon as this lands on the default branch, which is typically before
+    # the secrets exist — and a red X every night until then just teaches you to
+    # ignore the job. Skip cleanly instead, and say what is missing.
+    missing = [k for k in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "COACH_USER_EMAIL")
+               if not os.environ.get(k)]
+    if missing:
+        log(f"not configured yet — missing {', '.join(missing)}. Skipping.")
+        log("See ingest/README.md for the one-time setup. This is not an error.")
+        return 0
+
     sb_url = env("SUPABASE_URL")
     sb_key = env("SUPABASE_SERVICE_ROLE_KEY")
     owner_email = env("COACH_USER_EMAIL")
