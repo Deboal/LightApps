@@ -348,7 +348,11 @@ function StaleBanner({ feedStatus }) {
 // ---------------------------------------------------------------------------
 // Tab: Today
 // ---------------------------------------------------------------------------
-function Today({ rec, date, setDate, existing, onSave, busy, history, reading, feedStatus, todayIso }) {
+function Today({ rec, date, setDate, existing, onSave, busy, history, reading, feedStatus, todayIso, limits }) {
+  // The engine already computes a rolling resting-HR baseline for the §8 rule;
+  // reuse it rather than recomputing, so the zones and the rules cannot disagree
+  // about what "your resting HR" means.
+  const restBaseline = rec.baselines && rec.baselines.rhr;
   // A future date shows the plan, not a verdict. The readiness rules have nothing
   // to say about a session that has not had its morning yet, and dressing a
   // preview up as a recommendation would imply they did.
@@ -524,23 +528,53 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
 
       {!preview && <Upcoming date={date} setDate={setDate} days={10} />}
 
-      <SectionTitle note="Karvonen, from resting 45 and max 200 as the heat-acclimation notes specify.">
+      <SectionTitle note={`Karvonen, anchored to a tested max of ${limits.maxHr} and resting ${limits.restHr}. Editable under Limits.`}>
         Heart-rate zones
       </SectionTitle>
       <Card>
-        {zones().map((z, i) => (
-          <div key={z.name} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0",
-                                     borderBottom: i < 4 ? `1px solid ${C.line}` : "none", fontSize: 13 }}>
-            <span style={{ color: i === 1 ? C.accent : C.dim, fontWeight: i === 1 ? 700 : 400 }}>{z.name}</span>
-            <span style={{ fontFamily: mono, fontVariantNumeric: "tabular-nums" }}>{z.range[0]}–{z.range[1]}</span>
-          </div>
-        ))}
-        <div style={{ fontSize: 11.5, color: C.warm, marginTop: 11, lineHeight: 1.6 }}>
-          <b>Unresolved conflict in your own documents.</b> The heat notes set Karvonen at resting 45 / max 200,
-          which puts Zone 2 at 138–153. The Brokeoff log instead used an age-predicted max of 184 and called an
-          average of 126 bpm "solid Zone 2" — by Karvonen that same 126 is Zone 1. Both readings cannot be right,
-          and the gap changes what every easy run should feel like. A tested max would settle it.
+        {zones(limits.restHr, limits.maxHr).map((z, i) => {
+          // Highlight the zone the measured resting-HR baseline is nowhere near,
+          // and the one nearly all of this plan's running should sit in.
+          const isZ2 = i === 1;
+          return (
+            <div key={z.name} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0",
+                                       borderBottom: i < 4 ? `1px solid ${C.line}` : "none", fontSize: 13 }}>
+              <span style={{ color: isZ2 ? C.accent : C.dim, fontWeight: isZ2 ? 700 : 400 }}>
+                {z.name}{isZ2 && <span style={{ color: C.faint, fontWeight: 400 }}> · most of the plan</span>}
+              </span>
+              <span style={{ fontFamily: mono, fontVariantNumeric: "tabular-nums",
+                             color: isZ2 ? C.text : C.dim }}>{z.range[0]}–{z.range[1]}</span>
+            </div>
+          );
+        })}
+
+        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 12, paddingTop: 11,
+                      borderTop: `1px solid ${C.line}`, lineHeight: 1.65 }}>
+          <b style={{ color: C.good }}>Settled: max is tested at {limits.maxHr}.</b> Your documents disagreed —
+          the heat notes configured Karvonen at max {limits.maxHr}, the Brokeoff Mountain log computed off an
+          age-predicted 184. The tested number wins, and it has a consequence worth knowing.
         </div>
+        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 9, lineHeight: 1.65 }}>
+          The deeper disagreement was <b style={{ color: C.text }}>method</b>, not just the max. That log recorded
+          Brokeoff at an average of <b style={{ color: C.text }}>126 bpm</b> and read it as Zone 2 by
+          percent-of-max — 68% of 184. These zones use Karvonen, which works off heart-rate reserve, and 126 is
+          52% of reserve. Under Karvonen 126 is <b style={{ color: C.text }}>Zone 1</b> at either max, so the
+          labels were never going to agree no matter which number won.
+        </div>
+        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 9, lineHeight: 1.65 }}>
+          Practically: the log's read still holds — correct Block 0 session, no hole dug — but if 126 has been
+          your feel for Zone 2, real Zone 2 here is
+          {" "}<b style={{ color: C.accent }}>{zones(limits.restHr, limits.maxHr)[1].range[0]}–{zones(limits.restHr, limits.maxHr)[1].range[1]}</b>,
+          roughly 15 beats higher. Most of this plan's running belongs there.
+        </div>
+        {restBaseline != null && Math.abs(restBaseline - limits.restHr) >= 3 && (
+          <div style={{ background: "#2a1f12", border: `1px solid ${C.warm}55`, borderRadius: 9,
+                        padding: "10px 12px", marginTop: 11, fontSize: 12, color: "#f0d9a8", lineHeight: 1.6 }}>
+            <b style={{ color: C.warm }}>Your measured resting HR has moved.</b> The zones above assume
+            {" "}{limits.restHr}, but your rolling baseline from the feed is {restBaseline.toFixed(0)} bpm.
+            Update the resting figure under Limits and every zone shifts with it. Max does not drift; resting does.
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -928,7 +962,8 @@ function Coach({ user }) {
           <>
             {tab === "today" && <Today rec={rec} date={date} setDate={setDate} existing={existing}
                                        onSave={saveCheckIn} busy={busy} history={upto}
-                                       reading={reading} feedStatus={feedStatus} todayIso={todayISO()} />}
+                                       reading={reading} feedStatus={feedStatus} todayIso={todayISO()}
+                                       limits={limits} />}
             {tab === "plan" && <PlanView date={date} history={history} />}
             {tab === "limits" && <LimitsView limits={limits} setLimits={saveLimits} />}
             {tab === "feeds" && <Feeds feedStatus={feedStatus} feeds={feeds} />}

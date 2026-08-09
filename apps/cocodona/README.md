@@ -111,7 +111,14 @@ document, sweat sodium test, ankle injury history for the BetterGuard decision,
 and reconcile the heat block duration (Workout Reference says 4 weeks, the July
 supplement says 10–14 days).
 
-One conflict the coach app surfaces but cannot resolve: the heat notes set
-Karvonen zones at resting 45 / max 200, which puts Zone 2 at 138–153, while the
-Brokeoff log used an age-predicted max of 184 and called 126 bpm "solid Zone 2".
-By Karvonen that same 126 is Zone 1. A tested max would settle it.
+**Resolved:** max heart rate is **tested at 200**, not age-predicted. That settles
+the conflict between the heat notes (Karvonen at max 200) and the Brokeoff log
+(age-predicted 184). It also exposed that the real disagreement was *method*, not
+the max: the log read 126 bpm as Zone 2 by percent-of-max (68% of 184), while
+these zones use Karvonen on heart-rate reserve, where 126 is 52% and lands in
+Zone 1 at either max. So the labels were never going to agree.
+
+Practical consequence: Zone 2 is **138–154**, about 15 beats above the 126 the log
+treated as Zone 2. `maxHr` and `restHr` are editable under Limits, and the app
+flags it when the measured resting-HR baseline from the feed drifts 3+ bpm from
+the configured figure — max does not drift, resting does.

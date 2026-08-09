@@ -13,6 +13,15 @@
 // a reading of it.
 
 export const DEFAULTS = {
+  // --- heart rate ---
+  // maxHr is TESTED, not age-predicted, confirmed by Alex. This settles a
+  // conflict that ran through the source documents: the heat-acclimation notes
+  // configured Karvonen at max 200, while the Brokeoff Mountain log computed off
+  // an age-predicted 184 and read an average of 126 bpm as "solid Zone 2". At the
+  // tested max that same 126 is Zone 1 — see the note in LIMIT_DOCS.
+  maxHr: 200,
+  restHr: 45,
+
   // --- Section 8 autoregulation table ---
   rhrElevatedBpm: 5,          // "Resting HR elevated 5+ bpm..."
   rhrElevatedDays: 2,         // "...for 2+ days"
@@ -32,6 +41,11 @@ export const DEFAULTS = {
 };
 
 export const LIMIT_DOCS = [
+  { key: "maxHr", label: "Max heart rate", unit: "bpm", source: "Tested",
+    verbatim: "Tested, not age-predicted. This resolves the conflict in the source documents: the heat-acclimation notes set Karvonen at max 200, the Brokeoff log used an age-predicted 184. 200 is correct, so every zone below is anchored to a measured number rather than a formula." },
+  { key: "restHr", label: "Resting heart rate", unit: "bpm", source: "Heat notes",
+    verbatim: "The Karvonen resting figure. Unlike max, this drifts with fitness — the app compares it against your rolling baseline from the feed and flags a material gap." },
+
   { key: "rhrElevatedBpm", label: "Resting HR elevated by", unit: "bpm",
     source: "Plan §8", verbatim: "Resting HR elevated 5+ bpm for 2+ days, or HRV well down → convert the next quality or long session to easy, or take a rest day. Reassess in 24 hours." },
   { key: "rhrElevatedDays", label: "...for consecutive days", unit: "days", source: "Plan §8" },
