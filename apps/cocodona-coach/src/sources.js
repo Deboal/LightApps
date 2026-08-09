@@ -26,16 +26,21 @@
 // See ingest/README.md for the one-time setup. `manual` always carries the
 // subjective fields, and carries everything before the job is configured.
 
+// Source priority. Manual always wins. Then WHOOP (official API), then Garmin via
+// intervals.icu (Garmin's own data over an approved-partner API), then the direct
+// Garmin scrape, which is last because it is the only unofficial hop.
+export const PRIORITY = ["manual", "whoop", "intervals", "garmin"];
+
 export const FIELDS = [
-  { key: "rhr",      label: "Resting HR",   unit: "bpm", from: ["whoop", "garmin", "manual"] },
-  { key: "hrv",      label: "HRV",          unit: "ms",  from: ["whoop", "garmin", "manual"] },
-  { key: "sleepHrs", label: "Sleep",        unit: "hr",  from: ["whoop", "garmin", "manual"] },
+  { key: "rhr",      label: "Resting HR",   unit: "bpm", from: ["whoop", "intervals", "garmin", "manual"] },
+  { key: "hrv",      label: "HRV",          unit: "ms",  from: ["whoop", "intervals", "garmin", "manual"] },
+  { key: "sleepHrs", label: "Sleep",        unit: "hr",  from: ["whoop", "intervals", "garmin", "manual"] },
   { key: "recovery", label: "Recovery",     unit: "%",   from: ["whoop"] },
   { key: "strain",   label: "Strain",       unit: "",    from: ["whoop"] },
   { key: "energy",   label: "Energy",       unit: "/10", from: ["manual"] },
   { key: "soreness", label: "Soreness",     unit: "/5",  from: ["manual"] },
-  { key: "actualHrs",label: "Session time", unit: "hr",  from: ["garmin", "manual"] },
-  { key: "actualVert",label: "Vert",        unit: "ft",  from: ["garmin", "manual"] },
+  { key: "actualHrs",label: "Session time", unit: "hr",  from: ["intervals", "garmin", "manual"] },
+  { key: "actualVert",label: "Vert",        unit: "ft",  from: ["intervals", "garmin", "manual"] },
 ];
 
 export const SOURCES = [
@@ -57,11 +62,20 @@ export const SOURCES = [
     blockedBy: "Register an app at developer.whoop.com (with the offline scope), run ingest/authorize_whoop.py once, and add the three WHOOP_* secrets.",
   },
   {
+    id: "intervals",
+    label: "Garmin via intervals.icu",
+    status: "wired-pending-setup",
+    detail:
+      "The good Garmin path. intervals.icu is an approved Garmin partner with a native Garmin Connect integration, and exposes its own documented API with plain API-key auth. Resting HR, HRV, sleep and activities arrive as Garmin's own data over supported APIs the whole way — no impersonation, no MFA to answer in CI, nothing to break when Garmin ships a UI change.",
+    provides: ["rhr", "hrv", "sleepHrs", "actualHrs", "actualVert"],
+    blockedBy: "Create a free intervals.icu account, connect Garmin under Settings → Integrations with the Wellness and Sleep scopes, generate a key under Developer Settings, and add INTERVALS_API_KEY. No terminal needed.",
+  },
+  {
     id: "garmin",
-    label: "Garmin",
+    label: "Garmin, direct",
     status: "unofficial-only",
     detail:
-      "No personal API exists, so the job uses python-garminconnect, which logs in as a browser would. Garmin changed its auth flow in March 2026 and broke the whole ecosystem once already. Treated as best-effort enrichment: every metric is extracted defensively and a total failure is a warning, never a blocked recommendation.",
+      "Last-resort fallback, skipped entirely whenever intervals.icu delivers. Uses python-garminconnect, which logs in as a browser would. Garmin changed its auth flow in March 2026 and broke the whole ecosystem once already. Kept because it is built and tested, not because it should be the primary path.",
     provides: ["rhr", "hrv", "sleepHrs", "actualHrs", "actualVert"],
     blockedBy: "Run ingest/authorize_garmin.py once locally to answer MFA, then add GARMIN_TOKENS_B64. Expect to redo this roughly yearly.",
     warn: true,
@@ -94,7 +108,7 @@ function disagrees(key, winner, other) {
 // fires — which is the correct precedence and also exactly how a real signal gets
 // suppressed without anyone noticing. So every material disagreement is recorded
 // in `conflicts` and shown in the UI. Precedence stays; the silence does not.
-export function mergeDay(readings, priority = ["manual", "whoop", "garmin"]) {
+export function mergeDay(readings, priority = PRIORITY) {
   const out = { source: {}, conflicts: [] };
   for (const f of FIELDS) {
     let winner = null;

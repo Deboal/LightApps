@@ -21,6 +21,7 @@ const db = store("cocodona-coach");
 const CHECKINS = "checkins";       // typed by hand; the ingestion job never writes here
 const FEED_WHOOP = "feed-whoop";   // written by .github/workflows/ingest-wearables.yml
 const FEED_GARMIN = "feed-garmin";
+const FEED_INTERVALS = "feed-intervals";
 const FEED_STATUS = "feed-status";
 const SETTINGS = "settings";
 
@@ -141,7 +142,7 @@ function CheckIn({ date, existing, onSave, busy }) {
 // Where today's numbers came from. Shown because a recommendation built partly
 // on a scrape and partly on typed values should say which is which.
 // ---------------------------------------------------------------------------
-const SRC_COLOR = { manual: C.accent, whoop: C.blue, garmin: C.warm };
+const SRC_COLOR = { manual: C.accent, whoop: C.blue, intervals: C.good, garmin: C.warm };
 
 function Provenance({ reading }) {
   if (!reading) return null;
@@ -559,7 +560,9 @@ function Feeds({ feedStatus, feeds }) {
           <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.6 }}>
             Ingestion job last ran <b style={{ color: C.text }}>{new Date(feedStatus.ranAt).toLocaleString()}</b>
             {feedStatus.window && <> over {feedStatus.window.from} to {feedStatus.window.to}</>}.
-            {" "}Rows held: {Object.keys(feeds.whoop || {}).length} WHOOP, {Object.keys(feeds.garmin || {}).length} Garmin.
+            {" "}Rows held: {Object.keys(feeds.whoop || {}).length} WHOOP,
+            {" "}{Object.keys(feeds.intervals || {}).length} intervals.icu,
+            {" "}{Object.keys(feeds.garmin || {}).length} Garmin direct.
           </div>
         </Card>
       )}
@@ -645,7 +648,7 @@ function Coach({ user }) {
   const [tab, setTab] = useState("today");
   const [date, setDate] = useState(todayISO);
   const [manual, setManual] = useState([]);
-  const [feeds, setFeeds] = useState({ whoop: {}, garmin: {} });
+  const [feeds, setFeeds] = useState({ whoop: {}, intervals: {}, garmin: {} });
   const [feedStatus, setFeedStatus] = useState(null);
   const [limits, setLimits] = useState(() => loadLimits());
   const [loading, setLoading] = useState(true);
@@ -657,16 +660,17 @@ function Coach({ user }) {
       try {
         // Feeds are additive: a missing or empty feed collection is normal before
         // the ingestion job has ever run, and must not break the page.
-        const [rows, w, g, st, s] = await Promise.all([
+        const [rows, w, iv, g, st, s] = await Promise.all([
           db.list(CHECKINS),
           db.list(FEED_WHOOP).catch(() => []),
+          db.list(FEED_INTERVALS).catch(() => []),
           db.list(FEED_GARMIN).catch(() => []),
           db.get(FEED_STATUS, "status").catch(() => null),
           db.get(SETTINGS, "limits"),
         ]);
         setManual(rows.filter((r) => r.date).sort((a, b) => a.date.localeCompare(b.date)));
         const byDate = (arr) => Object.fromEntries((arr || []).filter((r) => r.date).map((r) => [r.date, r]));
-        setFeeds({ whoop: byDate(w), garmin: byDate(g) });
+        setFeeds({ whoop: byDate(w), intervals: byDate(iv), garmin: byDate(g) });
         setFeedStatus(st);
         if (s) setLimits(loadLimits(s));
       } catch (e) { setErr(e.message || String(e)); }
@@ -680,11 +684,13 @@ function Coach({ user }) {
   const history = useMemo(() => {
     const manualByDate = Object.fromEntries(manual.map((m) => [m.date, m]));
     const dates = [...new Set([
-      ...Object.keys(manualByDate), ...Object.keys(feeds.whoop), ...Object.keys(feeds.garmin),
+      ...Object.keys(manualByDate), ...Object.keys(feeds.whoop),
+      ...Object.keys(feeds.intervals), ...Object.keys(feeds.garmin),
     ])].sort();
     return dates.map((d) => ({
       date: d,
-      ...mergeDay({ manual: manualByDate[d], whoop: feeds.whoop[d], garmin: feeds.garmin[d] }),
+      ...mergeDay({ manual: manualByDate[d], whoop: feeds.whoop[d],
+                    intervals: feeds.intervals[d], garmin: feeds.garmin[d] }),
     }));
   }, [manual, feeds]);
 

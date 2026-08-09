@@ -26,6 +26,12 @@ import sys
 
 import requests
 
+# This script is invoked as `python ingest/check_supabase.py` from the repo root,
+# so its own directory is not on sys.path and a sibling import would fail with
+# ModuleNotFoundError — which the intervals check would then misreport as a
+# rejected API key.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 TIMEOUT = 25
 APP = "cocodona-coach"
 
@@ -270,6 +276,7 @@ def main() -> int:
         "WHOOP_CLIENT_ID": bool(os.environ.get("WHOOP_CLIENT_ID")),
         "WHOOP_CLIENT_SECRET": bool(os.environ.get("WHOOP_CLIENT_SECRET")),
         "WHOOP_REFRESH_TOKEN": bool(os.environ.get("WHOOP_REFRESH_TOKEN")),
+        "INTERVALS_API_KEY": bool(os.environ.get("INTERVALS_API_KEY")),
         "GARMIN_TOKENS_B64": bool(os.environ.get("GARMIN_TOKENS_B64")),
     }
     for k, v in have.items():
@@ -277,8 +284,20 @@ def main() -> int:
     whoop_ready = all(have[k] for k in ("WHOOP_CLIENT_ID", "WHOOP_CLIENT_SECRET", "WHOOP_REFRESH_TOKEN"))
     line(OK if whoop_ready else INFO, "WHOOP feed",
          "ready to run" if whoop_ready else "needs authorize_whoop.py + the three WHOOP_* secrets")
-    line(OK if have["GARMIN_TOKENS_B64"] else INFO, "Garmin feed",
-         "ready to attempt" if have["GARMIN_TOKENS_B64"] else "needs authorize_garmin.py + GARMIN_TOKENS_B64")
+    # Live check on the intervals.icu key: a key that does not authenticate is
+    # worth knowing about now rather than at 06:10 tomorrow.
+    if have["INTERVALS_API_KEY"]:
+        try:
+            import intervals_feed
+            who = intervals_feed.whoami(os.environ["INTERVALS_API_KEY"])
+            line(OK, "Garmin via intervals.icu", f"key valid, athlete {who.get('id')} ({who.get('name')})")
+        except Exception as e:
+            line(BAD, "Garmin via intervals.icu", f"key set but rejected — {type(e).__name__}: {e}"[:220])
+    else:
+        line(INFO, "Garmin via intervals.icu",
+             "needs a free intervals.icu account, Garmin connected there, and INTERVALS_API_KEY")
+    line(INFO if not have["GARMIN_TOKENS_B64"] else OK, "Garmin direct scrape",
+         "configured as fallback" if have["GARMIN_TOKENS_B64"] else "not configured (fine — the intervals path is preferred)")
 
     print("\ndone")
     return 0
