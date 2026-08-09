@@ -8,9 +8,16 @@ name: Ingest wearables
 # yesterday, because WHOOP recalculates recovery when a late nap lands and Garmin
 # backfills when a watch syncs days later.
 
+#
+# THE SCHEDULE IS INTENTIONALLY OFF. No wearable feed is configured yet, so a
+# nightly run would resolve the owner, find nothing to fetch, and exit 0 — a
+# daily green tick that means nothing, which is how you stop reading the Actions
+# tab. Uncomment the two `schedule` lines below the moment either feed is wired
+# up (see ingest/README.md). Manual runs work regardless.
+
 on:
-  schedule:
-    - cron: "10 13 * * *"
+  # schedule:
+  #   - cron: "10 13 * * *"
   workflow_dispatch:
     inputs:
       days:
