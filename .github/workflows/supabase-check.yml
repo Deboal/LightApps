@@ -41,5 +41,6 @@ jobs:
           WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
           WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
           WHOOP_REFRESH_TOKEN: ${{ secrets.WHOOP_REFRESH_TOKEN }}
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
           GARMIN_TOKENS_B64: ${{ secrets.GARMIN_TOKENS_B64 }}
         run: python ingest/check_supabase.py

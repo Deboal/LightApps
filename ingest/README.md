@@ -34,15 +34,29 @@ day is not overwritten by a stray watch record.
 path and it covers everything the readiness rules need except the subjective
 fields.
 
-**Garmin has no personal API.** The Connect Developer Program requires a legal
-entity and rejects personal-use applications; the Health API is partner-only,
-OAuth 1.0a, push-only. So `garmin_feed.py` uses `python-garminconnect`, which logs
-in as a browser does. Garmin changed its auth flow in March 2026 and killed
-`garth` (deprecated, final release 2026-03-28); `python-garminconnect` survived by
-rebuilding login on `curl_cffi`. **It will break again.** The job therefore treats
-a total Garmin failure as a warning, not a job failure — a red X every time Garmin
-ships a change just trains you to ignore the signal. The Feeds tab shows real
-per-provider state instead.
+**Garmin has no personal API** — but there is a way around that which does not
+involve scraping anything.
+
+The Connect Developer Program requires a legal entity and rejects personal-use
+applications, and the Health API is partner-only. **intervals.icu is an approved
+Garmin partner**, with a native Garmin Connect integration and its own documented
+API using plain API-key auth. So the chain becomes:
+
+```
+Garmin watch → Garmin Connect → intervals.icu (official partner) → this job
+```
+
+Every hop is official and supported. No browser impersonation, no MFA to answer
+in CI, no TLS fingerprinting, and nothing that breaks when Garmin ships a UI
+change. Setup is browser-only: connect Garmin, generate a key, add one secret.
+This is the preferred Garmin path — see step 5 below.
+
+`garmin_feed.py` (direct `python-garminconnect` scrape) is kept as a fallback and
+is **skipped entirely whenever intervals.icu delivers**. Garmin changed its auth
+flow in March 2026 and killed `garth` (deprecated, final release 2026-03-28);
+`python-garminconnect` survived by rebuilding login on `curl_cffi`, and it will
+break again. A total failure there is a warning, not a job failure — a red X every
+time Garmin ships a change just trains you to ignore the signal.
 
 ## One-time setup
 
@@ -101,7 +115,27 @@ python authorize_whoop.py --client-id XXX --client-secret YYY
 
 It opens a browser, catches the redirect, and prints the three secrets to add.
 
-### 5. Authorize Garmin
+### 5. Garmin, the easy way: intervals.icu
+
+**No terminal required.** This is the recommended Garmin path.
+
+1. Create a free account at [intervals.icu](https://intervals.icu).
+2. **Settings → Integrations → Garmin Connect → Connect.** Authorize, and make
+   sure the **Wellness** and **Sleep** scopes are granted — without them you get
+   activities but no resting HR, HRV or sleep, which is most of what the
+   readiness rules need. If Garmin did not offer them, disconnect and reconnect.
+3. Wait for the first sync, then check **Wellness** shows resting HR and HRV.
+4. **Settings → Developer Settings → generate an API key.**
+5. Add it as the `INTERVALS_API_KEY` repo secret.
+
+That is it. Auth is HTTP basic with the literal username `API_KEY`; athlete id
+`0` means "the authenticated athlete", so the key alone is enough. Set
+`INTERVALS_ATHLETE_ID` only if you need to target a different athlete.
+
+The diagnostic (`Supabase check`) validates the key live and reports which
+athlete it resolved, so a bad key surfaces immediately rather than at 06:10.
+
+### 5b. Garmin, the hard way: direct scrape (optional fallback)
 
 ```bash
 python authorize_garmin.py
@@ -128,7 +162,8 @@ Settings → Secrets and variables → Actions:
 | `WHOOP_CLIENT_ID` | step 4 |
 | `WHOOP_CLIENT_SECRET` | step 4 |
 | `WHOOP_REFRESH_TOKEN` | step 4 |
-| `GARMIN_TOKENS_B64` | step 5 |
+| `INTERVALS_API_KEY` | step 5 — the preferred Garmin path |
+| `GARMIN_TOKENS_B64` | step 5b, optional fallback only |
 
 The service_role key bypasses RLS entirely. It belongs only in GitHub Actions
 secrets — never in `shared/config.js`, never in a bundle.
@@ -167,7 +202,9 @@ A strictly-yesterday fetch leaves permanent holes. Backfill further with
 | `no Supabase auth user with email …` | step 2 skipped, or a typo in `COACH_USER_EMAIL` | sign in to the app once |
 | WHOOP `invalid_grant` | stored refresh token is stale | re-run `authorize_whoop.py`, update the secret |
 | WHOOP returns no `refresh_token` | `offline` scope missing on the app | add it in the WHOOP dashboard, re-authorize |
-| Garmin `RuntimeError: asking for an MFA code` | token store expired | re-run `authorize_garmin.py` |
+| intervals.icu HTTP 401/403 | key revoked or mistyped | regenerate under Developer Settings |
+| intervals.icu returns activities but no RHR/HRV | Wellness/Sleep scopes not granted | disconnect and reconnect Garmin there |
+| Garmin `RuntimeError: asking for an MFA code` | token store expired | re-run `authorize_garmin.py`, or switch to the intervals path |
 | Garmin 429 on authorize | login rate limit | wait several minutes |
 | Job green, app shows nothing | rows written without an `owner` | `owner` must be set explicitly; the table's `auth.uid()` default is NULL under service_role |
 | `logged in but extracted nothing` | Garmin changed response shapes | check per-metric errors in the log; look for a newer `python-garminconnect` |

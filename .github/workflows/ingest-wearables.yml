@@ -8,16 +8,14 @@ name: Ingest wearables
 # yesterday, because WHOOP recalculates recovery when a late nap lands and Garmin
 # backfills when a watch syncs days later.
 
-#
-# THE SCHEDULE IS INTENTIONALLY OFF. No wearable feed is configured yet, so a
-# nightly run would resolve the owner, find nothing to fetch, and exit 0 — a
-# daily green tick that means nothing, which is how you stop reading the Actions
-# tab. Uncomment the two `schedule` lines below the moment either feed is wired
-# up (see ingest/README.md). Manual runs work regardless.
+# Schedule is ON: the intervals.icu feed is configured and delivering, so a
+# nightly run has something to do. It was deliberately off while no feed existed,
+# because a daily green tick that means nothing is how you stop reading the
+# Actions tab.
 
 on:
-  # schedule:
-  #   - cron: "10 13 * * *"
+  schedule:
+    - cron: "10 13 * * *"
   workflow_dispatch:
     inputs:
       days:
@@ -55,6 +53,8 @@ jobs:
           WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
           WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
           WHOOP_REFRESH_TOKEN: ${{ secrets.WHOOP_REFRESH_TOKEN }}
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          INTERVALS_ATHLETE_ID: ${{ secrets.INTERVALS_ATHLETE_ID }}
           GARMIN_TOKENS_B64: ${{ secrets.GARMIN_TOKENS_B64 }}
           INGEST_DAYS: ${{ github.event.inputs.days || '7' }}
         run: python main.py
