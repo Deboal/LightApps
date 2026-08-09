@@ -63,7 +63,13 @@ function streakBack(history, fromDate, test) {
  * @param limits   from limits.js
  * @param weekActualHrs hours already logged this week
  */
-export function advise({ date, history = [], limits, weekActualHrs = 0 }) {
+export function advise({ date, history = [], limits, weekActualHrs = 0, todayIso = null }) {
+  // A future date is a preview, not a recommendation. Readiness rules cannot say
+  // anything about tomorrow, and reporting "nothing recorded for this date" about
+  // a session three days out reads as a gap when it is simply the future.
+  const nowIso = todayIso || new Date().toISOString().slice(0, 10);
+  const isFuture = date > nowIso;
+  const isPast = date < nowIso;
   // Anchor "today" to the requested date, never to the newest row. Grabbing the
   // last entry silently presents yesterday's readiness as current on any day you
   // have not checked in yet, which is the worst possible failure for this engine.
@@ -254,7 +260,7 @@ export function advise({ date, history = [], limits, weekActualHrs = 0 }) {
 
   return {
     date, dow, role, week, verdict, verdictInfo: VERDICTS[verdict],
-    plannedHrs, plannedEstimated, session, findings, plan,
+    plannedHrs, plannedEstimated, session, findings, plan, isFuture, isPast,
     baselines: { rhr: rhrBase, hrv: hrvBase },
     checkedIn: !!today,
     weekActualHrs,

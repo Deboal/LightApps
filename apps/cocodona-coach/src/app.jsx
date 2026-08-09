@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { store } from "../../../shared/store.js";
 import { AuthGate, signOut } from "../../../shared/auth.js";
 import { WEEKS, DAY_ROLES, weekFor, mondayOf, daysToRace, zones, HR, RACE_DATE, TOTAL_TARGET_HOURS } from "./plan.js";
-import { weekPlannedHours, PLAN_DAY_COUNT, PLAN_FIRST_DAY, PLAN_LAST_DAY } from "./daily.js";
+import { weekPlannedHours, PLAN_DAY_COUNT, PLAN_FIRST_DAY, PLAN_LAST_DAY, dayPlan, classify } from "./daily.js";
 import { loadLimits, LIMIT_DOCS, HARD_RULES, DEFAULTS } from "./limits.js";
 import { advise, VERDICTS } from "./advise.js";
 import { SOURCES, STATUS_LABEL, FIELDS, mergeDay } from "./sources.js";
@@ -41,6 +41,10 @@ const font = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
 const mono = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const daysAhead = (from, to) => {
+  const n = Math.round((new Date(to + "T12:00:00") - new Date(from + "T12:00:00")) / 86400e3);
+  return n === 1 ? "Tomorrow" : `In ${n} days`;
+};
 const fmtDate = (iso) =>
   new Date(iso + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 
@@ -139,6 +143,136 @@ function CheckIn({ date, existing, onSave, busy }) {
 }
 
 // ---------------------------------------------------------------------------
+// Session-kind colour, shared by the day strip and the upcoming list so a long
+// run looks the same wherever it appears.
+// ---------------------------------------------------------------------------
+const KIND_COLOR = {
+  long: C.accent, b2b: C.blue, quality: C.warm, race: C.danger,
+  rest: C.faint, logistics: C.dim, easy: C.dim,
+};
+const kindOf = (iso) => {
+  const p = dayPlan(iso);
+  return p ? classify(p.session) : null;
+};
+const shiftDays = (iso, n) => {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const mondayIso = (iso) => {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+};
+const DOW_LETTER = ["M", "T", "W", "T", "F", "S", "S"];
+
+// A week of days you can tap, with arrows to walk forwards and back. The point is
+// to make looking ahead cheap: the plan is 330 days long and a date picker makes
+// you already know the date you want.
+function DayStrip({ date, setDate, todayIso }) {
+  const monday = mondayIso(date);
+  const days = Array.from({ length: 7 }, (_, i) => shiftDays(monday, i));
+
+  const arrow = (label, target, title) => (
+    <button onClick={() => setDate(target)} title={title} aria-label={title} style={{
+      background: C.panel, border: `1px solid ${C.line}`, color: C.dim, borderRadius: 8,
+      width: 30, height: 46, cursor: "pointer", fontSize: 15, flex: "0 0 auto",
+    }}>{label}</button>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 5, alignItems: "stretch" }}>
+        {arrow("‹", shiftDays(monday, -7), "Previous week")}
+        <div style={{ display: "flex", gap: 4, flex: 1, minWidth: 0 }}>
+          {days.map((iso) => {
+            const p = dayPlan(iso);
+            const kind = p ? classify(p.session) : null;
+            const sel = iso === date;
+            const isToday = iso === todayIso;
+            const col = kind ? KIND_COLOR[kind] : C.faint;
+            return (
+              <button key={iso} onClick={() => setDate(iso)} style={{
+                flex: "1 1 0", minWidth: 0, cursor: "pointer",
+                background: sel ? col + "26" : C.panel,
+                border: `1px solid ${sel ? col : C.line}`,
+                borderRadius: 8, padding: "5px 2px 6px", color: C.text,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
+              }}>
+                <span style={{ fontSize: 9, color: isToday ? C.accent : C.faint, fontWeight: 700 }}>
+                  {DOW_LETTER[(new Date(iso + "T12:00:00").getDay() + 6) % 7]}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: sel ? 800 : 600,
+                               textDecoration: isToday ? "underline" : "none" }}>
+                  {Number(iso.slice(8, 10))}
+                </span>
+                <span style={{ width: 14, height: 3, borderRadius: 2, background: col,
+                               opacity: kind === "rest" || kind === "easy" ? 0.45 : 1 }} />
+                <span style={{ fontSize: 9, color: C.faint, fontVariantNumeric: "tabular-nums" }}>
+                  {p && p.hrs ? p.hrs : "—"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {arrow("›", shiftDays(monday, 7), "Next week")}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 7, fontSize: 10.5, color: C.faint }}>
+        {[["long", "Long"], ["b2b", "B2B"], ["quality", "Quality"], ["race", "Race"], ["easy", "Easy"], ["rest", "Rest"]]
+          .map(([k, label]) => (
+            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 9, height: 3, borderRadius: 2, background: KIND_COLOR[k],
+                             opacity: k === "rest" || k === "easy" ? 0.45 : 1 }} />
+              {label}
+            </span>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+// The next fortnight at a glance, so a big weekend is visible before it arrives.
+function Upcoming({ date, setDate, days = 14 }) {
+  const rows = Array.from({ length: days }, (_, i) => shiftDays(date, i + 1))
+    .map((iso) => ({ iso, p: dayPlan(iso) }))
+    .filter((r) => r.p);
+  if (!rows.length) return null;
+  return (
+    <>
+      <SectionTitle note="Straight from the plan. Tap a day to see its full detail and check the guardrails against it.">
+        Coming up
+      </SectionTitle>
+      <div style={{ display: "grid", gap: 4 }}>
+        {rows.map(({ iso, p }) => {
+          const kind = classify(p.session);
+          const col = KIND_COLOR[kind] || C.dim;
+          const big = kind === "long" || kind === "b2b" || kind === "race";
+          return (
+            <button key={iso} onClick={() => setDate(iso)} style={{
+              display: "flex", alignItems: "center", gap: 10, textAlign: "left", cursor: "pointer",
+              background: C.panel, border: `1px solid ${C.line}`, borderLeft: `3px solid ${col}`,
+              borderRadius: 8, padding: "9px 11px", color: C.text, width: "100%",
+            }}>
+              <span style={{ fontSize: 11, color: C.faint, fontFamily: mono, flex: "0 0 74px" }}>
+                {new Date(iso + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: big ? 700 : 500, flex: 1, minWidth: 0,
+                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.session}
+              </span>
+              <span style={{ fontSize: 12.5, color: col, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                             flex: "0 0 auto" }}>
+                {p.hrs ? `${p.hrs} hr` : "—"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Where today's numbers came from. Shown because a recommendation built partly
 // on a scrape and partly on typed values should say which is which.
 // ---------------------------------------------------------------------------
@@ -214,8 +348,12 @@ function StaleBanner({ feedStatus }) {
 // ---------------------------------------------------------------------------
 // Tab: Today
 // ---------------------------------------------------------------------------
-function Today({ rec, date, setDate, existing, onSave, busy, history, reading, feedStatus }) {
-  const tone = TONE[rec.verdictInfo.tone];
+function Today({ rec, date, setDate, existing, onSave, busy, history, reading, feedStatus, todayIso }) {
+  // A future date shows the plan, not a verdict. The readiness rules have nothing
+  // to say about a session that has not had its morning yet, and dressing a
+  // preview up as a recommendation would imply they did.
+  const preview = rec.isFuture;
+  const tone = preview ? C.blue : TONE[rec.verdictInfo.tone];
   const wk = rec.week;
 
   return (
@@ -224,14 +362,22 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
                style={{ ...inputStyle, width: "auto", fontSize: 13, padding: "7px 10px" }} />
         <button onClick={() => setDate(todayISO())} style={{
-          background: C.panel, border: `1px solid ${C.line}`, color: C.dim, borderRadius: 8,
-          padding: "7px 11px", fontSize: 12.5, cursor: "pointer" }}>Today</button>
+          background: date === todayIso ? C.accent + "22" : C.panel,
+          border: `1px solid ${date === todayIso ? C.accent : C.line}`,
+          color: date === todayIso ? C.accent : C.dim, borderRadius: 8,
+          padding: "7px 11px", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>Today</button>
         <div style={{ marginLeft: "auto", fontSize: 12, color: C.dim, fontFamily: mono }}>
           {daysToRace(date)} days to Cocodona
         </div>
       </div>
 
-      <StaleBanner feedStatus={feedStatus} />
+      <div style={{ marginBottom: 14 }}>
+        <DayStrip date={date} setDate={setDate} todayIso={todayIso} />
+      </div>
+
+      {/* A feed-staleness warning is about the numbers on screen. On a preview there
+          are none, so the banner would be noise pointing at nothing. */}
+      {!preview && <StaleBanner feedStatus={feedStatus} />}
 
       <Card style={{ borderLeft: `4px solid ${tone}`, background: `linear-gradient(160deg,${tone}12,${C.panel})` }}>
         <div style={{ fontSize: 11, letterSpacing: ".14em", color: C.faint, fontWeight: 700 }}>
@@ -241,8 +387,13 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
           {rec.role.role}
         </div>
         <div style={{ fontSize: 26, fontWeight: 800, color: tone, marginTop: 6, letterSpacing: "-.02em" }}>
-          {rec.verdictInfo.label}
+          {preview ? "Planned" : rec.verdictInfo.label}
         </div>
+        {preview && (
+          <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>
+            {rec.isFuture && daysAhead(todayIso, date)} — the guardrails run on the morning, once you check in.
+          </div>
+        )}
         <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 10, letterSpacing: ".1em", color: C.faint, fontWeight: 700 }}>SESSION</div>
@@ -286,7 +437,7 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
           </div>
         )}
         <Provenance reading={reading} />
-        {!rec.checkedIn && (
+        {!rec.checkedIn && !preview && (
           <div style={{ fontSize: 12.5, color: C.warm, marginTop: 12, lineHeight: 1.6 }}>
             Nothing recorded for this date from any source, so only the structural rules could be evaluated.
             Enter the morning numbers below to run the full autoregulation table.
@@ -341,8 +492,14 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
         </Card>
       )}
 
-      <SectionTitle>{fmtDate(date)}</SectionTitle>
-      <CheckIn date={date} existing={existing} onSave={onSave} busy={busy} />
+      {preview ? (
+        <Upcoming date={date} setDate={setDate} />
+      ) : (
+        <>
+          <SectionTitle>{fmtDate(date)}</SectionTitle>
+          <CheckIn date={date} existing={existing} onSave={onSave} busy={busy} />
+        </>
+      )}
 
       {wk && (
         <>
@@ -364,6 +521,8 @@ function Today({ rec, date, setDate, existing, onSave, busy, history, reading, f
           </Card>
         </>
       )}
+
+      {!preview && <Upcoming date={date} setDate={setDate} days={10} />}
 
       <SectionTitle note="Karvonen, from resting 45 and max 200 as the heat-acclimation notes specify.">
         Heart-rate zones
@@ -604,6 +763,12 @@ function Feeds({ feedStatus, feeds }) {
                   <b>Next step:</b> {s.blockedBy}
                 </div>
               )}
+              {s.note && (
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 9, lineHeight: 1.6,
+                              paddingLeft: 10, borderLeft: `2px solid ${C.line}` }}>
+                  {s.note}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 10 }}>
                 {s.provides.map((p) => {
                   const f = FIELDS.find((x) => x.key === p);
@@ -763,7 +928,7 @@ function Coach({ user }) {
           <>
             {tab === "today" && <Today rec={rec} date={date} setDate={setDate} existing={existing}
                                        onSave={saveCheckIn} busy={busy} history={upto}
-                                       reading={reading} feedStatus={feedStatus} />}
+                                       reading={reading} feedStatus={feedStatus} todayIso={todayISO()} />}
             {tab === "plan" && <PlanView date={date} history={history} />}
             {tab === "limits" && <LimitsView limits={limits} setLimits={saveLimits} />}
             {tab === "feeds" && <Feeds feedStatus={feedStatus} feeds={feeds} />}

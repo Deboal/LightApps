@@ -63,12 +63,13 @@ export const SOURCES = [
   },
   {
     id: "intervals",
-    label: "Garmin via intervals.icu",
+    label: "intervals.icu (Garmin + WHOOP)",
     status: "wired-pending-setup",
     detail:
       "The good Garmin path. intervals.icu is an approved Garmin partner with a native Garmin Connect integration, and exposes its own documented API with plain API-key auth. Resting HR, HRV, sleep and activities arrive as Garmin's own data over supported APIs the whole way — no impersonation, no MFA to answer in CI, nothing to break when Garmin ships a UI change.",
     provides: ["rhr", "hrv", "sleepHrs", "actualHrs", "actualVert"],
-    blockedBy: "Create a free intervals.icu account, connect Garmin under Settings → Integrations with the Wellness and Sleep scopes, generate a key under Developer Settings, and add INTERVALS_API_KEY. No terminal needed.",
+    blockedBy: "Create a free intervals.icu account, connect your devices under Settings → Integrations with the Wellness and Sleep scopes, generate a key under Developer Settings, and add INTERVALS_API_KEY. No terminal needed.",
+    note: "intervals.icu accepts Garmin and WHOOP together, so one API key can cover both and the separate WHOOP OAuth becomes optional. Every metric the §8 rules actually use — resting HR, HRV, sleep — arrives this way. What you give up is WHOOP's own recovery score and strain, which are displayed but not used by any rule. The tradeoff is that intervals merges wellness per day, so a value cannot be traced back to a specific device.",
   },
   {
     id: "garmin",
