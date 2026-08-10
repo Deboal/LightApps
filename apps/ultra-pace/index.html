@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1318" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Ultra Pace</title>
+  <style>
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html,body{margin:0;background:#0f1318;color:#e7edf2;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      -webkit-text-size-adjust:100%;}
+    #root{min-height:100vh;min-height:100dvh;}
+    button,input,select{font-family:inherit;}
+    /* Kill the iOS chrome on text fields and selects only. */
+    input[type="text"],input[type="datetime-local"],input:not([type]),select{
+      -webkit-appearance:none;appearance:none;}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Self-contained by design: no backend, no auth, no network. Runs on a phone
+       in airplane mode, which is where a 100-miler actually gets checked. -->
+  <script src="bundle.js"></script>
+</body>
+</html>
