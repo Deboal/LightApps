@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#efe4cd" />
+  <title>Cocodona 250 — Race Plan Guide</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23efe4cd'/%3E%3Cpath d='M2 24 L9 13 L14 19 L20 7 L30 24 Z' fill='%236b4a22'/%3E%3C/svg%3E" />
+  <style>
+    /* This one is LIGHT on purpose, and it is the only light page in the hub.
+       The crew brief is dark because it gets read at 2 AM on a phone. This is the
+       printed fallback that lives in Jackie's binder for when the phones are dead,
+       so it is designed as paper first: cream stock, brown-black ink, and what you
+       see on screen is what comes out of the printer. */
+    *{box-sizing:border-box;}
+    html,body{margin:0;background:#d9cdb4;color:#241a10;
+      font-family:Georgia,"Iowan Old Style","Times New Roman",serif;
+      -webkit-text-size-adjust:100%;}
+    #root{min-height:100vh;}
+    button,input,select{font-family:inherit;}
+
+    @page{ size:letter; margin:0.6in 0.65in; }
+
+    @media print{
+      html,body{background:#fff;}
+      .no-print{display:none !important;}
+      .sheet{box-shadow:none !important;margin:0 !important;padding:0 !important;
+             width:auto !important;max-width:none !important;background:#fff !important;}
+      .page{break-after:page;page-break-after:always;}
+      .page:last-of-type{break-after:auto;page-break-after:auto;}
+      /* A split row or a crew stop cut across a page break is exactly the kind of
+         thing that gets misread at 3 AM. */
+      tr,.keep{break-inside:avoid;page-break-inside:avoid;}
+      thead{display:table-header-group;}
+      a{color:inherit;text-decoration:none;}
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Built from the same course.js / plan.js / field.js the crew app uses, so the
+       printed binder and the phone can never disagree. -->
+  <script src="bundle.js"></script>
+</body>
+</html>

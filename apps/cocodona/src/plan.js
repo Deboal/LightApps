@@ -24,7 +24,7 @@ export const PACERS = {
     label: "Pacer A",
     role: "Long continuous pulls",
     totalMiles: 50.3,
-    color: "#4d8fe5",
+    color: "#6b7f9e",   // faded denim — theme.js C.A
     shifts: [
       { from: "Fain Ranch", to: "Jerome", miles: 29.3,
         why: "Navigation-heavy cross-country plus the Mingus climb into cold, on the second night without real sleep. The highest-value pacer window on the course." },
@@ -37,7 +37,7 @@ export const PACERS = {
     label: "Pacer B",
     role: "Four shorter distributed shifts",
     totalMiles: 60.4,
-    color: "#c07de0",
+    color: "#9a6b8c",   // dusty plum — theme.js C.B
     shifts: [
       { from: "Watson Lake", to: "Fain Ranch", miles: 11.7, why: "First legal pacer leg. Easy terrain, gets the system running." },
       { from: "Jerome", to: "Dead Horse Ranch", miles: 8.7, why: "Short night descent into the second sleep block." },
@@ -106,7 +106,7 @@ export const SCENARIOS = [
     id: "96",
     label: "96-hour",
     tag: "STRETCH",
-    color: "#4caf7d",
+    color: "#8a9a5b",   // sage
     blurb: "As originally written. Climbs Mt. Elden overnight, solo, on the fourth night. Take this only if Fort Tuthill arrives ahead of schedule and strong.",
     moveFactor: 1.0,
     overrides: {},
@@ -116,7 +116,7 @@ export const SCENARIOS = [
     id: "100",
     label: "100-hour — Elden at dawn",
     tag: "PRIMARY",
-    color: "#33c2b0",
+    color: "#c8873f",   // brass — the live plan carries the accent colour
     blurb:
       "The primary plan. A real 3-hour sleep at Fort Tuthill's heated cots, then Elden climbed rested and in daylight instead of at 2 AM in a 25°F wind. Costs a few hours, removes the single worst risk on the course.",
     moveFactor: 1.0,
@@ -132,7 +132,7 @@ export const SCENARIOS = [
     id: "110",
     label: "110-hour — fallback",
     tag: "GATE FALLBACK",
-    color: "#e0a94d",
+    color: "#d9a544",   // amber — caution, not failure
     blurb:
       "What the decision gates drop you into. Movement slows about 7.5% and every sleep block is restored to full length. This is not failure — it is the buffer being spent on the problem it was reserved for.",
     moveFactor: 1.075,

@@ -1,22 +1,42 @@
-# Cocodona 250 — two apps
+# Cocodona 250 — four apps
 
 Race: **Monday May 3, 2027, 5:00 AM.** Black Canyon City to Flagstaff, AZ.
 252.9 mi, +38,791 ft, -33,884 ft, 125-hour cutoff. Entry confirmed.
 Runner Alex, crew chief Jackie (non-running), two pacers (unnamed).
 
-Two apps, deliberately split by who reads them and what they hold.
+Deliberately split by who reads them and what they hold.
 
-| | `cocodona` | `cocodona-coach` |
-|---|---|---|
-| Audience | crew and pacers | Alex only |
-| Auth | none | `AuthGate`, per-user private |
-| Network | none at all | Supabase |
-| Storage | `localStorage` | `app_data` |
-| Offline | `bash make-offline.sh cocodona` | no |
+| | `cocodona` | `cocodona-guide` | `cocodona-coach` | `cocodona-3d` |
+|---|---|---|---|---|
+| Audience | crew and pacers | Jackie's binder | Alex only | anyone |
+| Form | phone app, dark | printed sheets, light | phone app | terrain model |
+| Auth | none | none | `AuthGate`, private | none |
+| Network | none at all | none at all | Supabase | tiles at runtime |
+| Storage | `localStorage` | none | `app_data` | none |
+| Offline | `make-offline.sh cocodona` | `make-offline.sh cocodona-guide` | no | no |
 
 The crew app touches no network on purpose. Pacers open it in Arizona backcountry
 on one bar, or from a file saved to the home screen with the radio off. The coach
 app holds health metrics, so it is signed in.
+
+`cocodona-guide` is the same data rendered as paper. It is the only light-background
+page in the hub, because it is designed to be printed rather than read at 2 AM, and
+it exists because the crew app is a phone and a phone is a single point of failure at
+mile 200. It imports `cocodona/src/course.js`, `plan.js` and `field.js` directly
+rather than restating them — a second copy of the splits would drift, and the failure
+mode of drift is a pacer standing at the wrong aid station for four hours.
+
+Each `<section class="page">` is one physical sheet, and the footers print "N of 10".
+That claim is only true while every section fits the printable area, so
+`page-fit.mjs` in the session scratchpad measures each one against Letter minus the
+declared margins. The block schedule already had to be split across two sheets
+because 24 rows do not fit one. **Re-run that check after adding content**, or the
+footers start lying. `page.pdf()` from Playwright is what produces the PDF; there is
+no PDF toolchain in the repo.
+
+`cocodona-3d` is served as-is from a debugged single-file artefact, which is why it
+has no `src/`. `build.sh` copies static apps through. It is not in the offline brief
+because it fetches terrain and satellite tiles at runtime.
 
 ## Where the data came from
 
@@ -111,7 +131,14 @@ document, sweat sodium test, ankle injury history for the BetterGuard decision,
 and reconcile the heat block duration (Workout Reference says 4 weeks, the July
 supplement says 10–14 days).
 
-One conflict the coach app surfaces but cannot resolve: the heat notes set
-Karvonen zones at resting 45 / max 200, which puts Zone 2 at 138–153, while the
-Brokeoff log used an age-predicted max of 184 and called 126 bpm "solid Zone 2".
-By Karvonen that same 126 is Zone 1. A tested max would settle it.
+**Resolved:** max heart rate is **tested at 200**, not age-predicted. That settles
+the conflict between the heat notes (Karvonen at max 200) and the Brokeoff log
+(age-predicted 184). It also exposed that the real disagreement was *method*, not
+the max: the log read 126 bpm as Zone 2 by percent-of-max (68% of 184), while
+these zones use Karvonen on heart-rate reserve, where 126 is 52% and lands in
+Zone 1 at either max. So the labels were never going to agree.
+
+Practical consequence: Zone 2 is **138–154**, about 15 beats above the 126 the log
+treated as Zone 2. `maxHr` and `restHr` are editable under Limits, and the app
+flags it when the measured resting-HR baseline from the feed drifts 3+ bpm from
+the configured figure — max does not drift, resting does.

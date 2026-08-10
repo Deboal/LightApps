@@ -10,7 +10,23 @@ names=()
 
 for dir in apps/*/; do
   name=$(basename "$dir")
-  [ -f "${dir}src/app.jsx" ] || { echo "skip $name (no src/app.jsx)"; continue; }
+
+  # A "static" app is one with an index.html and no src/app.jsx — a self-contained
+  # page that needs no bundling (cocodona-3d is one: Three.js is already inlined).
+  # Previously these were skipped outright, so their index.html never reached
+  # public/ and the app silently failed to deploy.
+  if [ ! -f "${dir}src/app.jsx" ]; then
+    if [ -f "${dir}index.html" ]; then
+      echo "copying $name (static, no bundle)"
+      mkdir -p "public/$name"
+      cp "${dir}index.html" "public/$name/index.html"
+      names+=("$name")
+    else
+      echo "skip $name (no src/app.jsx and no index.html)"
+    fi
+    continue
+  fi
+
   echo "building $name"
   mkdir -p "public/$name"
   "$ESBUILD" "${dir}src/app.jsx" \
