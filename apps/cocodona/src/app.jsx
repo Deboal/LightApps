@@ -890,7 +890,9 @@ function CrewView({ built, state, setState }) {
 
   return (
     <div>
-      <SectionTitle note="Jackie's sequence. Eleven crew-accessible stations across four days, one crew vehicle per station.">
+      {/* Counted, not asserted. This read "Eleven crew-accessible stations" against
+          an actual 14, which is the sort of number a crew chief plans a day around. */}
+      <SectionTitle note={`Jackie's sequence. ${crewStops.length - 1} crew-accessible stations across four days plus the finish, one crew vehicle per station.`}>
         Crew stops, drives and windows
       </SectionTitle>
 
