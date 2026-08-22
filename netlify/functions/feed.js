@@ -17,15 +17,23 @@
 //
 // Zero dependencies on purpose: no `npm install`, works on any deploy method.
 //
-// Required environment variable:
-//   FEED_URL    The Garmin Raw KML feed URL, e.g.
-//               https://share.garmin.com/Feed/Share/XXXXX
-//               (explore.garmin.com -> Social -> Feeds -> Raw KML Data.
-//               Leave the MapShare feed password BLANK so this can read it.)
+// Both environment variables are optional; the defaults below are the live
+// trip, so this works with no Netlify configuration at all.
 //
-// Optional environment variable:
+//   FEED_URL    The Garmin Raw KML feed URL. Note this is the /Feed/Share/
+//               path, not the public MapShare page at share.garmin.com/VH5B5 —
+//               same code, different path. Found under
+//               explore.garmin.com -> Social -> Feeds -> Raw KML Data.
+//               The MapShare feed password must be BLANK for this to read it.
+//               Set the env var to point at a different device or trip.
+//
 //   TRIP_START  ISO date the historical track starts from.
 //               Default 2026-08-23T00:00:00Z (departure for São Miguel).
+
+// The device behind this trip. Not a secret: the same MapShare code is linked
+// publicly from the itinerary page, and the feed is readable by anyone who has
+// it — which is the point of MapShare. Override with the FEED_URL env var.
+const DEFAULT_FEED_URL = "https://share.garmin.com/Feed/Share/VH5B5";
 
 function num(s) {
   if (s === undefined || s === null) return NaN;
@@ -103,15 +111,8 @@ exports.handler = async () => {
     "Access-Control-Allow-Origin": "*",
   };
 
-  const base = process.env.FEED_URL;
+  const base = process.env.FEED_URL || DEFAULT_FEED_URL;
   const tripStart = process.env.TRIP_START || "2026-08-23T00:00:00Z";
-
-  if (!base) {
-    return { statusCode: 500, headers, body: JSON.stringify({
-      ok: false,
-      error: "FEED_URL is not set. Add your Garmin Raw KML feed URL as an environment variable named FEED_URL, then redeploy.",
-    })};
-  }
 
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const sep = base.includes("?") ? "&" : "?";
