@@ -15,11 +15,15 @@ for dir in apps/*/; do
   # page that needs no bundling (cocodona-3d is one: Three.js is already inlined).
   # Previously these were skipped outright, so their index.html never reached
   # public/ and the app silently failed to deploy.
+  #
+  # Every *.html in the app folder is copied, not just index.html, so an app can
+  # be several linked pages (azores is one: index + itinerary + terrain). Copying
+  # only index.html used to drop the sibling pages and leave dead nav links.
   if [ ! -f "${dir}src/app.jsx" ]; then
     if [ -f "${dir}index.html" ]; then
       echo "copying $name (static, no bundle)"
       mkdir -p "public/$name"
-      cp "${dir}index.html" "public/$name/index.html"
+      cp "${dir}"*.html "public/$name/"
       names+=("$name")
     else
       echo "skip $name (no src/app.jsx and no index.html)"
@@ -33,7 +37,7 @@ for dir in apps/*/; do
     --bundle --minify --format=iife --platform=browser --target=es2018 \
     --define:process.env.NODE_ENV='"production"' \
     --jsx=transform --loader:.js=jsx --outfile="public/$name/bundle.js"
-  cp "${dir}index.html" "public/$name/index.html"
+  cp "${dir}"*.html "public/$name/"
 
   # An app may ship a browser extension alongside it; publish it as a download.
   # Guarded so a missing zip binary can never fail the deploy.

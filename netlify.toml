@@ -1,6 +1,15 @@
 [build]
   command = "bash build.sh"
   publish = "public"
+  functions = "netlify/functions"
+
+# The Garmin inReach proxy. Must come BEFORE the clean-URL catch-all below:
+# Netlify applies the first matching rule, and /api/feed is not a real file, so
+# the catch-all would otherwise rewrite it to /api/feed/index.html and 404.
+[[redirects]]
+  from = "/api/feed"
+  to = "/.netlify/functions/feed"
+  status = 200
 
 # Clean URLs: /gear-tracker/ serves apps/gear-tracker
 [[redirects]]

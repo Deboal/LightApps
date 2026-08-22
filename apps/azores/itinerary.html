@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · Itinerary &amp; Contact</title>
+<meta name="description" content="The plan for nine days on São Miguel, and how to reach us." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320;
+    --bg-2: #0e1828;
+    --panel: #13202f;
+    --panel-2: #16263a;
+    --line: #22344a;
+    --ice: #e9eef5;
+    --steel: #8a9cb1;
+    --steel-dim: #58697e;
+    --glacier: #5fd0e6;
+    --laurel: #4fd39a;
+    --ember: #ff8a52;
+    --whatsapp: #25d366;
+    --bar-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 480px at 80% -10%, rgba(255,138,82,0.08), transparent 60%),
+      radial-gradient(820px 520px at 0% 0%, rgba(79,211,154,0.07), transparent 55%),
+      var(--bg);
+    color: var(--ice);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+
+  /* Header (mirrors the map page) */
+  .bar {
+    height: var(--bar-h);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 18px;
+    background: linear-gradient(180deg, var(--bg-2), rgba(11,19,32,0.85));
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 14px var(--ember); align-self: center; flex: 0 0 auto; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav { display: flex; gap: 16px; }
+  .nav a {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--steel); text-decoration: none; padding: 4px 0; border-bottom: 1px solid transparent;
+  }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a:focus-visible { outline: 2px solid var(--glacier); outline-offset: 3px; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 22px 72px; }
+
+  /* Intro */
+  .eyebrow { font-family: "Space Mono", monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ember); margin: 0 0 12px; }
+  h1 { font-size: clamp(30px, 6vw, 52px); line-height: 1.04; margin: 0 0 14px; letter-spacing: -0.02em; font-weight: 700; }
+  .lede { font-size: 16px; line-height: 1.6; color: var(--steel); max-width: 60ch; margin: 0 0 24px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+  .fact {
+    font-family: "Space Mono", monospace; font-size: 12px; color: var(--ice);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 13px;
+  }
+  .fact b { color: var(--ember); font-weight: 700; }
+
+  /* The one rule */
+  .rule-card {
+    margin-top: 26px; background: linear-gradient(180deg, rgba(79,211,154,0.07), var(--panel));
+    border: 1px solid rgba(79,211,154,0.35); border-radius: 14px; padding: 20px 22px;
+  }
+  .rule-card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; color: var(--laurel); }
+  .rule-card p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--steel); }
+
+  /* Section heads */
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 52px 0 18px; }
+  .sec-head h2 { font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--steel); margin: 0; font-weight: 600; }
+  .sec-head .rule { flex: 1 1 auto; height: 1px; background: var(--line); }
+
+  /* Where-we-sleep chart */
+  .profile {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 18px 10px; margin-bottom: 14px;
+  }
+  .profile svg { width: 100%; height: 160px; display: block; }
+  .profile .axis { font-family: "Space Mono", monospace; font-size: 9px; fill: var(--steel-dim); }
+  .profile .lane { font-family: "Space Grotesk", sans-serif; font-size: 11px; fill: var(--steel); }
+  .profile .blab { font-family: "Space Mono", monospace; font-size: 10px; fill: #0b1320; font-weight: 700; }
+
+  /* Timeline */
+  .day {
+    display: grid; grid-template-columns: 92px 1fr auto; gap: 16px; align-items: start;
+    padding: 16px 16px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); margin-bottom: 10px;
+  }
+  .day.fixed { border-color: rgba(255,138,82,0.5); background: linear-gradient(180deg, rgba(255,138,82,0.06), var(--panel)); }
+  .day-when { display: flex; flex-direction: column; gap: 2px; }
+  .day-no { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); letter-spacing: 0.06em; }
+  .day-date { font-family: "Space Mono", monospace; font-size: 13px; color: var(--ice); font-weight: 700; }
+  .day-body { min-width: 0; }
+  .day-title { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
+  .day-title .badge { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ember); border: 1px solid rgba(255,138,82,0.45); border-radius: 999px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; white-space: nowrap; }
+  .day-place { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel); margin: 0 0 7px; }
+  .day-note { font-size: 13.5px; line-height: 1.5; color: var(--steel); margin: 0; }
+  .day-elev { text-align: right; white-space: nowrap; }
+  .day-elev .m { font-family: "Space Mono", monospace; font-weight: 700; font-size: 13px; color: var(--laurel); }
+  .day-elev .ft { font-family: "Space Mono", monospace; font-size: 10px; color: var(--steel-dim); display: block; margin-top: 1px; }
+
+  /* Cards */
+  .contact { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px; display: flex; flex-direction: column;
+  }
+  .card h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+  .card p { font-size: 13px; line-height: 1.55; color: var(--steel); margin: 0 0 16px; flex: 1 1 auto; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    text-decoration: none; font-weight: 600; font-size: 14px;
+    padding: 11px 16px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ice); transition: background 0.15s, border-color 0.15s;
+  }
+  .btn:hover { background: #1b2c42; }
+  .btn:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+  .btn.primary { background: var(--ember); color: #2a1206; border-color: var(--ember); }
+  .btn.primary:hover { background: #ff9a68; }
+  .btn.wa { background: var(--whatsapp); color: #04330f; border-color: var(--whatsapp); }
+  .btn.wa:hover { background: #34e277; }
+  .sub { font-family: "Space Mono", monospace; font-size: 12px; color: var(--steel-dim); margin-top: 12px; }
+  .sub a { color: var(--steel); }
+
+  /* Hotels */
+  .stays { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+  .stay { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .stay .nights { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--laurel); margin-bottom: 8px; }
+  .stay h3 { font-size: 15px; margin: 0 0 2px; font-weight: 700; }
+  .stay .where { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); margin: 0 0 10px; }
+  .stay p { font-size: 13px; line-height: 1.55; color: var(--steel); margin: 0 0 12px; }
+  .stay .meta { font-family: "Space Mono", monospace; font-size: 11.5px; color: var(--steel); border-top: 1px solid var(--line); padding-top: 10px; }
+  .stay .meta a { color: var(--glacier); }
+  .stay .warn { color: var(--ember); font-size: 12px; margin-top: 8px; line-height: 1.5; }
+
+  /* Weather */
+  .wx { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+  .wx-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .wx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .wx-peak { font-size: 16px; font-weight: 700; }
+  .wx-sub { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel); margin-top: 2px; }
+  .wx-chip { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ice); white-space: nowrap; }
+  .wx-chip .cdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .wx-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 13px; }
+  .wx-m .k { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--steel-dim); }
+  .wx-m .v { font-family: "Space Mono", monospace; font-size: 19px; font-weight: 700; color: var(--ice); margin-top: 3px; }
+  .wx-m .v small { font-size: 10px; color: var(--steel); font-weight: 400; }
+  .wx-second { display: flex; flex-wrap: wrap; gap: 5px 14px; font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel); margin-bottom: 13px; }
+  .wx-days { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .wx-day { text-align: center; border-radius: 8px; padding: 6px 1px; }
+  .wx-day.is-key { background: rgba(255,138,82,0.10); border: 1px solid rgba(255,138,82,0.4); }
+  .wx-day .d { font-size: 8.5px; color: var(--steel-dim); font-family: "Space Mono", monospace; }
+  .wx-day .cd { width: 8px; height: 8px; border-radius: 50%; margin: 5px auto; }
+  .wx-day .hi { font-family: "Space Mono", monospace; font-size: 11.5px; color: var(--ice); font-weight: 700; }
+  .wx-day .lo { font-family: "Space Mono", monospace; font-size: 9.5px; color: var(--steel-dim); }
+  .wx-day .w { font-family: "Space Mono", monospace; font-size: 8.5px; color: var(--glacier); margin-top: 2px; }
+  .wx-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; font-size: 11px; align-items: baseline; }
+  .wx-foot a { color: var(--steel); }
+  .wx-updated { font-family: "Space Mono", monospace; font-size: 10px; color: var(--steel-dim); white-space: nowrap; }
+  @media (max-width: 560px) { .wx-days { grid-template-columns: repeat(5, 1fr); } }
+
+  /* Flights */
+  .flights { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .leg-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .leg-day { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ember); margin-bottom: 10px; }
+  .hop { display: grid; grid-template-columns: auto auto auto 1fr auto; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-family: "Space Mono", monospace; }
+  .hop:first-of-type { border-top: 0; padding-top: 0; }
+  .hop .ap { font-size: 15px; font-weight: 700; color: var(--ice); }
+  .hop .arrow { color: var(--steel-dim); }
+  .hop .t { font-size: 12px; color: var(--steel); text-align: right; }
+  .hop .fl { font-size: 11px; color: var(--steel-dim); min-width: 56px; text-align: right; }
+
+  /* Tables */
+  .tbl { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .tbl th {
+    text-align: left; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--steel-dim); font-weight: 600; padding: 12px 14px; border-bottom: 1px solid var(--line);
+  }
+  .tbl td { padding: 11px 14px; font-size: 13px; color: var(--steel); border-top: 1px solid var(--line); vertical-align: top; }
+  .tbl td:first-child { color: var(--ice); font-weight: 600; }
+  .tbl td.mono { font-family: "Space Mono", monospace; color: var(--glacier); white-space: nowrap; }
+  .scroller { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Lists */
+  .lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .lcard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .lcard h3 { font-size: 13px; margin: 0 0 12px; font-weight: 700; color: var(--laurel); letter-spacing: 0.02em; }
+  .lcard ul { margin: 0; padding: 0; list-style: none; }
+  .lcard li { font-size: 13px; line-height: 1.55; color: var(--steel); padding: 7px 0 7px 16px; position: relative; border-top: 1px solid var(--line); }
+  .lcard li:first-child { border-top: 0; padding-top: 0; }
+  .lcard li::before { content: ""; position: absolute; left: 0; top: 14px; width: 5px; height: 5px; border-radius: 50%; background: var(--steel-dim); }
+  .lcard li:first-child::before { top: 7px; }
+  .lcard li b { color: var(--ice); font-weight: 600; }
+
+  footer.note { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--steel-dim); line-height: 1.55; }
+
+  @media (max-width: 560px) {
+    .day { grid-template-columns: 70px 1fr; }
+    .day-elev { grid-column: 2 / 3; text-align: left; margin-top: 4px; }
+    .day-elev .ft { display: inline; margin-left: 6px; }
+    .nav a { font-size: 11px; }
+  }
+  .nav a .s { display: none; }
+  /* Below 600px the full "Alex & Jackie · Azores" plus three long nav labels
+     plus the status pill do not fit on one 390px row — they used to overlap.
+     Drop the prefix, shorten the nav labels, and tighten the type. */
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 11px; }
+    .nav a { font-size: 11px; letter-spacing: 0.05em; }
+    .status { font-size: 11px; }
+    .bar { padding: 0 14px; gap: 10px; }
+    .bar-right { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+    </div>
+    <nav class="nav">
+      <a href="./"><span class="l">Live map</span><span class="s">Map</span></a>
+      <a href="./itinerary.html" class="nav-on"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+      <a href="./terrain.html"><span class="l">3D terrain</span><span class="s">3D</span></a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+    <p class="eyebrow">Aug 23 – Sep 1, 2026</p>
+    <h1>One small island,<br>nine days.</h1>
+    <p class="lede">
+      São Miguel is the largest of nine islands sitting alone in the middle of the
+      Atlantic, about a third of the way from Portugal to North America. It is green
+      in a way that is difficult to photograph, built out of volcanoes, and small
+      enough that you can cross it in an afternoon. Three places to sleep, a car, and
+      a mostly empty calendar.
+    </p>
+    <div class="facts">
+      <span class="fact">Nights 1–4 <b>Ponta Delgada</b></span>
+      <span class="fact">Nights 5–6 <b>Furnas</b></span>
+      <span class="fact">Nights 7–8 <b>North coast</b></span>
+      <span class="fact">Team: <b>Alex &amp; Jackie</b></span>
+    </div>
+
+    <div class="rule-card">
+      <h3>The one rule</h3>
+      <p>
+        The weather on São Miguel changes fast and it changes locally. It can be sunny
+        where we are standing and cloudy at a crater lake twenty-five minutes away. So
+        rather than lock the days down in advance, we look at the forecast the night
+        before and decide in the morning. Only a handful of things have a fixed time on
+        them. The rest of the trip moves around the good weather — if a day looks grey,
+        we swap it, and nothing is lost.
+      </p>
+    </div>
+
+    <div class="sec-head"><h2>Island conditions</h2><span class="rule"></span></div>
+    <div class="wx">
+      <div class="wx-card" id="wx-pdl"><div class="wx-second">Loading Ponta Delgada forecast…</div></div>
+      <div class="wx-card" id="wx-sete"><div class="wx-second">Loading Sete Cidades forecast…</div></div>
+      <div class="wx-card" id="wx-fogo"><div class="wx-second">Loading Lagoa do Fogo forecast…</div></div>
+      <div class="wx-card" id="wx-furnas"><div class="wx-second">Loading Furnas forecast…</div></div>
+    </div>
+
+    <div class="sec-head"><h2>The shape of the trip</h2><span class="rule"></span></div>
+    <div class="profile">
+      <svg id="profile" viewBox="0 0 800 170" preserveAspectRatio="none" role="img" aria-label="Which of the three bases we sleep at on each of the ten days"></svg>
+    </div>
+
+    <div class="sec-head"><h2>Day by day</h2><span class="rule"></span></div>
+    <div id="timeline"></div>
+
+    <div class="sec-head"><h2>Where we're staying</h2><span class="rule"></span></div>
+    <div class="stays">
+      <div class="stay">
+        <div class="nights">Nights 1–4 · Aug 24–28</div>
+        <h3>Vila Galé Collection S. Miguel</h3>
+        <p class="where">Campo de São Francisco, Ponta Delgada</p>
+        <p>
+          A nineteenth-century building on the main square in the old capital, across
+          from a sixteenth-century sea fort. A convent, then the city hospital for a
+          hundred years, before it became a hotel — they kept the original plasterwork
+          and tile floors. Courtyard pool, indoor pool, spa with sauna and steam room.
+          Junior Suite with a balcony, breakfast included.
+        </p>
+        <div class="meta">+351 296 240 430 · <a href="tel:+351296240430">call</a></div>
+      </div>
+
+      <div class="stay">
+        <div class="nights">Nights 5–6 · Aug 28–30</div>
+        <h3>Terra Nostra Garden Hotel</h3>
+        <p class="where">Rua Padre José Jacinto Botelho 5, Furnas</p>
+        <p>
+          Furnas is a village in a valley where the ground steams. Terra Nostra sits
+          next to a botanical garden built in the 1770s, in the middle of which is a
+          large thermal pool the colour of strong tea, heated by the volcano and full
+          of iron. Guests can use the garden and pool twenty-four hours a day —
+          including early and late, when the day visitors have gone.
+        </p>
+        <div class="meta">+351 296 549 090 · <a href="tel:+351296549090">call</a></div>
+        <div class="warn">The iron permanently stains light fabric. Dark swimsuit, dark towel.</div>
+      </div>
+
+      <div class="stay">
+        <div class="nights">Nights 7–8 · Aug 30–Sep 1</div>
+        <h3>Pedras do Mar Resort &amp; Spa</h3>
+        <p class="where">Rua da Terça 3, Fenais da Luz</p>
+        <p>
+          On the cliffs facing the open Atlantic, with a sea-view room, a spa, a pool
+          and a restaurant on site. Twenty minutes from the airport, so the last
+          morning is easy. Deliberately the quiet end of the trip — by then we will
+          have been moving for a week.
+        </p>
+        <div class="meta">+351 296 249 300 · <a href="tel:+351296249300">call</a> · Check-in from 4:00 PM</div>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>Getting there</h2><span class="rule"></span></div>
+    <div class="flights">
+      <div class="leg-card">
+        <div class="leg-day">Outbound · Sun, Aug 23</div>
+        <div class="hop"><span class="ap">SFO</span><span class="arrow">→</span><span class="ap">EWR</span><span class="t">1:00p – 9:49p</span><span class="fl">UA 2480</span></div>
+        <div class="hop"><span class="ap">EWR</span><span class="arrow">→</span><span class="ap">PDL</span><span class="t">11:05p – 8:40a<sup>+1</sup></span><span class="fl">UA 216</span></div>
+      </div>
+      <div class="leg-card">
+        <div class="leg-day">Return · Tue, Sep 1</div>
+        <div class="hop"><span class="ap">PDL</span><span class="arrow">→</span><span class="ap">EWR</span><span class="t">11:00a – 1:15p</span><span class="fl">UA 217</span></div>
+        <div class="hop"><span class="ap">EWR</span><span class="arrow">→</span><span class="ap">SFO</span><span class="t">2:45p – 5:48p</span><span class="fl">UA 2328</span></div>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:16px;font-size:14px">
+      The Newark connection on the way out is quick, so anything we would badly miss
+      should ride in a carry-on. The Azores are seven hours ahead of California, and we
+      lose the night on the plane. A small automatic SUV is waiting at the airport when
+      we land, ours for the whole week. There is no ride-share on the island and buses
+      only really serve the capital, so the car is how the trip works.
+    </p>
+
+    <div class="sec-head"><h2>Distances, so nothing feels far</h2><span class="rule"></span></div>
+    <div class="scroller">
+      <table class="tbl">
+        <thead><tr><th>From</th><th>To</th><th>Drive</th></tr></thead>
+        <tbody>
+          <tr><td>Airport</td><td>Ponta Delgada</td><td class="mono">10 min</td></tr>
+          <tr><td>Ponta Delgada</td><td>Sete Cidades crater lakes</td><td class="mono">30 min</td></tr>
+          <tr><td>Ponta Delgada</td><td>Lagoa do Fogo</td><td class="mono">30 min</td></tr>
+          <tr><td>Ponta Delgada</td><td>Vila Franca do Campo</td><td class="mono">25 min</td></tr>
+          <tr><td>Ponta Delgada</td><td>Furnas</td><td class="mono">45 min</td></tr>
+          <tr><td>Furnas</td><td>Nordeste, the eastern tip</td><td class="mono">50 min</td></tr>
+          <tr><td>Furnas</td><td>Pedras do Mar</td><td class="mono">1 hour</td></tr>
+          <tr><td>Pedras do Mar</td><td>Airport</td><td class="mono">20 min</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:14px;font-size:14px">
+      The roads are narrow and often have stone walls right at the edge, so it is slow
+      going and that is fine. Cows genuinely do stand in the road, especially around the
+      crater lakes and in the east. Fog can come down fast on the high roads.
+    </p>
+
+    <div class="sec-head"><h2>Time outside</h2><span class="rule"></span></div>
+    <div class="scroller">
+      <table class="tbl">
+        <thead><tr><th>Walk</th><th>Length</th><th>Near</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>Ponta Delgada sea wall</td><td class="mono">Flat, any</td><td class="mono">Nights 1–4</td><td>Paved promenade along the marina. Good for a slow morning.</td></tr>
+          <tr><td>Sete Cidades crater rim</td><td class="mono">~5 mi</td><td class="mono">Nights 1–4</td><td>Walks the rim above both lakes. Needs a clear day.</td></tr>
+          <tr><td>Salto do Prego</td><td class="mono">~4.5 mi</td><td class="mono">Nights 5–6</td><td>Forest, a waterfall you can swim under, and a restored hamlet. The prettiest short walk on the island.</td></tr>
+          <tr><td>Lagoa do Fogo descent</td><td class="mono">~7 mi, steep</td><td class="mono">Nights 1–4</td><td>Down to the lake shore and back. An early start and a real effort.</td></tr>
+          <tr><td>Ribeira Grande trails</td><td class="mono">~4 mi</td><td class="mono">Nights 7–8</td><td>Close to the last hotel, good for the final morning.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:14px;font-size:14px">
+      Everything is muddy year-round because most of it sits under trees, so shoes with
+      grip matter more than anything else.
+    </p>
+
+    <div class="sec-head"><h2>Eating</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard">
+        <h3>Try at least once</h3>
+        <ul>
+          <li><b>Cozido das Furnas</b> — the stew cooked in volcanic ground. We have this on Sunday.</li>
+          <li><b>Lapas grelhadas</b> — limpets grilled in garlic butter, served in the shell with a lemon. Order them whenever they appear.</li>
+          <li><b>Bolo lêvedo</b> — a sweet muffin cooked on a griddle, from Furnas. Best warm from a village bakery.</li>
+          <li><b>Queijadas da Vila</b> — small cheese tarts from Vila Franca do Campo.</li>
+          <li><b>Azorean pineapple</b> — grown in greenhouses over two years, and unlike any pineapple you have had.</li>
+        </ul>
+      </div>
+      <div class="lcard">
+        <h3>Worth planning around</h3>
+        <ul>
+          <li><b>Restaurante da Associação Agrícola</b>, Ponta Delgada — run by the island's farming association, widely held to be the best beef in the Azores. Needs a reservation a few days out.</li>
+          <li><b>Bar Caloura</b> — on the rocks above the water east of the city. Pick your fish from the day's catch. No reservations, so go early.</li>
+          <li><b>Alcides</b>, Ponta Delgada — the local institution for steak.</li>
+          <li><b>A Tasca</b>, Ponta Delgada — small plates, busy and local, good for a first-day lunch.</li>
+          <li><b>Ponta do Garajau</b>, Ribeira Quente — rustic, half-outdoor, known island-wide for prawns and limpets.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>What to pack</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard">
+        <h3>Specific to here</h3>
+        <ul>
+          <li><b>A dark swimsuit and a dark towel.</b> The thermal water is full of iron and permanently stains anything pale. We will be in it four or five times.</li>
+          <li>A bag for wet swimwear — we will be in and out of pools all week.</li>
+          <li>Shoes with real grip. The trails are muddy even in August.</li>
+          <li>A light rain shell. Rain comes in short bursts and the wind ruins umbrellas.</li>
+          <li>A light layer for evenings and anywhere high up.</li>
+          <li>Sunscreen — the sun is stronger than the temperature makes it feel.</li>
+          <li>A mask and snorkel, for the islet.</li>
+        </ul>
+      </div>
+      <div class="lcard">
+        <h3>The ordinary things</h3>
+        <ul>
+          <li>Late August is low seventies in the day, high sixties at night, and the ocean is warm enough to swim without thinking about it.</li>
+          <li>Nowhere we are going has a dress code. One nicer outfit each is plenty.</li>
+          <li>A European plug adapter.</li>
+          <li>Passports, valid at least three months past our return.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>Good to know</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard">
+        <h3>Practical</h3>
+        <ul>
+          <li>Portugal uses the euro. Cards work almost everywhere, but carry some cash for village cafés and parking.</li>
+          <li>Tipping is light — rounding up, or five to ten percent for a good dinner.</li>
+          <li>Portuguese is the language, but English is widely spoken. There are long-standing family ties between the Azores and California.</li>
+          <li>An eSIM for the week costs very little. Coverage is good along the coast and patchy inland, so download offline maps before we go.</li>
+          <li>The Azores are among the safest places in Europe.</li>
+        </ul>
+      </div>
+      <div class="lcard">
+        <h3>Still to sort</h3>
+        <ul>
+          <li><b>The islet.</b> Our Terra Azul booking is a combined whale watching and islet tour, so the islet is very likely covered. Landings are capped at four hundred people a day and separate tickets open ten days ahead.</li>
+          <li><b>A table at Associação Agrícola.</b> Needs a call a few days ahead for one of the first four nights. The hotel front desk will make it.</li>
+          <li><b>The evening slot at Poça da Dona Beija</b>, booked online for a set time on Saturday the 29th.</li>
+          <li><b>The Sunday stew</b>, ordered when we check in at Furnas on Friday.</li>
+          <li>Adjust the car return time · international driving permits · eSIM · offline maps.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>Reach us</h2><span class="rule"></span></div>
+    <div class="contact">
+      <div class="card">
+        <h3>Follow live</h3>
+        <p>See where we are right now and the track so far. Positions land by satellite
+           roughly every 10 minutes when the sky is clear.</p>
+        <a class="btn primary" href="./">Open the live map</a>
+        <span class="sub">Garmin MapShare: <a href="https://share.garmin.com/VH5B5" target="_blank" rel="noopener">share.garmin.com/VH5B5</a></span>
+      </div>
+
+      <div class="card">
+        <h3>Message the device</h3>
+        <p>When we are out of coverage inland, use the <b>Message</b> button on the
+           Garmin page. It sends a short note straight to the device over satellite,
+           and we can reply.</p>
+        <a class="btn" href="https://share.garmin.com/VH5B5" target="_blank" rel="noopener">Message via Garmin</a>
+        <span class="sub">Best for the crater bowls and the eastern end.</span>
+      </div>
+
+      <div class="card">
+        <h3>WhatsApp</h3>
+        <p>Works whenever we have cell or wifi, which on this trip is most of the time —
+           the coast has good coverage and every hotel has wifi.</p>
+        <a class="btn wa" href="https://wa.me/15305217612" target="_blank" rel="noopener">Message on WhatsApp</a>
+        <span class="sub">+1 530-521-7612 · <a href="tel:+15305217612">call</a></span>
+      </div>
+    </div>
+
+    <footer class="note">
+      Everywhere we sleep and everything we drive is booked and confirmed. The rest is
+      weather and appetite. For emergencies, an SOS from the device routes to Garmin
+      Response, their 24/7 coordination center, not to this page — if you see an SOS
+      flagged on the live map, that process is already underway.
+    </footer>
+  </div>
+
+  <script>
+  // ---------------------------------------------------------------------------
+  // EDIT THIS to match the real plan. The timeline and the shape-of-the-trip
+  // chart both build from this array. "base" is where we sleep that night.
+  // Set "fixed" to a label to flag something with a real clock time on it.
+  // ---------------------------------------------------------------------------
+  const ITINERARY = [
+    { day: 1,  date: "Sun, Aug 23", iso: "2026-08-23", place: "SFO → Newark → overnight", base: "In the air",
+      title: "Flying",
+      note: "Out of San Francisco at one in the afternoon, into the Azores at breakfast the next day. Sleep on the overnight leg if we can." },
+
+    { day: 2,  date: "Mon, Aug 24", iso: "2026-08-24", place: "Ponta Delgada", base: "Ponta Delgada",
+      title: "Landing softly",
+      note: "Land at 8:40, car around ten. Rooms are not ready until three, so bags at the hotel and go find breakfast and daylight — staying awake is the whole strategy. Gruta do Carvão, a lava tube under the western edge of town, is five minutes away, underground so the weather cannot touch it, and asks nothing of us on no sleep. Proper shoes: the floor is uneven and sharp." },
+
+    { day: 3,  date: "Tue, Aug 25", iso: "2026-08-25", place: "Sete Cidades → Mosteiros", base: "Ponta Delgada",
+      title: "The crater lakes, if it is clear",
+      note: "Two lakes inside one enormous collapsed volcano, one blue and one green, with a village between them. Look down from the rim first, then drive inside. Kayaks about ten euros an hour. Afterwards west to Mosteiros for sea stacks, tide pools and one of the better sunsets. If there is cloud over the crater we do this Thursday instead — this is the day most likely to move." },
+
+    { day: 4,  date: "Wed, Aug 26", iso: "2026-08-26", place: "Whale watching → Vila Franca islet", base: "Ponta Delgada",
+      title: "On the water", fixed: "8:00 AM pickup",
+      note: "Terra Azul collects us at the hotel at 8:00 and the boat sails at 8:30. No driving today. Marine biologists on board; in August usually sperm whales, pilot whales and large groups of dolphins on the bow. The same tour carries on to Ilhéu de Vila Franca, a flooded volcanic crater a kilometre offshore that you can swim inside. Swimsuits, towels, a mask. Sunscreen before we board, not after." },
+
+    { day: 5,  date: "Thu, Aug 27", iso: "2026-08-27", place: "Lagoa do Fogo → Caldeira Velha", base: "Ponta Delgada",
+      title: "Lagoa do Fogo",
+      note: "A crater lake high in the middle of the island with a white sand shore and no development at all. Often clear early and clouded over by mid-morning, so this is a day we get up for. Caldeira Velha on the way back down: a small thermal pool and waterfall in dense forest. A good night for a proper dinner in town." },
+
+    { day: 6,  date: "Fri, Aug 28", iso: "2026-08-28", place: "Coast road → Furnas", base: "Furnas",
+      title: "East, along the coast, to Furnas",
+      note: "Check out and take the coast road rather than the direct one — it is only forty-five minutes if you hurry, so we won't. Vila Franca do Campo for queijadas, Caloura for lunch by the water. Into Furnas mid-afternoon, where fumaroles steam in the middle of the village and restaurants bury pots of stew in the ground. We order the stew tonight for Sunday lunch; it needs twenty-four hours. Then the thermal pool after the day visitors leave. Dark swimsuit." },
+
+    { day: 7,  date: "Sat, Aug 29", iso: "2026-08-29", place: "Nordeste → Poça da Dona Beija", base: "Furnas",
+      title: "The wild eastern end", fixed: "Evening slot",
+      note: "The least visited part of the island and the best drive on it. Waterfalls at Ribeira dos Caldeirões, old watermills, and the landscaped viewpoints at Santa Iria and Ponta do Sossego built out over the ocean. A lighthouse at Farol do Arnel down a very steep lane, which we walk rather than drive. If we would rather walk than drive: Salto do Prego, a waterfall you can swim under, about four and a half miles. In the evening, Poça da Dona Beija — small thermal pools lit up after dark, open until half past nine, booked for a set time." },
+
+    { day: 8,  date: "Sun, Aug 30", iso: "2026-08-30", place: "Lagoa das Furnas → north coast", base: "Fenais da Luz",
+      title: "The valley, then north", fixed: "Cozido 12:30",
+      note: "The thermal pool once more before checkout — guests can use the garden afterwards, so there is no rush. Down to Lagoa das Furnas where the cooking pits are; if we time it right we watch them pull the pots out of the ground. Cozido lunch around half past twelve, the one we ordered Friday: beef, pork, chicken, sausage, cabbage, potatoes and yams, seven hours underground. It is enormous, so we skip breakfast. An hour north to Pedras do Mar, arriving around four, with an optional swim at Praia do Fogo on the way." },
+
+    { day: 9,  date: "Mon, Aug 31", iso: "2026-08-31", place: "Gorreana → Ribeira Grande", base: "Fenais da Luz",
+      title: "The north coast, and anything we missed",
+      note: "Deliberately open. By now we will know what the weather took from us and can go back for it. Gorreana, fifteen minutes away, is the only commercial tea plantation in Europe, growing since 1883 — free to walk through, free to taste. Ribeira Grande for the old town, and Santa Bárbara beach if the surf is up. An afternoon at the spa. Last night." },
+
+    { day: 10, date: "Tue, Sep 1",  iso: "2026-09-01", place: "PDL → Newark → SFO", base: "In the air",
+      title: "Home",
+      note: "Twenty minutes to the airport, an eleven o'clock flight, and home to San Francisco by early evening." },
+  ];
+
+  // The three places we sleep, in order, for the lane chart.
+  const BASES = ["Ponta Delgada", "Furnas", "Fenais da Luz"];
+  const BASE_COLOR = { "Ponta Delgada": "#5fd0e6", "Furnas": "#4fd39a", "Fenais da Luz": "#ff8a52" };
+
+  // ---- Build timeline ----
+  const tl = document.getElementById("timeline");
+  ITINERARY.forEach((d) => {
+    const el = document.createElement("div");
+    el.className = "day" + (d.fixed ? " fixed" : "");
+    el.innerHTML =
+      '<div class="day-when">' +
+        '<span class="day-no">Day ' + d.day + '</span>' +
+        '<span class="day-date">' + d.date + '</span>' +
+      '</div>' +
+      '<div class="day-body">' +
+        '<p class="day-title">' + d.title + (d.fixed ? '<span class="badge">' + d.fixed + '</span>' : '') + '</p>' +
+        '<p class="day-place">' + d.place + '</p>' +
+        '<p class="day-note">' + d.note + '</p>' +
+      '</div>' +
+      '<div class="day-elev"><span class="m">' + d.base + '</span>' +
+        '<span class="ft">tonight</span></div>';
+    tl.appendChild(el);
+  });
+
+  // ---- Build the shape-of-the-trip chart ----
+  // Ecuador plotted altitude against days. This trip is flat, so the thing worth
+  // plotting is which of the three bases we are sleeping at, day by day.
+  (function buildProfile() {
+    const svg = document.getElementById("profile");
+    const W = 800, H = 170, padL = 104, padR = 16, padT = 16, padB = 26;
+    const n = ITINERARY.length;
+    const colW = (W - padL - padR) / n;
+    const laneH = (H - padT - padB) / BASES.length;
+
+    let s = "";
+
+    // Lane guides + labels
+    BASES.forEach((b, i) => {
+      const y = padT + i * laneH;
+      s += '<line x1="' + padL + '" y1="' + (y + laneH / 2) + '" x2="' + (W - padR) +
+        '" y2="' + (y + laneH / 2) + '" stroke="#22344a" stroke-width="1" />';
+      s += '<text class="lane" x="' + (padL - 10) + '" y="' + (y + laneH / 2 + 4) +
+        '" text-anchor="end">' + b + '</text>';
+    });
+
+    // One block per contiguous run of nights at a base
+    let run = null;
+    const flush = () => {
+      if (!run) return;
+      const i = BASES.indexOf(run.base);
+      const x = padL + run.start * colW;
+      const w = run.len * colW - 3;
+      const y = padT + i * laneH + laneH / 2 - 11;
+      s += '<rect x="' + (x + 1.5) + '" y="' + y + '" width="' + w + '" height="22" rx="6" fill="' +
+        BASE_COLOR[run.base] + '" opacity="0.85" />';
+      s += '<text class="blab" x="' + (x + 1.5 + w / 2) + '" y="' + (y + 15) +
+        '" text-anchor="middle">' + run.len + (run.len === 1 ? " night" : " nights") + '</text>';
+      run = null;
+    };
+    ITINERARY.forEach((d, idx) => {
+      if (BASES.indexOf(d.base) < 0) { flush(); return; }
+      if (run && run.base === d.base) run.len += 1;
+      else { flush(); run = { base: d.base, start: idx, len: 1 }; }
+    });
+    flush();
+
+    // Day numbers along the bottom
+    ITINERARY.forEach((d, i) => {
+      s += '<text class="axis" x="' + (padL + i * colW + colW / 2) + '" y="' + (H - 8) +
+        '" text-anchor="middle">' + d.day + '</text>';
+    });
+
+    // Today, if we are inside the trip
+    const t0 = new Date(ITINERARY[0].iso + "T00:00:00").getTime();
+    const dayIdx = Math.floor((Date.now() - t0) / 86400000);
+    if (dayIdx >= 0 && dayIdx < n) {
+      const x = padL + dayIdx * colW + colW / 2;
+      s += '<line x1="' + x + '" y1="' + padT + '" x2="' + x + '" y2="' + (H - padB) +
+        '" stroke="#ff8a52" stroke-width="1.5" stroke-dasharray="3 3" />';
+    }
+
+    svg.innerHTML = s;
+  })();
+
+  // ---- Island conditions (Open-Meteo, free, no key) ----
+  // Four spots rather than one, because the whole planning rule is that the
+  // weather here is different twenty-five minutes down the road.
+  const WX_SPOTS = [
+    { key: "pdl",    name: "Ponta Delgada", sub: "Nights 1–4 · sea level", elev: 30,  lat: 37.7412, lon: -25.6756 },
+    { key: "sete",   name: "Sete Cidades",  sub: "Crater lakes · Tue or Thu", elev: 260, lat: 37.8600, lon: -25.7900 },
+    { key: "fogo",   name: "Lagoa do Fogo", sub: "575 m · clears early",   elev: 575, lat: 37.7683, lon: -25.4750 },
+    { key: "furnas", name: "Furnas",        sub: "Nights 5–6 · the valley", elev: 200, lat: 37.7736, lon: -25.3142 },
+  ];
+  const TRIP_DAYS = ITINERARY.map((d) => d.iso);
+  const KEY_DAYS = ["2026-08-25", "2026-08-27"]; // the two weather-dependent crater days
+
+  function wmo(code) {
+    const c = Number(code);
+    if (c === 0) return { label: "Clear", color: "#ffd27a" };
+    if (c <= 2) return { label: "Partly cloudy", color: "#7fc7e0" };
+    if (c === 3) return { label: "Overcast", color: "#8a9cb1" };
+    if (c === 45 || c === 48) return { label: "Fog", color: "#8a9cb1" };
+    if (c >= 51 && c <= 57) return { label: "Drizzle", color: "#5fa8e6" };
+    if (c >= 61 && c <= 67) return { label: "Rain", color: "#5fa8e6" };
+    if (c >= 71 && c <= 77) return { label: "Snow", color: "#e9eef5" };
+    if (c >= 80 && c <= 82) return { label: "Showers", color: "#5fa8e6" };
+    if (c >= 85 && c <= 86) return { label: "Snow showers", color: "#e9eef5" };
+    if (c >= 95) return { label: "Storm", color: "#ff8a52" };
+    return { label: "—", color: "#8a9cb1" };
+  }
+  const cToF = (c) => (c * 9) / 5 + 32;
+  const r0 = (n) => Math.round(n);
+  function fmtDay(iso) {
+    const d = new Date(iso + "T12:00:00");
+    return d.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 2) + " " + d.getDate();
+  }
+
+  function renderWx(p, d) {
+    const cur = d.current || {};
+    const ht = (d.hourly && d.hourly.time) || [];
+    let idx = 0;
+    if (cur.time) {
+      const tgt = cur.time.slice(0, 13);
+      const f = ht.findIndex((t) => t.slice(0, 13) === tgt);
+      if (f >= 0) idx = f;
+    }
+
+    // Next 24 hours of rain, which is what actually decides the day here.
+    let pr = 0, pmax = 0;
+    if (d.hourly) {
+      for (let i = idx; i < idx + 24 && i < ht.length; i++) {
+        if (d.hourly.precipitation) pr += d.hourly.precipitation[i] || 0;
+        if (d.hourly.precipitation_probability) {
+          pmax = Math.max(pmax, d.hourly.precipitation_probability[i] || 0);
+        }
+      }
+    }
+
+    const cond = wmo(cur.weather_code);
+    const tC = cur.temperature_2m;
+
+    const dt = (d.daily && d.daily.time) || [];
+    let days = "";
+    TRIP_DAYS.forEach((day) => {
+      const isKey = KEY_DAYS.indexOf(day) >= 0;
+      const di = dt.indexOf(day);
+      if (di < 0) {
+        days += '<div class="wx-day' + (isKey ? " is-key" : "") + '"><div class="d">' + fmtDay(day) + '</div><div class="lo">—</div></div>';
+        return;
+      }
+      const wc = wmo(d.daily.weather_code[di]);
+      days += '<div class="wx-day' + (isKey ? " is-key" : "") + '">' +
+        '<div class="d">' + fmtDay(day) + '</div>' +
+        '<div class="cd" style="background:' + wc.color + '"></div>' +
+        '<div class="hi">' + r0(d.daily.temperature_2m_max[di]) + '°</div>' +
+        '<div class="lo">' + r0(d.daily.temperature_2m_min[di]) + '°</div>' +
+        '<div class="w">' + r0(d.daily.precipitation_probability_max[di]) + '%</div></div>';
+    });
+
+    const updated = cur.time ? cur.time.replace("T", " ") : "";
+    return '' +
+      '<div class="wx-head">' +
+        '<div><div class="wx-peak">' + p.name + '</div>' +
+        '<div class="wx-sub">' + p.sub + '</div></div>' +
+        '<div class="wx-chip"><span class="cdot" style="background:' + cond.color + '"></span>' + cond.label + '</div>' +
+      '</div>' +
+      '<div class="wx-metrics">' +
+        '<div class="wx-m"><div class="k">Now</div><div class="v">' + (tC != null ? r0(tC) + '°<small>C / ' + r0(cToF(tC)) + '°F</small>' : "—") + '</div></div>' +
+        '<div class="wx-m"><div class="k">Rain next 24h</div><div class="v">' + r0(pmax) + '<small>% · ' + pr.toFixed(1) + ' mm</small></div></div>' +
+        '<div class="wx-m"><div class="k">Cloud</div><div class="v">' + (cur.cloud_cover != null ? r0(cur.cloud_cover) + '<small>%</small>' : "—") + '</div></div>' +
+      '</div>' +
+      '<div class="wx-second">' +
+        '<span>Wind ' + (cur.wind_speed_10m != null ? r0(cur.wind_speed_10m) + " km/h" : "—") + '</span>' +
+        '<span>Gusts ' + (cur.wind_gusts_10m != null ? r0(cur.wind_gusts_10m) + " km/h" : "—") + '</span>' +
+        '<span>Humidity ' + (cur.relative_humidity_2m != null ? r0(cur.relative_humidity_2m) + "%" : "—") + '</span>' +
+      '</div>' +
+      '<div class="wx-days">' + days + '</div>' +
+      '<div class="wx-foot"><span style="color:var(--steel-dim);font-size:10.5px">Bottom row is rain chance. Highlighted days are the crater days.</span>' +
+        '<span class="wx-updated">' + updated + '</span></div>';
+  }
+
+  async function loadWeather() {
+    await Promise.all(WX_SPOTS.map(async (p) => {
+      const card = document.getElementById("wx-" + p.key);
+      if (!card) return;
+      try {
+        const u = new URL("https://api.open-meteo.com/v1/forecast");
+        const q = {
+          latitude: p.lat, longitude: p.lon, elevation: p.elev,
+          timezone: "Atlantic/Azores", wind_speed_unit: "kmh",
+          current: "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code,cloud_cover",
+          hourly: "precipitation,precipitation_probability,cloud_cover",
+          daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max",
+          past_days: 2, forecast_days: 16,
+        };
+        Object.entries(q).forEach(([k, v]) => u.searchParams.set(k, v));
+        const res = await fetch(u);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const d = await res.json();
+        card.innerHTML = renderWx(p, d);
+      } catch (e) {
+        card.innerHTML = '<div class="wx-head"><div class="wx-peak">' + p.name + '</div></div>' +
+          '<div class="wx-second">Forecast unavailable right now. ' +
+          '<a href="https://www.ipma.pt/en/otempo/prev.localidade.hora/" target="_blank" rel="noopener">Try IPMA, the Portuguese met service</a>.</div>';
+      }
+    }));
+  }
+
+  loadWeather();
+  setInterval(loadWeather, 900000); // refresh every 15 min
+  </script>
+</body>
+</html>
