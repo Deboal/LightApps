@@ -6,7 +6,8 @@
 <title>Alex &amp; Jackie · Azores · 3D Terrain</title>
 <meta name="description" content="São Miguel's craters in 3D, with our live position draped on the real terrain." />
 
-<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"
+  onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css';" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -103,6 +104,26 @@
     .hint { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+  /* Shown when the 3D map cannot start, instead of a dark rectangle. */
+  .maperr {
+    position: absolute; inset: 0; z-index: 15; display: flex;
+    align-items: center; justify-content: center; padding: 24px;
+    background: radial-gradient(600px 300px at 50% 40%, rgba(79,211,154,0.06), transparent 70%), var(--bg);
+  }
+  .maperr-card {
+    max-width: 420px; text-align: center;
+    background: rgba(15,24,37,0.92); border: 1px solid var(--line);
+    border-radius: 14px; padding: 24px 22px;
+  }
+  .maperr-title { font-size: 16px; font-weight: 700; color: var(--ice); margin-bottom: 8px; }
+  .maperr-body { font-size: 13.5px; line-height: 1.55; color: var(--steel); margin: 0 0 18px; }
+  .maperr-btn {
+    display: inline-block; text-decoration: none; font-weight: 600; font-size: 14px;
+    padding: 10px 16px; border-radius: 10px;
+    background: var(--ember); color: #2a1206; border: 1px solid var(--ember);
+  }
+  .maperr-btn:hover { background: #ff9a68; }
+
   .nav a .s { display: none; }
   /* Below 600px the full "Alex & Jackie · Azores" plus three long nav labels
      plus the status pill do not fit on one 390px row — they used to overlap.
@@ -160,7 +181,6 @@
     </div>
   </main>
 
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script>
   // Coordinates and elevations are approximate — enough to place a tag on the
   // right hill, not survey grade.
@@ -190,7 +210,48 @@
     ],
   };
 
-  const map = new maplibregl.Map({
+  // ---------------------------------------------------------------------------
+  // Bootstrap.
+  //
+  // This page used to build the map at the top level, which meant one throw
+  // there killed everything below it — including the feed poll — and left the
+  // status pill on its initial "Loading…" text with no clue why. Two real
+  // causes: the library not arriving (a CDN blip, a blocker, a hotel wifi
+  // portal) and WebGL being unavailable (iOS Low Power / Lockdown mode, older
+  // hardware, some content blockers). MapLibre needs WebGL; there is no
+  // software fallback.
+  //
+  // So: the feed runs first and never depends on the map, the library is
+  // fetched with a second CDN behind it, and a failed map says what happened
+  // and points at the 2D map instead of leaving a dark void.
+  // ---------------------------------------------------------------------------
+  let map = null;
+  let liveMarker = null;
+  let havePosition = false;
+  // The feed poll runs independently of the map, so a track can arrive before
+  // the style is ready — or with no map at all. Hold it and drape it on load.
+  let pendingTrack = null;
+  let styleReady = false;
+
+  function showMapError(title, detail) {
+    const stage = document.querySelector(".stage");
+    if (!stage || document.getElementById("mapErr")) return;
+    const el = document.createElement("div");
+    el.id = "mapErr";
+    el.className = "maperr";
+    el.innerHTML =
+      '<div class="maperr-card">' +
+        '<div class="maperr-title">' + title + '</div>' +
+        '<p class="maperr-body">' + detail + '</p>' +
+        '<a class="maperr-btn" href="./">Open the 2D live map</a>' +
+      '</div>';
+    stage.appendChild(el);
+    const hint = document.querySelector(".hint");
+    if (hint) hint.style.display = "none";
+  }
+
+  function buildMap() {
+    map = new maplibregl.Map({
     container: "map",
     maxPitch: 85,
     center: [SPOTS.sete.lng, SPOTS.sete.lat],
@@ -229,13 +290,6 @@
     return new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([p.lng, p.lat]);
   }
 
-  let liveMarker = null;
-  let havePosition = false;
-  // The feed poll runs independently of the map (see below), so a track can
-  // arrive before the style is ready. Hold it here and drape it on load.
-  let pendingTrack = null;
-  let styleReady = false;
-
   map.on("load", () => {
     styleReady = true;
     // 3D terrain. São Miguel's relief is smaller than the Andes, so the
@@ -273,17 +327,19 @@
       const src = map.getSource("track");
       if (src) src.setData(pendingTrack);
     }
+    // A style that loads but cannot paint still leaves a dark rectangle, so
+    // surface tile failures rather than letting them look like a blank map.
+    map.on("error", (e) => {
+      const msg = (e && e.error && e.error.message) || "";
+      if (/tile|source/i.test(msg)) console.warn("map tile issue:", msg);
+    });
   });
-
-  // Deliberately outside map.on("load"): if the terrain or satellite tiles are
-  // slow or unreachable, the status pill and the position should still work
-  // rather than sitting on "Loading…" forever.
-  loadFeed();
-  setInterval(loadFeed, 180000);
+  }
 
   // Fly-to buttons
   document.querySelectorAll(".fly").forEach((b) => {
     b.addEventListener("click", () => {
+      if (!map) return;
       const go = b.dataset.go;
       if (SPOTS[go]) {
         const p = SPOTS[go];
@@ -322,12 +378,21 @@
 
       if (!data.latest) { setStatus("stale", "No signal yet"); return; }
 
+      // Status first, and never gated on the map: the whole point of the
+      // restructure is that a dead map cannot silence the feed.
+      const m = (Date.now() - Date.parse(data.latest.time)) / 60000;
+      if (data.latest.inEmergency) setStatus("sos", "SOS ACTIVE");
+      else if (m <= 25) setStatus("live", "Live · " + relTime(data.latest.time));
+      else if (m <= 120) setStatus("recent", relTime(data.latest.time));
+      else setStatus("stale", "Last seen " + relTime(data.latest.time));
+
       const coords = data.points.map((p) => [p.lon, p.lat]);
-      const line = { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } };
-      pendingTrack = line;
+      pendingTrack = { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } };
+      if (!map) return;
+
       if (styleReady) {
         const src = map.getSource("track");
-        if (src) src.setData(line);
+        if (src) src.setData(pendingTrack);
       }
 
       const here = [data.latest.lon, data.latest.lat];
@@ -338,16 +403,51 @@
         liveMarker.setLngLat(here);
       }
       havePosition = true;
-
-      const m = (Date.now() - Date.parse(data.latest.time)) / 60000;
-      if (data.latest.inEmergency) setStatus("sos", "SOS ACTIVE");
-      else if (m <= 25) setStatus("live", "Live · " + relTime(data.latest.time));
-      else if (m <= 120) setStatus("recent", relTime(data.latest.time));
-      else setStatus("stale", "Last seen " + relTime(data.latest.time));
     } catch (e) {
       setStatus("stale", "Connection error");
     }
   }
+
+  // The feed starts now, before any map exists, and keeps running whatever
+  // happens to the map below.
+  loadFeed();
+  setInterval(loadFeed, 180000);
+
+  // MapLibre from unpkg, with jsDelivr behind it. Two CDNs is cheap insurance
+  // for a page that will be opened on hotel and airport wifi.
+  const LIB = [
+    "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js",
+    "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js",
+  ];
+  function loadLib(i, done, fail) {
+    if (i >= LIB.length) return fail();
+    const s = document.createElement("script");
+    s.src = LIB[i];
+    s.onload = done;
+    s.onerror = () => loadLib(i + 1, done, fail);
+    document.head.appendChild(s);
+  }
+
+  loadLib(0, () => {
+    try {
+      buildMap();
+    } catch (err) {
+      // Almost always WebGL: MapLibre requires it and has no 2D fallback.
+      const msg = String((err && err.message) || err);
+      const webgl = /webgl|context/i.test(msg);
+      showMapError(
+        webgl ? "This browser can't show 3D terrain" : "The 3D map failed to start",
+        webgl
+          ? "The 3D view needs WebGL, which this browser is not providing. On an iPhone that is usually Low Power Mode or Lockdown Mode — turning either off and reloading normally fixes it. Everything else on this page still works."
+          : "Something went wrong starting the map: " + msg
+      );
+    }
+  }, () => {
+    showMapError(
+      "Couldn't load the 3D map library",
+      "Both map CDNs were unreachable, which usually means the network is blocking them or a wifi login page is in the way. The live position above is still updating."
+    );
+  });
   </script>
 </body>
 </html>
