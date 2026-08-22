@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · 3D Terrain</title>
+<meta name="description" content="São Miguel's craters in 3D, with our live position draped on the real terrain." />
+
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320; --bg-2: #0e1828; --panel: #13202f; --panel-2: #16263a;
+    --line: #22344a; --ice: #e9eef5; --steel: #8a9cb1; --steel-dim: #58697e;
+    --glacier: #5fd0e6; --laurel: #4fd39a; --ember: #ff8a52;
+    --live: #56d364; --warn: #f2b84b; --stale: #6b7a8d; --sos: #ff4d4d;
+    --bar-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ice); font-family: "Space Grotesk", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; min-height: 100dvh; overflow: hidden; }
+
+  .bar {
+    height: var(--bar-h); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 18px; background: linear-gradient(180deg, var(--bg-2), var(--bg));
+    border-bottom: 1px solid var(--line); z-index: 20;
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 14px var(--ember); align-self: center; flex: 0 0 auto; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-right { display: flex; align-items: center; gap: 20px; }
+  .nav { display: flex; gap: 16px; }
+  .nav a { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel); text-decoration: none; padding: 4px 0; border-bottom: 1px solid transparent; }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a:focus-visible { outline: 2px solid var(--glacier); outline-offset: 3px; }
+  .status { display: flex; align-items: center; gap: 9px; font-family: "Space Mono", monospace; font-size: 12px; color: var(--steel); white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--stale); }
+  .dot.live { background: var(--live); box-shadow: 0 0 10px var(--live); }
+  .dot.recent { background: var(--warn); }
+  .dot.sos { background: var(--sos); box-shadow: 0 0 12px var(--sos); }
+
+  .stage { flex: 1 1 auto; position: relative; min-height: 0; }
+  #map { position: absolute; inset: 0; background: var(--bg-2); }
+  .maplibregl-ctrl-attrib { background: rgba(11,19,32,0.7) !important; }
+  .maplibregl-ctrl-attrib a { color: var(--steel) !important; }
+
+  /* Fly-to controls */
+  .controls {
+    position: absolute; left: 14px; bottom: 14px; z-index: 10;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  }
+  .controls .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fly {
+    font-family: "Space Grotesk", sans-serif; font-size: 13px; font-weight: 600;
+    color: var(--ice); background: rgba(15,24,37,0.86); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 9px; padding: 9px 13px; cursor: pointer;
+  }
+  .fly:hover { background: var(--panel-2); }
+  .fly:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+  .fly.alpen { border-color: rgba(255,138,82,0.5); color: var(--ember); }
+
+  /* Legend */
+  .legend {
+    position: absolute; right: 14px; bottom: 14px; z-index: 10;
+    background: rgba(15,24,37,0.86); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px;
+    font-size: 12px; color: var(--steel); display: flex; flex-direction: column; gap: 7px;
+  }
+  .legend .li { display: flex; align-items: center; gap: 8px; }
+  .legend .sw { width: 16px; height: 3px; border-radius: 2px; flex: 0 0 auto; }
+  .legend .sw.route { background: var(--ember); }
+  .legend .sw.track { background: var(--glacier); }
+  .legend .sw.pos { width: 11px; height: 11px; border-radius: 50%; background: var(--ember); border: 2px solid #fff; }
+  .legend .sw.bed { width: 9px; height: 9px; border-radius: 2px; background: var(--laurel); box-shadow: 0 0 0 1px var(--laurel); }
+
+  /* Markers */
+  .pk { display: flex; flex-direction: column; align-items: center; transform: translateY(-50%); pointer-events: none; }
+  .pk-flag { width: 2px; height: 26px; background: var(--ember); }
+  .pk-tag { background: rgba(15,24,37,0.92); border: 1px solid rgba(255,138,82,0.5); border-radius: 7px; padding: 4px 9px; white-space: nowrap; transform: translateY(-2px); }
+  .pk-name { font-size: 12px; font-weight: 700; color: var(--ice); }
+  .pk-elev { font-family: "Space Mono", monospace; font-size: 10px; color: var(--ember); }
+  .bed { width: 9px; height: 9px; background: var(--laurel); border: 2px solid #0b1320; border-radius: 2px; box-shadow: 0 0 0 1px var(--laurel); }
+
+  .live-dot { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--ember); border: 2px solid #fff; box-shadow: 0 0 0 0 rgba(255,138,82,0.55); animation: ping 2.4s ease-out infinite; }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(255,138,82,0.5); } 70% { box-shadow: 0 0 0 16px rgba(255,138,82,0); } 100% { box-shadow: 0 0 0 0 rgba(255,138,82,0); } }
+
+  .hint {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 12px; color: var(--steel); background: rgba(15,24,37,0.8); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; white-space: nowrap;
+  }
+
+  @media (max-width: 640px) {
+    .legend { display: none; }
+    .brand-name { font-size: 12px; }
+    .nav a { font-size: 11px; }
+    .bar-right { gap: 12px; }
+    .nav { gap: 11px; }
+    .hint { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+  .nav a .s { display: none; }
+  /* Below 600px the full "Alex & Jackie · Azores" plus three long nav labels
+     plus the status pill do not fit on one 390px row — they used to overlap.
+     Drop the prefix, shorten the nav labels, and tighten the type. */
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 11px; }
+    .nav a { font-size: 11px; letter-spacing: 0.05em; }
+    .status { font-size: 11px; }
+    .bar { padding: 0 14px; gap: 10px; }
+    .bar-right { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+    </div>
+    <div class="bar-right">
+      <nav class="nav">
+        <a href="./"><span class="l">Live map</span><span class="s">Map</span></a>
+        <a href="./itinerary.html"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+        <a href="./terrain.html" class="nav-on"><span class="l">3D terrain</span><span class="s">3D</span></a>
+      </nav>
+      <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Loading…</span></div>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div id="map"></div>
+    <div class="hint">Drag to orbit · right-drag to tilt · scroll to zoom</div>
+    <div class="controls">
+      <div class="row">
+        <button class="fly alpen" data-go="sete" type="button">Sete Cidades</button>
+        <button class="fly alpen" data-go="fogo" type="button">Lagoa do Fogo</button>
+        <button class="fly alpen" data-go="furnas" type="button">Furnas</button>
+      </div>
+      <div class="row">
+        <button class="fly" data-go="vara" type="button">Pico da Vara</button>
+        <button class="fly" data-go="live" type="button">Fly to us</button>
+        <button class="fly" data-go="overview" type="button">Overview</button>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="li"><span class="sw route"></span> Route between bases</div>
+      <div class="li"><span class="sw track"></span> Track so far</div>
+      <div class="li"><span class="sw pos"></span> Us now</div>
+      <div class="li"><span class="sw bed"></span> Where we sleep</div>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script>
+  // Coordinates and elevations are approximate — enough to place a tag on the
+  // right hill, not survey grade.
+  const SPOTS = {
+    sete:   { name: "Sete Cidades", elev: "Caldera lakes · 260 m", lng: -25.7900, lat: 37.8600, bearing: 150, zoom: 12.4 },
+    fogo:   { name: "Lagoa do Fogo", elev: "575 m",                lng: -25.4750, lat: 37.7683, bearing: 20,  zoom: 13.0 },
+    furnas: { name: "Furnas",        elev: "Steaming valley · 200 m", lng: -25.3142, lat: 37.7736, bearing: -30, zoom: 13.0 },
+    vara:   { name: "Pico da Vara",  elev: "1,103 m · island high point", lng: -25.2192, lat: 37.8081, bearing: 0, zoom: 12.8 },
+  };
+  // Where we sleep, in order.
+  const BEDS = [
+    { name: "Vila Galé · Ponta Delgada", lng: -25.6720, lat: 37.7404 },
+    { name: "Terra Nostra · Furnas",     lng: -25.3140, lat: 37.7716 },
+    { name: "Pedras do Mar · Fenais da Luz", lng: -25.6383, lat: 37.8283 },
+  ];
+  // The shape of the trip: base one, out along the south coast to base two,
+  // then north and west to base three. Approximate, not a GPS track.
+  const ROUTES = {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [
+        [-25.6720,37.7404],[-25.5069,37.7047],[-25.4322,37.7186],[-25.3078,37.7297],[-25.3140,37.7716]
+      ]}},
+      { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [
+        [-25.3140,37.7716],[-25.4147,37.8175],[-25.5150,37.8211],[-25.6383,37.8283]
+      ]}},
+    ],
+  };
+
+  const map = new maplibregl.Map({
+    container: "map",
+    maxPitch: 85,
+    center: [SPOTS.sete.lng, SPOTS.sete.lat],
+    zoom: 11.4, pitch: 66, bearing: 140,
+    style: {
+      version: 8,
+      sources: {
+        satellite: {
+          type: "raster",
+          tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+          tileSize: 256, maxzoom: 18,
+          attribution: "Imagery &copy; Esri",
+        },
+        dem: {
+          type: "raster-dem",
+          tiles: ["https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png"],
+          encoding: "terrarium", tileSize: 256, maxzoom: 14,
+          attribution: "Elevation: AWS Terrain Tiles",
+        },
+      },
+      layers: [
+        { id: "bg", type: "background", paint: { "background-color": "#0b1320" } },
+        { id: "sat", type: "raster", source: "satellite" },
+        { id: "hill", type: "hillshade", source: "dem", paint: { "hillshade-exaggeration": 0.4, "hillshade-shadow-color": "#06101c" } },
+      ],
+    },
+  });
+
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+
+  function spotMarker(p) {
+    const el = document.createElement("div");
+    el.className = "pk";
+    el.innerHTML = '<div class="pk-tag"><div class="pk-name">' + p.name + '</div>' +
+      '<div class="pk-elev">' + p.elev + '</div></div><div class="pk-flag"></div>';
+    return new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([p.lng, p.lat]);
+  }
+
+  let liveMarker = null;
+  let havePosition = false;
+  // The feed poll runs independently of the map (see below), so a track can
+  // arrive before the style is ready. Hold it here and drape it on load.
+  let pendingTrack = null;
+  let styleReady = false;
+
+  map.on("load", () => {
+    styleReady = true;
+    // 3D terrain. São Miguel's relief is smaller than the Andes, so the
+    // exaggeration is pushed harder to make the craters read.
+    try { map.setTerrain({ source: "dem", exaggeration: 1.8 }); } catch (e) { /* terrain optional */ }
+    try {
+      map.setSky({
+        "sky-color": "#0e1828", "horizon-color": "#243a52",
+        "fog-color": "#0b1320", "sky-horizon-blend": 0.6,
+        "horizon-fog-blend": 0.6, "fog-ground-blend": 0.4,
+      });
+    } catch (e) { /* sky optional on some versions */ }
+
+    // Route between bases
+    map.addSource("routes", { type: "geojson", data: ROUTES });
+    map.addLayer({ id: "routes", type: "line", source: "routes",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#ff8a52", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.9 } });
+
+    // Live track (filled in by the feed)
+    map.addSource("track", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({ id: "track", type: "line", source: "track",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#5fd0e6", "line-width": 3.5, "line-opacity": 0.95 } });
+
+    // Markers
+    Object.values(SPOTS).forEach((s) => spotMarker(s).addTo(map));
+    BEDS.forEach((b) => {
+      const el = document.createElement("div"); el.className = "bed"; el.title = b.name;
+      new maplibregl.Marker({ element: el }).setLngLat([b.lng, b.lat]).addTo(map);
+    });
+
+    // Drape any track that arrived while the style was still loading.
+    if (pendingTrack) {
+      const src = map.getSource("track");
+      if (src) src.setData(pendingTrack);
+    }
+  });
+
+  // Deliberately outside map.on("load"): if the terrain or satellite tiles are
+  // slow or unreachable, the status pill and the position should still work
+  // rather than sitting on "Loading…" forever.
+  loadFeed();
+  setInterval(loadFeed, 180000);
+
+  // Fly-to buttons
+  document.querySelectorAll(".fly").forEach((b) => {
+    b.addEventListener("click", () => {
+      const go = b.dataset.go;
+      if (SPOTS[go]) {
+        const p = SPOTS[go];
+        map.flyTo({ center: [p.lng, p.lat], zoom: p.zoom, pitch: 72, bearing: p.bearing, duration: 2000 });
+      } else if (go === "overview") {
+        map.fitBounds([[-25.90, 37.69], [-25.11, 37.91]], { pitch: 50, bearing: 0, duration: 2000, padding: 50 });
+      } else if (go === "live") {
+        if (havePosition && liveMarker) {
+          const ll = liveMarker.getLngLat();
+          map.flyTo({ center: [ll.lng, ll.lat], zoom: 13.5, pitch: 70, duration: 2000 });
+        } else {
+          setStatus("stale", "No live position yet");
+        }
+      }
+    });
+  });
+
+  function setStatus(kind, text) {
+    document.getElementById("statusDot").className = "dot " + kind;
+    document.getElementById("statusText").textContent = text;
+  }
+  function relTime(iso) {
+    const m = (Date.now() - Date.parse(iso)) / 60000;
+    if (!isFinite(m)) return "unknown";
+    if (m < 1) return "just now";
+    if (m < 60) return Math.round(m) + " min ago";
+    const h = m / 60; if (h < 24) return Math.round(h) + (Math.round(h) === 1 ? " hour ago" : " hours ago");
+    const d = Math.floor(h / 24); return d + (d === 1 ? " day ago" : " days ago");
+  }
+
+  async function loadFeed() {
+    try {
+      const r = await fetch("/api/feed", { cache: "no-store" });
+      const data = await r.json();
+      if (!data || !data.ok) { setStatus("stale", "Feed unavailable"); return; }
+
+      if (!data.latest) { setStatus("stale", "No signal yet"); return; }
+
+      const coords = data.points.map((p) => [p.lon, p.lat]);
+      const line = { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } };
+      pendingTrack = line;
+      if (styleReady) {
+        const src = map.getSource("track");
+        if (src) src.setData(line);
+      }
+
+      const here = [data.latest.lon, data.latest.lat];
+      if (!liveMarker) {
+        const el = document.createElement("div"); el.innerHTML = '<span class="live-dot"></span>';
+        liveMarker = new maplibregl.Marker({ element: el }).setLngLat(here).addTo(map);
+      } else {
+        liveMarker.setLngLat(here);
+      }
+      havePosition = true;
+
+      const m = (Date.now() - Date.parse(data.latest.time)) / 60000;
+      if (data.latest.inEmergency) setStatus("sos", "SOS ACTIVE");
+      else if (m <= 25) setStatus("live", "Live · " + relTime(data.latest.time));
+      else if (m <= 120) setStatus("recent", relTime(data.latest.time));
+      else setStatus("stale", "Last seen " + relTime(data.latest.time));
+    } catch (e) {
+      setStatus("stale", "Connection error");
+    }
+  }
+  </script>
+</body>
+</html>

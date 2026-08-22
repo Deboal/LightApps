@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · Live Tracker</title>
+<meta name="description" content="Follow Alex and Jackie live across São Miguel. Position by satellite." />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320;
+    --bg-2: #0e1828;
+    --panel: #13202f;
+    --panel-2: #16263a;
+    --line: #22344a;
+    --ice: #e9eef5;
+    --steel: #8a9cb1;
+    --steel-dim: #58697e;
+    --glacier: #5fd0e6;
+    --laurel: #4fd39a;
+    --ember: #ff8a52;
+    --ember-soft: rgba(255, 138, 82, 0.16);
+    --live: #56d364;
+    --warn: #f2b84b;
+    --stale: #6b7a8d;
+    --sos: #ff4d4d;
+    --rail-w: 132px;
+    --bar-h: 56px;
+    --strip-h: 64px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ice);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* ---------- Header bar ---------- */
+  .bar {
+    height: var(--bar-h);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 18px;
+    background: linear-gradient(180deg, var(--bg-2), var(--bg));
+    border-bottom: 1px solid var(--line);
+    z-index: 1100;
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--ember);
+    box-shadow: 0 0 14px var(--ember);
+    align-self: center;
+    flex: 0 0 auto;
+  }
+  .brand-name {
+    font-weight: 700; letter-spacing: 0.14em; font-size: 14px;
+    text-transform: uppercase; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .brand-sub {
+    font-family: "Space Mono", monospace;
+    font-size: 11px; color: var(--steel);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .status {
+    display: flex; align-items: center; gap: 9px;
+    font-family: "Space Mono", monospace; font-size: 12px;
+    color: var(--steel); white-space: nowrap; flex: 0 0 auto;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--stale); flex: 0 0 auto;
+  }
+  .dot.live { background: var(--live); box-shadow: 0 0 10px var(--live); animation: beat 2s ease-in-out infinite; }
+  .dot.recent { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+  .dot.stale { background: var(--stale); }
+  .dot.sos { background: var(--sos); box-shadow: 0 0 12px var(--sos); animation: beat 0.9s ease-in-out infinite; }
+  @keyframes beat { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .bar-right { display: flex; align-items: center; gap: 20px; }
+  .nav { display: flex; gap: 16px; }
+  .nav a {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--steel); text-decoration: none; padding: 4px 0;
+    border-bottom: 1px solid transparent;
+  }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a:focus-visible { outline: 2px solid var(--glacier); outline-offset: 3px; }
+
+  /* ---------- Stage: rail + map ---------- */
+  .stage { flex: 1 1 auto; display: flex; min-height: 0; position: relative; }
+
+  /* Trip rail (the signature element). Ecuador tracked altitude toward a summit;
+     this trip is flat, so the rail tracks the thing that actually structures it:
+     ten days across three places to sleep, with today marked. */
+  .rail {
+    flex: 0 0 var(--rail-w);
+    position: relative;
+    background:
+      linear-gradient(180deg,
+        rgba(95, 208, 230, 0.10) 0%,
+        rgba(79, 211, 154, 0.05) 45%,
+        rgba(11, 19, 32, 0) 72%,
+        rgba(40, 30, 24, 0.30) 100%);
+    border-right: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .rail-track {
+    position: absolute;
+    left: 30px; right: 18px; top: 22px; bottom: 22px;
+  }
+  .rail-line {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: linear-gradient(180deg, var(--glacier), var(--steel-dim));
+    opacity: 0.55;
+  }
+  .tick {
+    position: absolute; left: -22px; right: -10px;
+    display: flex; align-items: center; gap: 6px;
+    transform: translateY(50%);
+  }
+  .tick-mark { width: 6px; height: 1px; background: var(--steel-dim); flex: 0 0 auto; margin-left: 16px; }
+  .tick-label {
+    font-family: "Space Mono", monospace; font-size: 9px;
+    color: var(--steel-dim); white-space: nowrap;
+  }
+  /* A base is a band on the rail, not a line: you sleep there for a stretch. */
+  .band {
+    position: absolute; left: 2px; width: 5px; border-radius: 3px;
+    background: var(--laurel); opacity: 0.5;
+  }
+  .band-tag {
+    position: absolute; left: 14px;
+    font-size: 9.5px; font-weight: 600; letter-spacing: 0.05em;
+    color: var(--laurel); text-transform: uppercase; white-space: nowrap;
+  }
+  .band-nights { font-family: "Space Mono", monospace; color: var(--steel-dim); margin-left: 5px; font-weight: 400; }
+
+  .here {
+    position: absolute; left: -8px; right: -12px;
+    transform: translateY(50%);
+    transition: bottom 900ms cubic-bezier(.22,.61,.36,1);
+    display: none;
+  }
+  .here-line { height: 2px; background: var(--ember); box-shadow: 0 0 10px var(--ember); }
+  .here-node {
+    position: absolute; left: -5px; top: -5px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--ember); box-shadow: 0 0 0 0 var(--ember-soft);
+    animation: ping 2.4s ease-out infinite;
+  }
+  @keyframes ping {
+    0% { box-shadow: 0 0 0 0 rgba(255,138,82,0.5); }
+    70% { box-shadow: 0 0 0 16px rgba(255,138,82,0); }
+    100% { box-shadow: 0 0 0 0 rgba(255,138,82,0); }
+  }
+  .rail-cap {
+    position: absolute; left: 0; right: 0; bottom: 6px; text-align: center;
+    font-family: "Space Mono", monospace; font-size: 9px; color: var(--steel-dim);
+    letter-spacing: 0.08em;
+  }
+
+  /* Map */
+  .mapwrap { flex: 1 1 auto; position: relative; min-width: 0; }
+  #map { position: absolute; inset: 0; background: var(--bg-2); }
+
+  /* Leaflet dark-mode tuning */
+  .leaflet-container { background: var(--bg-2); font-family: "Space Mono", monospace; }
+  .leaflet-control-attribution {
+    background: rgba(11,19,32,0.7) !important; color: var(--steel-dim) !important;
+    font-size: 10px !important;
+  }
+  .leaflet-control-attribution a { color: var(--steel) !important; }
+  .leaflet-bar a {
+    background: var(--panel) !important; color: var(--ice) !important;
+    border-bottom-color: var(--line) !important;
+  }
+  .leaflet-bar a:hover { background: var(--panel-2) !important; }
+
+  /* Live position marker on the map */
+  .live-marker { background: transparent; border: 0; }
+  .live-dot {
+    display: block; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--ember); border: 2px solid #fff;
+    box-shadow: 0 0 0 0 rgba(255,138,82,0.55);
+    animation: ping 2.4s ease-out infinite;
+  }
+  .base-marker { background: transparent; border: 0; }
+  .base-pin {
+    display: block; width: 9px; height: 9px; border-radius: 2px;
+    background: var(--laurel); border: 2px solid #0b1320;
+    box-shadow: 0 0 0 1px var(--laurel);
+  }
+
+  /* Readout card overlaid on the map */
+  .readout {
+    position: absolute; top: 14px; left: 14px; z-index: 500;
+    background: rgba(15, 24, 37, 0.86);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px 13px;
+    min-width: 192px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+  }
+  .readout-label {
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--steel); margin-bottom: 4px;
+  }
+  .readout-elev { display: flex; align-items: baseline; gap: 6px; line-height: 1; }
+  .readout-elev #distKm {
+    font-family: "Space Mono", monospace; font-weight: 700;
+    font-size: 44px; letter-spacing: -0.02em; color: var(--ice);
+    font-variant-numeric: tabular-nums;
+  }
+  .readout-elev .unit { font-size: 16px; color: var(--steel); font-weight: 500; }
+  .readout-ft { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); margin-top: 2px; }
+  .readout-delta {
+    margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--ember); font-weight: 500;
+  }
+  .readout-day { font-size: 11px; color: var(--steel); margin-top: 6px; }
+
+  /* Recenter button */
+  .recenter {
+    position: absolute; right: 12px; bottom: 12px; z-index: 500;
+    background: var(--panel); color: var(--ice);
+    border: 1px solid var(--line); border-radius: 9px;
+    font-family: "Space Mono", monospace; font-size: 11px;
+    padding: 8px 11px; cursor: pointer; letter-spacing: 0.04em;
+  }
+  .recenter:hover { background: var(--panel-2); }
+  .recenter:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+
+  /* ---------- Data strip ---------- */
+  .strip {
+    flex: 0 0 auto; min-height: var(--strip-h);
+    display: flex; align-items: stretch; flex-wrap: wrap;
+    background: linear-gradient(0deg, var(--bg-2), var(--bg));
+    border-top: 1px solid var(--line);
+    z-index: 1100;
+  }
+  .cell {
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 3px; padding: 10px 18px;
+    border-right: 1px solid var(--line);
+  }
+  .cell .k {
+    font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--steel-dim);
+  }
+  .cell .v { font-family: "Space Mono", monospace; font-size: 13px; color: var(--ice); }
+  .cell.note {
+    flex: 1 1 280px; border-right: 0; justify-content: center;
+  }
+  .cell.note .v {
+    font-family: "Space Grotesk", sans-serif; font-size: 11.5px;
+    color: var(--steel); line-height: 1.45; letter-spacing: 0;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 820px) {
+    .rail { display: none; }
+    .readout { min-width: 0; padding: 11px 13px; top: 10px; left: 10px; }
+    .readout-elev #distKm { font-size: 34px; }
+    .cell { padding: 9px 14px; }
+    .cell.note { flex-basis: 100%; border-top: 1px solid var(--line); }
+    .brand-sub { display: none; }
+    .bar-right { gap: 12px; }
+    .nav { gap: 12px; }
+    .nav a { font-size: 11px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .here, .leaflet-marker-icon, .dot, .live-dot, .here-node { transition: none !important; animation: none !important; }
+  }
+  .nav a .s { display: none; }
+  /* Below 600px the full "Alex & Jackie · Azores" plus three long nav labels
+     plus the status pill do not fit on one 390px row — they used to overlap.
+     Drop the prefix, shorten the nav labels, and tighten the type. */
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 11px; }
+    .nav a { font-size: 11px; letter-spacing: 0.05em; }
+    .status { font-size: 11px; }
+    .bar { padding: 0 14px; gap: 10px; }
+    .bar-right { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+      <span class="brand-sub">São Miguel &nbsp;·&nbsp; Aug 23 – Sep 1, 2026</span>
+    </div>
+    <div class="bar-right">
+      <nav class="nav">
+        <a href="./" class="nav-on"><span class="l">Live map</span><span class="s">Map</span></a>
+        <a href="./itinerary.html"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+        <a href="./terrain.html"><span class="l">3D terrain</span><span class="s">3D</span></a>
+      </nav>
+      <div class="status">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="stage">
+    <aside class="rail" id="rail" aria-hidden="true">
+      <div class="rail-track" id="railTrack">
+        <div class="rail-line"></div>
+        <div class="here" id="here">
+          <div class="here-line"></div>
+          <div class="here-node"></div>
+        </div>
+      </div>
+      <div class="rail-cap">TRIP</div>
+    </aside>
+
+    <section class="mapwrap">
+      <div id="map"></div>
+      <div class="readout">
+        <div class="readout-label">To tonight's bed</div>
+        <div class="readout-elev"><span id="distKm">—</span><span class="unit">km</span></div>
+        <div class="readout-ft" id="distMi"></div>
+        <div class="readout-delta" id="delta">Waiting for first position…</div>
+        <div class="readout-day" id="tripDay"></div>
+      </div>
+      <button class="recenter" id="recenter" type="button">Recenter</button>
+    </section>
+  </main>
+
+  <footer class="strip">
+    <div class="cell"><span class="k">Last update</span><span class="v" id="lastUpdate">—</span></div>
+    <div class="cell"><span class="k">Position</span><span class="v" id="coords">—</span></div>
+    <div class="cell"><span class="k">Speed</span><span class="v" id="speed">—</span></div>
+    <div class="cell"><span class="k">Points logged</span><span class="v" id="ptCount">—</span></div>
+    <div class="cell note"><span class="v" id="note">Positions arrive by satellite about every 10 minutes when the device has a clear view of the sky. Gaps are normal inland, in the crater bowls, and anywhere under tree cover.</span></div>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+  // ---------------------------------------------------------------------------
+  // EDIT THIS to match the trip. Everything else derives from it.
+  // Coordinates are approximate — good enough to place a marker and measure a
+  // drive, not survey grade.
+  // ---------------------------------------------------------------------------
+  const CONFIG = {
+    startDate: "2026-08-23",   // wheels up from SFO
+    endDate:   "2026-09-01",   // wheels down at SFO
+    // Where we sleep. "from" is the check-in date, "to" the check-out date.
+    bases: [
+      { name: "Ponta Delgada", hotel: "Vila Galé Collection",     from: "2026-08-24", to: "2026-08-28", lat: 37.7404, lon: -25.6720 },
+      { name: "Furnas",        hotel: "Terra Nostra Garden Hotel", from: "2026-08-28", to: "2026-08-30", lat: 37.7716, lon: -25.3140 },
+      { name: "Fenais da Luz", hotel: "Pedras do Mar",             from: "2026-08-30", to: "2026-09-01", lat: 37.8283, lon: -25.6383 },
+    ],
+    pollSeconds: 180,          // how often the page asks for new data
+  };
+
+  const KM_TO_MI = 0.621371;
+  const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+  const $ = (id) => document.getElementById(id);
+  const dayMs = 86400000;
+  const asDate = (iso) => new Date(iso + "T12:00:00");
+
+  // ---- Map setup ----
+  // Zoom sits bottom-left: the default top-left corner is where the readout
+  // card lives, and on a phone the two land on top of each other.
+  const map = L.map("map", { zoomControl: false, attributionControl: true })
+    .setView([37.79, -25.50], 10); // São Miguel, replaced once we have data
+  L.control.zoom({ position: "bottomleft" }).addTo(map);
+
+  const topo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+    maxZoom: 17,
+    attribution: 'Map data: &copy; OpenStreetMap, SRTM | &copy; OpenTopoMap',
+  });
+  const sat = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 18, attribution: "Imagery &copy; Esri" }
+  );
+  topo.addTo(map);
+  L.control.layers({ "Topographic": topo, "Satellite": sat }, null, { position: "topright" }).addTo(map);
+
+  const liveIcon = L.divIcon({
+    className: "live-marker",
+    html: '<span class="live-dot"></span>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+  const baseIcon = L.divIcon({
+    className: "base-marker",
+    html: '<span class="base-pin"></span>',
+    iconSize: [9, 9],
+    iconAnchor: [4, 4],
+  });
+
+  // The three hotels, so an empty map still tells you the shape of the trip.
+  CONFIG.bases.forEach((b) => {
+    L.marker([b.lat, b.lon], { icon: baseIcon })
+      .addTo(map)
+      .bindTooltip(b.name + " · " + b.hotel, { direction: "top", offset: [0, -6] });
+  });
+
+  let trackLine = null;
+  let liveMarker = null;
+  let firstFit = true;
+
+  $("recenter").addEventListener("click", () => {
+    if (liveMarker) map.setView(liveMarker.getLatLng(), 13, { animate: true });
+    else if (trackLine) map.fitBounds(trackLine.getBounds(), { padding: [40, 40] });
+    else map.setView([37.79, -25.50], 10, { animate: true });
+  });
+
+  // ---- Trip rail: ten days bottom-to-top, three base bands ----
+  const TRIP_T0 = asDate(CONFIG.startDate).getTime();
+  const TRIP_T1 = asDate(CONFIG.endDate).getTime();
+  function railPct(t) {
+    const f = (t - TRIP_T0) / (TRIP_T1 - TRIP_T0);
+    return Math.max(0, Math.min(1, f)) * 100;
+  }
+  (function buildRail() {
+    const track = $("railTrack");
+
+    // One tick per day, labelled by date.
+    for (let t = TRIP_T0; t <= TRIP_T1; t += dayMs) {
+      const d = new Date(t);
+      const el = document.createElement("div");
+      el.className = "tick";
+      el.style.bottom = railPct(t) + "%";
+      el.innerHTML = '<span class="tick-mark"></span><span class="tick-label">' +
+        d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + "</span>";
+      track.appendChild(el);
+    }
+
+    // A band per base, spanning its nights.
+    CONFIG.bases.forEach((b) => {
+      const a = railPct(asDate(b.from).getTime());
+      const z = railPct(asDate(b.to).getTime());
+      const band = document.createElement("div");
+      band.className = "band";
+      band.style.bottom = a + "%";
+      band.style.height = Math.max(0, z - a) + "%";
+      track.appendChild(band);
+
+      const nights = Math.round((asDate(b.to) - asDate(b.from)) / dayMs);
+      const tag = document.createElement("div");
+      tag.className = "band-tag";
+      tag.style.bottom = a + (z - a) / 2 + "%";
+      tag.innerHTML = b.name + '<span class="band-nights">' + nights + "n</span>";
+      track.appendChild(tag);
+    });
+  })();
+
+  // ---- Time + status helpers ----
+  function minsSince(iso) {
+    const t = Date.parse(iso);
+    if (isNaN(t)) return Infinity;
+    return (Date.now() - t) / 60000;
+  }
+  function relTime(iso) {
+    const m = minsSince(iso);
+    if (!isFinite(m)) return "unknown";
+    if (m < 1) return "just now";
+    if (m < 60) return Math.round(m) + " min ago";
+    const h = m / 60;
+    if (h < 24) return Math.round(h) + (Math.round(h) === 1 ? " hour ago" : " hours ago");
+    const d = Math.floor(h / 24);
+    return d + (d === 1 ? " day ago" : " days ago");
+  }
+  function setStatus(kind, text) {
+    $("statusDot").className = "dot " + kind;
+    $("statusText").textContent = text;
+  }
+  function tripDayLabel() {
+    const now = new Date();
+    const start = new Date(CONFIG.startDate + "T00:00:00");
+    const end = new Date(CONFIG.endDate + "T23:59:59");
+    if (now < start) {
+      const days = Math.ceil((start - now) / dayMs);
+      return "Departs in " + days + (days === 1 ? " day" : " days");
+    }
+    if (now > end) return "Trip complete";
+    const total = Math.round((asDate(CONFIG.endDate) - asDate(CONFIG.startDate)) / dayMs) + 1;
+    return "Day " + (Math.floor((now - start) / dayMs) + 1) + " of " + total;
+  }
+
+  // Tonight's base: the one whose stay covers today. Before or after the trip,
+  // the first and last base respectively, so the card always says something.
+  function tonightsBase() {
+    const now = Date.now();
+    for (const b of CONFIG.bases) {
+      if (now >= asDate(b.from).getTime() - dayMs / 2 && now < asDate(b.to).getTime() - dayMs / 2) return b;
+    }
+    if (now < asDate(CONFIG.bases[0].from).getTime()) return CONFIG.bases[0];
+    return CONFIG.bases[CONFIG.bases.length - 1];
+  }
+
+  // Great-circle distance in km.
+  function haversine(aLat, aLon, bLat, bLon) {
+    const R = 6371;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(bLat - aLat);
+    const dLon = toRad(bLon - aLon);
+    const s = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  // ---- Render a fetched payload ----
+  function render(data) {
+    if (!data || !data.ok) {
+      setStatus("stale", "Feed error");
+      $("note").textContent = (data && data.error) || "Could not read the tracking feed. Retrying shortly.";
+      return;
+    }
+
+    $("ptCount").textContent = data.count ? fmtInt(data.count) : "0";
+    $("tripDay").textContent = tripDayLabel();
+
+    const latest = data.latest;
+
+    if (!latest) {
+      const now = new Date();
+      const start = new Date(CONFIG.startDate + "T00:00:00");
+      setStatus("stale", now < start ? "Not started" : "No signal yet");
+      $("note").textContent =
+        now < start
+          ? "Tracking begins " +
+            start.toLocaleDateString("en-US", { month: "long", day: "numeric" }) +
+            ". No positions yet."
+          : "Waiting for the first position report from the device.";
+      return;
+    }
+
+    // Draw the track + live marker
+    const latlngs = data.points.map((p) => [p.lat, p.lon]);
+    if (trackLine) trackLine.setLatLngs(latlngs);
+    else trackLine = L.polyline(latlngs, { color: "#5fd0e6", weight: 3, opacity: 0.9 }).addTo(map);
+
+    const here = [latest.lat, latest.lon];
+    if (liveMarker) liveMarker.setLatLng(here);
+    else liveMarker = L.marker(here, { icon: liveIcon, zIndexOffset: 1000 }).addTo(map);
+
+    if (firstFit) {
+      if (latlngs.length > 1) map.fitBounds(trackLine.getBounds(), { padding: [50, 50] });
+      else map.setView(here, 12);
+      firstFit = false;
+    }
+
+    // Distance to tonight's bed
+    const base = tonightsBase();
+    const km = haversine(latest.lat, latest.lon, base.lat, base.lon);
+    $("distKm").textContent = km < 10 ? km.toFixed(1) : fmtInt(km);
+    $("distMi").textContent = (km * KM_TO_MI).toFixed(km < 10 ? 1 : 0) + " mi";
+    $("delta").textContent = km < 0.8 ? "At " + base.hotel : base.name + " · " + base.hotel;
+
+    // Rail marker sits on today
+    const hereEl = $("here");
+    hereEl.style.display = "block";
+    hereEl.style.bottom = railPct(Date.now()) + "%";
+
+    // Data strip
+    $("coords").textContent = latest.lat.toFixed(4) + ", " + latest.lon.toFixed(4);
+    $("speed").textContent = latest.velocity || "—";
+    const lu = $("lastUpdate");
+    lu.textContent = relTime(latest.time);
+    lu.title = latest.time ? new Date(latest.time).toLocaleString() : "";
+
+    // Status
+    if (latest.inEmergency) {
+      setStatus("sos", "SOS ACTIVE");
+      $("note").textContent = "An SOS has been triggered from the device. Garmin Response is the live source of truth.";
+      return;
+    }
+    const m = minsSince(latest.time);
+    if (m <= 25) setStatus("live", "Live · " + relTime(latest.time));
+    else if (m <= 120) setStatus("recent", "Recent · " + relTime(latest.time));
+    else setStatus("stale", "Last seen " + relTime(latest.time));
+
+    $("note").textContent =
+      "Positions arrive by satellite about every 10 minutes when the device has a clear view of the sky. Gaps are normal inland, in the crater bowls, and anywhere under tree cover.";
+  }
+
+  async function load() {
+    try {
+      const r = await fetch("/api/feed", { cache: "no-store" });
+      const data = await r.json();
+      render(data);
+    } catch (e) {
+      setStatus("stale", "Connection error");
+      $("note").textContent = "Could not reach the tracker. Retrying in " + CONFIG.pollSeconds + " seconds.";
+    }
+  }
+
+  load();
+  setInterval(load, CONFIG.pollSeconds * 1000);
+  </script>
+</body>
+</html>
