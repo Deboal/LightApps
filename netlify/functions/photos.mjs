@@ -131,12 +131,18 @@ export default async (req) => {
   // ---- The index -----------------------------------------------------------
   if (req.method === "GET") {
     const photos = await readIndex(store);
+    // Never cached. This used to be public/max-age=30, which meant a freshly
+    // posted photo could stay invisible for up to half a minute — the page's
+    // own `cache: "no-store"` only bypasses the browser cache, not a shared
+    // CDN one. The payload is a few hundred bytes of JSON, so caching it saved
+    // nothing worth the staleness. Netlify's own header is set too, because it
+    // governs the edge independently of Cache-Control.
     return json({
       ok: true,
       count: photos.length,
       photos,
       uploadsConfigured: !!process.env.PHOTO_UPLOAD_PASSWORD,
-    }, 200, { "Cache-Control": "public, max-age=30" });
+    }, 200, { "Netlify-CDN-Cache-Control": "no-store" });
   }
 
   // ---- Upload --------------------------------------------------------------
@@ -209,10 +215,14 @@ export default async (req) => {
 
     // Bytes first, index last: a failure between the two leaves an orphan blob
     // that rebuild can recover, rather than an index entry pointing at nothing.
-    await store.set(`img/${pid}`, full.bytes, {
-      metadata: { caption: entry.caption, by: entry.by, ts: entry.ts, w: entry.w, h: entry.h },
-    });
-    await store.set(`thumb/${pid}`, thumb.bytes);
+    // The two image writes are independent, so they go together rather than
+    // one after the other — one fewer round trip in the upload's critical path.
+    await Promise.all([
+      store.set(`img/${pid}`, full.bytes, {
+        metadata: { caption: entry.caption, by: entry.by, ts: entry.ts, w: entry.w, h: entry.h },
+      }),
+      store.set(`thumb/${pid}`, thumb.bytes),
+    ]);
 
     photos.unshift(entry);
     await store.setJSON(INDEX_KEY, photos);

@@ -288,6 +288,10 @@
   const $ = (id) => document.getElementById(id);
   let photos = [];
   let lbIndex = -1;
+  // Thumbnails this browser just produced, by photo id. The page already has
+  // the bytes in memory after resizing, so re-downloading them from the server
+  // to show a photo we just posted is a round trip that buys nothing.
+  const localThumbs = new Map();
 
   // ---- Small helpers -------------------------------------------------------
   function relDay(iso) {
@@ -337,8 +341,12 @@
       fig.tabIndex = 0;
       fig.setAttribute("role", "button");
       const img = document.createElement("img");
-      img.src = API + "?id=" + encodeURIComponent(p.id) + "&size=thumb";
-      img.loading = "lazy";
+      img.src = localThumbs.get(p.id) || (API + "?id=" + encodeURIComponent(p.id) + "&size=thumb");
+      // Only defer what is actually off-screen. Lazy-loading the first row too
+      // delays the tiles the viewer is looking at, which is the opposite of
+      // what it is for.
+      img.loading = i < 8 ? "eager" : "lazy";
+      if (i === 0) img.fetchPriority = "high";
       img.decoding = "async";
       img.alt = p.caption || "Trip photo";
       fig.appendChild(img);
@@ -521,6 +529,17 @@
         state.className = "qstate done";
         state.textContent = "posted";
         ok++;
+
+        // Show it now, using the thumbnail already in memory. Previously the
+        // grid only refreshed after the whole batch finished, and then had to
+        // fetch every thumbnail back from the server — so on a slow connection
+        // a photo could be stored and still not visible for several seconds.
+        if (d.photo && d.photo.id) {
+          localThumbs.set(d.photo.id, thumb.url);
+          photos.unshift(d.photo);
+          renderGrid();
+        }
+
         // A correct password is worth remembering so it is typed once a trip.
         try { localStorage.setItem(PW_KEY, pw); } catch (e) {}
       } catch (e) {
@@ -574,6 +593,13 @@
     drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("hot"); }));
   drop.addEventListener("drop", (e) => {
     if (e.dataTransfer && e.dataTransfer.files.length) uploadAll(e.dataTransfer.files);
+  });
+
+  // Someone watching from home leaves the tab open. Re-checking when they come
+  // back costs one small JSON request and saves them wondering why a photo
+  // posted an hour ago still is not there. No polling: only on return.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !busy) loadPhotos();
   });
 
   loadPhotos();
