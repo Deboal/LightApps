@@ -11,6 +11,12 @@
   to = "/.netlify/functions/feed"
   status = 200
 
+# Trip photos: list, upload, serve, delete. Same ordering rule as above.
+[[redirects]]
+  from = "/api/photos"
+  to = "/.netlify/functions/photos"
+  status = 200
+
 # Clean URLs: /gear-tracker/ serves apps/gear-tracker
 [[redirects]]
   from = "/*"
