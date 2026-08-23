@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · Time Difference</title>
+<meta name="description" content="What time is it in the Azores, and when is a good time to call?" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320; --bg-2: #0e1828; --panel: #13202f; --panel-2: #16263a;
+    --line: #22344a; --ice: #e9eef5; --steel: #8a9cb1; --steel-dim: #58697e;
+    --glacier: #5fd0e6; --laurel: #4fd39a; --ember: #ff8a52;
+    --bar-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 480px at 80% -10%, rgba(255,138,82,0.08), transparent 60%),
+      radial-gradient(820px 520px at 0% 0%, rgba(79,211,154,0.07), transparent 55%),
+      var(--bg);
+    color: var(--ice);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+
+  /* Header (mirrors the other pages) */
+  .bar {
+    height: var(--bar-h);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 18px;
+    background: linear-gradient(180deg, var(--bg-2), rgba(11,19,32,0.85));
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 14px var(--ember); align-self: center; flex: 0 0 auto; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav { display: flex; gap: 16px; }
+  .nav a {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--steel); text-decoration: none; padding: 4px 0; border-bottom: 1px solid transparent;
+  }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a:focus-visible { outline: 2px solid var(--glacier); outline-offset: 3px; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 36px 20px 72px; }
+  .eyebrow { font-family: "Space Mono", monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ember); margin: 0 0 10px; }
+  h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.05; margin: 0 0 14px; letter-spacing: -0.02em; font-weight: 700; }
+  .lede { font-size: 15px; line-height: 1.6; color: var(--steel); max-width: 60ch; margin: 0 0 26px; }
+
+  /* Controls */
+  .ctl { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel-dim); }
+  .field select, .field input[type="date"] {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+    color: var(--ice); font-family: inherit; font-size: 15px; padding: 11px 12px; width: 100%;
+    -webkit-appearance: none; appearance: none;
+  }
+  .field select:focus, .field input:focus { outline: 2px solid var(--glacier); outline-offset: 1px; }
+  .field input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+  .row2 { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: end; }
+  @media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 14px; font-family: inherit;
+    padding: 11px 16px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ice); cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: #1b2c42; }
+  .btn:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+
+  .slider-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .slider-head .val { font-family: "Space Mono", monospace; font-size: 17px; font-weight: 700; color: var(--ice); }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 26px;
+    background: transparent; cursor: pointer; margin: 0;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: var(--line); }
+  input[type="range"]::-moz-range-track { height: 5px; border-radius: 3px; background: var(--line); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; margin-top: -8px;
+    width: 21px; height: 21px; border-radius: 50%;
+    background: var(--ember); border: 2px solid #0b1320; box-shadow: 0 0 10px rgba(255,138,82,0.5);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 21px; height: 21px; border-radius: 50%; border: 2px solid #0b1320;
+    background: var(--ember); box-shadow: 0 0 10px rgba(255,138,82,0.5);
+  }
+  input[type="range"]:focus-visible { outline: 2px solid var(--glacier); outline-offset: 4px; }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 22px; }
+  @media (max-width: 460px) { .tiles { gap: 9px; } }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; min-width: 0; }
+  .tile.hero { border-color: rgba(255,138,82,0.4); background: linear-gradient(180deg, rgba(255,138,82,0.07), var(--panel)); }
+  .tile .k { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel-dim); }
+  .tile .v {
+    font-family: "Space Mono", monospace; font-weight: 700;
+    font-size: clamp(20px, 5.2vw, 30px); color: var(--ice); margin-top: 6px;
+    letter-spacing: -0.01em; line-height: 1.1; overflow-wrap: break-word;
+  }
+  .tile.hero .v { color: var(--ember); }
+  .tile .sub { font-size: 11px; color: var(--steel-dim); margin-top: 5px; line-height: 1.4; }
+
+  /* Legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 26px 0 12px; font-size: 12.5px; color: var(--steel); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .sw { width: 15px; height: 15px; border-radius: 4px; flex: 0 0 auto; }
+  .sw.work { background: rgba(95,208,230,0.16); border: 1px solid rgba(95,208,230,0.55); }
+  .sw.sel { background: var(--ember); border: 1px solid var(--ember); }
+  .sw.out { background: transparent; border: 1px solid var(--line); }
+
+  /* Hour grid */
+  .gridwrap {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 14px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .hours { min-width: 760px; }
+  .hrow { display: grid; grid-template-columns: 74px repeat(24, 1fr); gap: 3px; align-items: center; }
+  .hrow + .hrow { margin-top: 6px; }
+  .rowlab {
+    font-size: 11.5px; font-weight: 600; color: var(--steel);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 6px;
+  }
+  .cell {
+    position: relative; text-align: center; border-radius: 7px; padding: 9px 0 8px;
+    font-family: "Space Mono", monospace; font-size: 12px; color: var(--steel);
+    border: 1px solid var(--line); background: transparent;
+  }
+  .cell.work { background: rgba(95,208,230,0.13); border-color: rgba(95,208,230,0.45); color: var(--ice); }
+  .cell.sel { background: var(--ember); border-color: var(--ember); color: #2a1206; font-weight: 700; }
+  .cell .nx {
+    position: absolute; top: 1px; right: 3px; font-size: 8px; color: var(--laurel);
+  }
+  .cell.sel .nx { color: #2a1206; }
+  .ticks { display: grid; grid-template-columns: 74px repeat(24, 1fr); gap: 3px; margin-bottom: 6px; }
+  .ticks span { text-align: center; font-family: "Space Mono", monospace; font-size: 9.5px; color: var(--steel-dim); }
+
+  /* Summary */
+  .summary {
+    margin-top: 22px; border-left: 3px solid var(--ember);
+    background: rgba(255,138,82,0.07); border-radius: 0 12px 12px 0;
+    padding: 16px 18px; font-size: 14.5px; line-height: 1.6; color: var(--ice);
+  }
+  .summary b { font-weight: 700; }
+  .summary .verdict { display: block; margin-top: 6px; color: var(--steel); font-size: 13.5px; }
+  .tripline {
+    margin-top: 12px; font-family: "Space Mono", monospace; font-size: 11.5px;
+    color: var(--laurel);
+  }
+  .foot { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--steel-dim); line-height: 1.6; }
+
+  .nav a .s { display: none; }
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 8px; }
+    .nav a { font-size: 10.5px; letter-spacing: 0.02em; }
+    .bar { padding: 0 13px; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+    </div>
+    <nav class="nav">
+      <a href="./"><span class="l">Live map</span><span class="s">Map</span></a>
+      <a href="./itinerary.html"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+      <a href="./terrain.html"><span class="l">3D terrain</span><span class="s">3D</span></a>
+      <a href="./photos.html"><span class="l">Photos</span><span class="s">Pic</span></a>
+      <a href="./time.html" class="nav-on"><span class="l">Time</span><span class="s">TZ</span></a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+    <p class="eyebrow">São Miguel · Atlantic/Azores</p>
+    <h1>What time is it there?</h1>
+    <p class="lede">
+      Pick your time zone and slide to an hour to see what it is in the Azores —
+      and whether that lands at a sensible moment on both ends.
+    </p>
+
+    <div class="ctl">
+      <div class="field">
+        <label for="tz">Your time zone</label>
+        <select id="tz"></select>
+      </div>
+
+      <div class="row2">
+        <div class="field" style="margin-bottom:0">
+          <label for="date">Date</label>
+          <input type="date" id="date" />
+        </div>
+        <button class="btn" id="nowBtn" type="button">Right now</button>
+      </div>
+
+      <div class="field" style="margin-top:18px;margin-bottom:0">
+        <div class="slider-head">
+          <label for="hour" style="margin:0">Selected local time</label>
+          <span class="val" id="hourVal">—</span>
+        </div>
+        <input type="range" id="hour" min="0" max="23" step="1" value="9" />
+      </div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile">
+        <div class="k" id="hereK">Your time</div>
+        <div class="v" id="hereV">—</div>
+        <div class="sub" id="hereSub"></div>
+      </div>
+      <div class="tile hero">
+        <div class="k">Azores</div>
+        <div class="v" id="thereV">—</div>
+        <div class="sub" id="thereSub"></div>
+      </div>
+      <div class="tile">
+        <div class="k" id="diffK">Difference</div>
+        <div class="v" id="diffV">—</div>
+        <div class="sub" id="diffSub"></div>
+      </div>
+      <div class="tile">
+        <div class="k">Best shared window</div>
+        <div class="v" id="windowV">—</div>
+        <div class="sub" id="windowSub"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw work"></i> Typical workday</span>
+      <span><i class="sw sel"></i> Selected hour</span>
+      <span><i class="sw out"></i> Outside workday</span>
+    </div>
+
+    <div class="gridwrap">
+      <div class="hours">
+        <div class="ticks" id="ticks"></div>
+        <div class="hrow" id="rowHere"></div>
+        <div class="hrow" id="rowThere"></div>
+      </div>
+    </div>
+
+    <div class="summary">
+      <span id="sentence">—</span>
+      <span class="verdict" id="verdict"></span>
+      <div class="tripline" id="tripline"></div>
+    </div>
+
+    <p class="foot">
+      Conversions use the browser's own time zone database, so daylight saving is
+      handled on both ends. From US Pacific the gap is 7 hours almost all year,
+      because both places shift together — but the Azores leave summer time about
+      a week before the US does, and in that gap it is 6 hours, not 7. Pick a date
+      in late October and the grid shows it. &ldquo;Typical workday&rdquo; here
+      means 8&nbsp;AM through the 5&nbsp;PM hour, local, at both ends.
+    </p>
+  </div>
+
+  <script>
+  // ---------------------------------------------------------------------------
+  // Time zone comparison against the Azores.
+  //
+  // All conversion goes through Intl with an IANA zone name, never a fixed
+  // offset. The Azores are UTC-1 in winter and UTC+0 in summer, and the viewer
+  // could be anywhere, so a hardcoded "7 hours" would be wrong for part of the
+  // year and wrong for most of the world.
+  // ---------------------------------------------------------------------------
+  const THERE = "Atlantic/Azores";
+  // 8am through the 5pm hour, inclusive at both ends — 5pm is still the workday.
+  // Treating 17 as outside makes the shared window read 8AM–10AM from US Pacific
+  // instead of the correct 8AM–11AM.
+  const WORK_START = 8, WORK_LAST = 17;
+  const TZ_KEY = "azores-viewer-tz";
+
+  // The trip, so the page can say where we are on the chosen date.
+  const TRIP_START = "2026-08-23", TRIP_END = "2026-09-01";
+  const BASES = [
+    { name: "Ponta Delgada", from: "2026-08-24", to: "2026-08-28" },
+    { name: "Furnas",        from: "2026-08-28", to: "2026-08-30" },
+    { name: "Fenais da Luz", from: "2026-08-30", to: "2026-09-01" },
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+
+  // ---- Zone maths -----------------------------------------------------------
+  // Offset of `zone` from UTC, in minutes, at a given instant.
+  function offsetAt(date, zone) {
+    const p = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(date).reduce((a, x) => (a[x.type] = x.value, a), {});
+    const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second);
+    return (asUTC - date.getTime()) / 60000;
+  }
+
+  // Wall-clock time in `zone` -> the UTC instant. Iterated twice because the
+  // offset depends on the instant we are trying to find; two passes settle it
+  // for every real zone, including DST changeover days.
+  function instantFromWall(y, m, d, h, mi, zone) {
+    const naive = Date.UTC(y, m - 1, d, h, mi);
+    let ms = naive;
+    for (let i = 0; i < 2; i++) ms = naive - offsetAt(new Date(ms), zone) * 60000;
+    return new Date(ms);
+  }
+
+  // Parts of an instant as seen in `zone`.
+  function partsIn(date, zone) {
+    const p = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      weekday: "short", hour: "2-digit", minute: "2-digit",
+    }).formatToParts(date).reduce((a, x) => (a[x.type] = x.value, a), {});
+    return { y: +p.year, m: +p.month, d: +p.day, h: (+p.hour) % 24, mi: +p.minute, wd: p.weekday };
+  }
+
+  function abbrev(date, zone) {
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "short" })
+      .formatToParts(date).find((x) => x.type === "timeZoneName");
+    return p ? p.value : "";
+  }
+  function zoneCity(zone) {
+    const seg = zone.split("/").pop() || zone;
+    return seg.replace(/_/g, " ");
+  }
+  function ampm(h, mi = 0) {
+    const s = h % 12 === 0 ? 12 : h % 12;
+    return s + ":" + pad(mi) + " " + (h < 12 ? "AM" : "PM");
+  }
+  function hourLabel(h) {
+    const s = h % 12 === 0 ? 12 : h % 12;
+    return s + (h < 12 ? "AM" : "PM");
+  }
+  function longDate(p) {
+    const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return p.wd + ", " + MON[p.m - 1] + " " + p.d;
+  }
+  const isWork = (h) => h >= WORK_START && h <= WORK_LAST;
+
+  // ---- Time zone list -------------------------------------------------------
+  const COMMON = [
+    "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York",
+    "America/Anchorage", "Pacific/Honolulu", "America/Phoenix", "America/Toronto",
+    "Europe/London", "Europe/Lisbon", "Europe/Madrid", "Europe/Paris", "Europe/Berlin",
+    "Atlantic/Azores", "UTC",
+  ];
+
+  function buildZoneList(selected) {
+    const sel = $("tz");
+    sel.innerHTML = "";
+    let all = [];
+    try {
+      if (typeof Intl.supportedValuesOf === "function") all = Intl.supportedValuesOf("timeZone");
+    } catch (e) { /* older browser; the common list still works */ }
+
+    const mk = (zone) => {
+      const o = document.createElement("option");
+      o.value = zone;
+      o.textContent = zone === "UTC" ? "UTC" : zoneCity(zone) + " — " + zone;
+      return o;
+    };
+
+    const g1 = document.createElement("optgroup");
+    g1.label = "Common";
+    // The viewer's own zone goes first when it is not already in the short list.
+    const commons = COMMON.includes(selected) ? COMMON : [selected, ...COMMON];
+    commons.forEach((z) => { if (z) g1.appendChild(mk(z)); });
+    sel.appendChild(g1);
+
+    if (all.length) {
+      const g2 = document.createElement("optgroup");
+      g2.label = "All time zones";
+      all.forEach((z) => g2.appendChild(mk(z)));
+      sel.appendChild(g2);
+    }
+    sel.value = selected;
+    // A zone absent from both lists (very old browser) still needs to be valid.
+    if (sel.value !== selected) { sel.appendChild(mk(selected)); sel.value = selected; }
+  }
+
+  function detectZone() {
+    try {
+      const saved = localStorage.getItem(TZ_KEY);
+      if (saved) { offsetAt(new Date(), saved); return saved; }
+    } catch (e) { /* unreadable storage or a stale invalid zone */ }
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+    } catch (e) {
+      return "America/Los_Angeles";
+    }
+  }
+
+  // ---- Trip context ---------------------------------------------------------
+  function tripNote(y, m, d) {
+    const iso = y + "-" + pad(m) + "-" + pad(d);
+    if (iso < TRIP_START || iso > TRIP_END) return "";
+    const base = BASES.find((b) => iso >= b.from && iso < b.to);
+    const day = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2026, 7, 23)) / 86400000) + 1;
+    return "Day " + day + " of the trip" + (base ? " · " + base.name : " · travelling");
+  }
+
+  // ---- Render ---------------------------------------------------------------
+  function render() {
+    const zone = $("tz").value;
+    const [Y, M, D] = $("date").value.split("-").map(Number);
+    if (!Y || !M || !D) return;
+    const h = +$("hour").value;
+
+    const inst = instantFromWall(Y, M, D, h, 0, zone);
+    const here = partsIn(inst, zone);
+    const there = partsIn(inst, THERE);
+
+    const hereAb = abbrev(inst, zone);
+    const thereAb = abbrev(inst, THERE);
+    const city = zone === "UTC" ? "UTC" : zoneCity(zone);
+
+    $("hourVal").textContent = ampm(h);
+    $("hereK").textContent = city;
+    $("hereV").textContent = ampm(here.h, here.mi);
+    $("hereSub").textContent = longDate(here) + (hereAb ? " · " + hereAb : "");
+    $("thereV").textContent = ampm(there.h, there.mi);
+    $("thereSub").textContent = longDate(there) + (thereAb ? " · " + thereAb : "");
+
+    // Difference, signed, at this instant. Can be fractional (India, Nepal…).
+    const diffMin = offsetAt(inst, THERE) - offsetAt(inst, zone);
+    const ahead = diffMin >= 0;
+    const abs = Math.abs(diffMin);
+    const dh = Math.floor(abs / 60), dm = abs % 60;
+    $("diffK").textContent = "Azores is " + (diffMin === 0 ? "the same" : ahead ? "ahead" : "behind");
+    $("diffV").textContent = diffMin === 0
+      ? "Same time"
+      : dh + (dh === 1 ? " hour" : " hours") + (dm ? " " + dm + " min" : "");
+    $("diffSub").textContent = diffMin === 0
+      ? "No conversion needed"
+      : ahead ? "They are later in the day than you" : "They are earlier in the day than you";
+
+    // Hour grid + the shared window, both derived from the same walk over the day.
+    const ticks = $("ticks"), rowHere = $("rowHere"), rowThere = $("rowThere");
+    ticks.innerHTML = "<span></span>";
+    rowHere.innerHTML = '<div class="rowlab">' + city + "</div>";
+    rowThere.innerHTML = '<div class="rowlab">Azores</div>';
+
+    const shared = [];
+    for (let hh = 0; hh < 24; hh++) {
+      const i = instantFromWall(Y, M, D, hh, 0, zone);
+      const t = partsIn(i, THERE);
+      const hw = isWork(hh), tw = isWork(t.h);
+      if (hw && tw) shared.push(hh);
+
+      const tick = document.createElement("span");
+      tick.textContent = hh % 3 === 0 ? hourLabel(hh) : "·";
+      ticks.appendChild(tick);
+
+      const a = document.createElement("div");
+      a.className = "cell" + (hh === h ? " sel" : hw ? " work" : "");
+      a.textContent = hh % 12 === 0 ? 12 : hh % 12;
+      rowHere.appendChild(a);
+
+      const b = document.createElement("div");
+      b.className = "cell" + (hh === h ? " sel" : tw ? " work" : "");
+      b.textContent = t.h % 12 === 0 ? 12 : t.h % 12;
+      // Mark the hours that have already rolled over into the next day there.
+      const rolled = (t.y - Y) || (t.m - M) || (t.d - D);
+      if (rolled > 0) b.innerHTML += '<span class="nx">+1</span>';
+      if (rolled < 0) b.innerHTML += '<span class="nx">−1</span>';
+      rowThere.appendChild(b);
+    }
+
+    if (shared.length) {
+      const a = shared[0], z = shared[shared.length - 1];
+      $("windowV").textContent = hourLabel(a) + "–" + hourLabel((z + 1) % 24);
+      $("windowSub").textContent = "Your time · workday at both ends";
+    } else {
+      $("windowV").textContent = "None";
+      $("windowSub").textContent = "No hour is a workday in both places on this date";
+    }
+
+    // Sentence
+    $("sentence").innerHTML =
+      "<b>" + ampm(here.h, here.mi) + " " + (hereAb || city) + " on " + longDate(here) + "</b> is " +
+      "<b>" + ampm(there.h, there.mi) + " in the Azores on " + longDate(there) + "</b>.";
+
+    const hw = isWork(here.h), tw = isWork(there.h);
+    $("verdict").textContent =
+      hw && tw ? "This falls inside the normal workday in both places."
+      : !hw && !tw ? "This is outside the normal workday in both places."
+      : hw ? "Fine for you, outside the normal workday in the Azores."
+      : "Inside the workday in the Azores, but outside yours.";
+
+    $("tripline").textContent = tripNote(there.y, there.m, there.d);
+
+    try { localStorage.setItem(TZ_KEY, zone); } catch (e) {}
+  }
+
+  // ---- Wiring ---------------------------------------------------------------
+  function setToNow() {
+    const zone = $("tz").value;
+    const p = partsIn(new Date(), zone);
+    $("date").value = p.y + "-" + pad(p.m) + "-" + pad(p.d);
+    $("hour").value = p.h;
+    render();
+  }
+
+  const zone0 = detectZone();
+  buildZoneList(zone0);
+  setToNow();
+
+  $("tz").addEventListener("change", render);
+  $("date").addEventListener("change", render);
+  $("hour").addEventListener("input", render);
+  $("nowBtn").addEventListener("click", setToNow);
+  </script>
+</body>
+</html>
