@@ -123,6 +123,13 @@
     background: var(--ember); color: #2a1206; border: 1px solid var(--ember);
   }
   .maperr-btn:hover { background: #ff9a68; }
+  .maperr-diag {
+    margin: 16px 0 0; padding: 10px 12px; text-align: left;
+    background: #0b1320; border: 1px solid var(--line); border-radius: 8px;
+    font-family: "Space Mono", monospace; font-size: 10.5px; line-height: 1.5;
+    color: var(--steel-dim); white-space: pre-wrap; word-break: break-word;
+    max-height: 150px; overflow: auto;
+  }
 
   .nav a .s { display: none; }
   /* Below 600px the full "Alex & Jackie · Azores" plus three long nav labels
@@ -233,7 +240,30 @@
   let pendingTrack = null;
   let styleReady = false;
 
-  function showMapError(title, detail) {
+  // Ask the browser directly rather than inferring from an error string.
+  // MapLibre v4 wants webgl2 and falls back to webgl, so probe in that order.
+  function webglProbe() {
+    const out = { webgl2: false, webgl: false, note: "" };
+    try {
+      const c = document.createElement("canvas");
+      try { out.webgl2 = !!c.getContext("webgl2"); } catch (e) { out.note = String(e.message || e); }
+      try { out.webgl = !!(c.getContext("webgl") || c.getContext("experimental-webgl")); } catch (e) {}
+    } catch (e) {
+      out.note = String(e.message || e);
+    }
+    out.ok = out.webgl2 || out.webgl;
+    return out;
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  // `detail` is guidance; `diag` is the raw truth (real error text + probe
+  // result). The first version of this panel asserted "WebGL is missing" from
+  // a regex on the message, which is a guess — showing the actual error means
+  // a wrong guess can be spotted instead of believed.
+  function showMapError(title, detail, diag) {
     const stage = document.querySelector(".stage");
     if (!stage || document.getElementById("mapErr")) return;
     const el = document.createElement("div");
@@ -241,9 +271,10 @@
     el.className = "maperr";
     el.innerHTML =
       '<div class="maperr-card">' +
-        '<div class="maperr-title">' + title + '</div>' +
+        '<div class="maperr-title">' + esc(title) + '</div>' +
         '<p class="maperr-body">' + detail + '</p>' +
         '<a class="maperr-btn" href="./">Open the 2D live map</a>' +
+        (diag ? '<pre class="maperr-diag">' + esc(diag) + '</pre>' : '') +
       '</div>';
     stage.appendChild(el);
     const hint = document.querySelector(".hint");
@@ -281,6 +312,21 @@
   });
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+
+  // The constructor can succeed and the map still never paint — a style or
+  // tile host that hangs leaves a dark rectangle with nothing said about it.
+  // Generous timeout: this is a "clearly wrong" threshold, not a slow-network one.
+  setTimeout(() => {
+    if (!styleReady) {
+      showMapError(
+        "The 3D map is not loading",
+        "The map started but its tiles never arrived after 20 seconds, which usually means " +
+        "the tile or elevation host is unreachable from this network. The live position above " +
+        "is still updating.",
+        "style loaded: false\ntiles: server.arcgisonline.com\nelevation: elevation-tiles-prod.s3.amazonaws.com"
+      );
+    }
+  }, 20000);
 
   function spotMarker(p) {
     const el = document.createElement("div");
@@ -432,20 +478,40 @@
     try {
       buildMap();
     } catch (err) {
-      // Almost always WebGL: MapLibre requires it and has no 2D fallback.
       const msg = String((err && err.message) || err);
-      const webgl = /webgl|context/i.test(msg);
-      showMapError(
-        webgl ? "This browser can't show 3D terrain" : "The 3D map failed to start",
-        webgl
-          ? "The 3D view needs WebGL, which this browser is not providing. On an iPhone that is usually Low Power Mode or Lockdown Mode — turning either off and reloading normally fixes it. Everything else on this page still works."
-          : "Something went wrong starting the map: " + msg
-      );
+      const gl = webglProbe();
+      const diag =
+        "error: " + msg + "\n" +
+        "webgl2: " + gl.webgl2 + "   webgl: " + gl.webgl + (gl.note ? "\nnote: " + gl.note : "") + "\n" +
+        "maplibre: " + (typeof maplibregl !== "undefined" && maplibregl.version ? maplibregl.version : "loaded");
+      console.error("3D map failed to start:", err, gl);
+
+      if (!gl.ok) {
+        // Confirmed: the browser really will not hand out a WebGL context.
+        showMapError(
+          "This browser can't show 3D terrain",
+          "The 3D view needs WebGL, and this browser is refusing to create a context. " +
+          "On desktop Chrome that is usually hardware acceleration being switched off — check " +
+          "<b>chrome://gpu</b>, or Settings → System → “Use graphics acceleration when available”. " +
+          "On an iPhone it is usually Low Power Mode or Lockdown Mode. Everything else on this page still works.",
+          diag
+        );
+      } else {
+        // WebGL is fine, so blaming it would be wrong. Show what really broke.
+        showMapError(
+          "The 3D map failed to start",
+          "WebGL is available in this browser, so this is not a graphics problem — the map " +
+          "library threw on startup. The details below say what happened. Everything else on " +
+          "this page still works.",
+          diag
+        );
+      }
     }
   }, () => {
     showMapError(
       "Couldn't load the 3D map library",
-      "Both map CDNs were unreachable, which usually means the network is blocking them or a wifi login page is in the way. The live position above is still updating."
+      "Both map CDNs were unreachable, which usually means the network is blocking them or a wifi login page is in the way. The live position above is still updating.",
+      "tried:\n" + LIB.join("\n")
     );
   });
   </script>
