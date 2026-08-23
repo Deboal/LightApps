@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · Photos</title>
+<meta name="description" content="Photos from São Miguel, posted as we go." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320; --bg-2: #0e1828; --panel: #13202f; --panel-2: #16263a;
+    --line: #22344a; --ice: #e9eef5; --steel: #8a9cb1; --steel-dim: #58697e;
+    --glacier: #5fd0e6; --laurel: #4fd39a; --ember: #ff8a52; --sos: #ff4d4d;
+    --bar-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 480px at 80% -10%, rgba(255,138,82,0.08), transparent 60%),
+      radial-gradient(820px 520px at 0% 0%, rgba(79,211,154,0.07), transparent 55%),
+      var(--bg);
+    color: var(--ice);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+
+  /* Header (mirrors the other pages) */
+  .bar {
+    height: var(--bar-h);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 18px;
+    background: linear-gradient(180deg, var(--bg-2), rgba(11,19,32,0.85));
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 14px var(--ember); align-self: center; flex: 0 0 auto; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav { display: flex; gap: 16px; }
+  .nav a {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--steel); text-decoration: none; padding: 4px 0; border-bottom: 1px solid transparent;
+  }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a:focus-visible { outline: 2px solid var(--glacier); outline-offset: 3px; }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 36px 20px 72px; }
+
+  .head-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  .eyebrow { font-family: "Space Mono", monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ember); margin: 0 0 10px; }
+  h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.05; margin: 0; letter-spacing: -0.02em; font-weight: 700; }
+  .lede { font-size: 15px; line-height: 1.6; color: var(--steel); max-width: 58ch; margin: 14px 0 0; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    text-decoration: none; font-weight: 600; font-size: 14px; font-family: inherit;
+    padding: 11px 16px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ice); cursor: pointer;
+  }
+  .btn:hover { background: #1b2c42; }
+  .btn:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+  .btn.primary { background: var(--ember); color: #2a1206; border-color: var(--ember); }
+  .btn.primary:hover { background: #ff9a68; }
+  .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+  .btn.small { font-size: 12.5px; padding: 8px 12px; }
+
+  /* Upload panel */
+  .up {
+    margin: 22px 0 0; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 20px; display: none;
+  }
+  .up.open { display: block; }
+  .up h2 { font-size: 14px; letter-spacing: 0.06em; margin: 0 0 6px; font-weight: 700; }
+  .up .why { font-size: 13px; line-height: 1.55; color: var(--steel); margin: 0 0 16px; }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .field label { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel-dim); }
+  .field input[type="password"], .field input[type="text"] {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+    color: var(--ice); font-family: inherit; font-size: 15px; padding: 11px 12px;
+  }
+  .field input:focus { outline: 2px solid var(--glacier); outline-offset: 1px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 520px) { .row2 { grid-template-columns: 1fr; } }
+
+  .drop {
+    border: 1.5px dashed var(--line); border-radius: 12px; padding: 26px 18px;
+    text-align: center; color: var(--steel); background: rgba(11,19,32,0.4);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop.hot { border-color: var(--laurel); background: rgba(79,211,154,0.07); }
+  .drop p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.5; }
+  .drop small { display: block; margin-top: 12px; font-size: 11.5px; color: var(--steel-dim); line-height: 1.5; }
+
+  .queue { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .qrow {
+    display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+  }
+  .qthumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--panel-2); }
+  .qname { font-size: 12.5px; color: var(--ice); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qmeta { font-family: "Space Mono", monospace; font-size: 10.5px; color: var(--steel-dim); margin-top: 2px; }
+  .qstate { font-family: "Space Mono", monospace; font-size: 11px; white-space: nowrap; }
+  .qstate.wait { color: var(--steel-dim); }
+  .qstate.work { color: var(--glacier); }
+  .qstate.done { color: var(--laurel); }
+  .qstate.fail { color: var(--sos); }
+
+  .msg { margin-top: 14px; font-size: 13px; line-height: 1.55; border-radius: 10px; padding: 11px 13px; display: none; }
+  .msg.show { display: block; }
+  .msg.err { color: #ffd9cc; background: rgba(255,77,77,0.10); border: 1px solid rgba(255,77,77,0.4); }
+  .msg.ok { color: #d6ffe9; background: rgba(79,211,154,0.10); border: 1px solid rgba(79,211,154,0.4); }
+
+  /* Gallery */
+  .grid {
+    margin-top: 30px; display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+  @media (max-width: 520px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
+  .tile {
+    position: relative; border: 0; padding: 0; margin: 0; cursor: pointer;
+    background: var(--panel); border-radius: 12px; overflow: hidden;
+    aspect-ratio: 1 / 1; display: block;
+  }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.25s; }
+  .tile:hover img { transform: scale(1.04); }
+  .tile:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+  .tile figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 10px 8px;
+    background: linear-gradient(0deg, rgba(6,12,20,0.92), transparent);
+    font-size: 11.5px; line-height: 1.35; color: var(--ice); text-align: left;
+  }
+  /* The clamp lives on the caption text alone. Clamping the whole figcaption
+     also truncated the timestamp line underneath it. */
+  .tile .cap-text {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tile .when { font-family: "Space Mono", monospace; font-size: 9.5px; color: var(--steel); display: block; margin-top: 3px; }
+
+  .empty {
+    margin-top: 30px; text-align: center; color: var(--steel);
+    border: 1px dashed var(--line); border-radius: 14px; padding: 44px 22px;
+    font-size: 14px; line-height: 1.6;
+  }
+
+  /* Lightbox */
+  .lb {
+    position: fixed; inset: 0; z-index: 200; background: rgba(6,10,17,0.95);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+    backdrop-filter: blur(6px);
+  }
+  .lb.open { display: flex; }
+  .lb-inner { max-width: 1100px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .lb img { max-width: 100%; max-height: 74dvh; border-radius: 10px; display: block; object-fit: contain; }
+  .lb-cap { text-align: center; font-size: 14px; color: var(--ice); line-height: 1.5; max-width: 60ch; }
+  .lb-when { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); margin-top: 4px; }
+  .lb-tools { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .lb-x {
+    position: absolute; top: 14px; right: 16px; background: var(--panel);
+    border: 1px solid var(--line); color: var(--ice); border-radius: 9px;
+    font-size: 18px; line-height: 1; padding: 8px 12px; cursor: pointer;
+  }
+  .lb-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(19,32,47,0.85); border: 1px solid var(--line); color: var(--ice);
+    border-radius: 9px; font-size: 20px; line-height: 1; padding: 12px 14px; cursor: pointer;
+  }
+  .lb-prev { left: 12px; } .lb-next { right: 12px; }
+  @media (max-width: 560px) { .lb-nav { display: none; } }
+
+  .nav a .s { display: none; }
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 11px; }
+    .nav a { font-size: 11px; letter-spacing: 0.05em; }
+    .bar { padding: 0 14px; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+    </div>
+    <nav class="nav">
+      <a href="./"><span class="l">Live map</span><span class="s">Map</span></a>
+      <a href="./itinerary.html"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+      <a href="./terrain.html"><span class="l">3D terrain</span><span class="s">3D</span></a>
+      <a href="./photos.html" class="nav-on"><span class="l">Photos</span><span class="s">Pics</span></a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+    <div class="head-row">
+      <div>
+        <p class="eyebrow" id="eyebrow">São Miguel</p>
+        <h1>Photos</h1>
+      </div>
+      <button class="btn primary" id="addBtn" type="button">Add photos</button>
+    </div>
+    <p class="lede">
+      Posted as we go, newest first. Anyone can look; only we can add.
+    </p>
+
+    <section class="up" id="up" aria-label="Add photos">
+      <h2>Add photos</h2>
+      <p class="why">
+        Pick straight from your camera roll or drag a folder in from a drive. Each
+        photo is shrunk in your browser before it uploads, so it goes through fast
+        on slow wifi — and that re-encode drops the embedded location data, so the
+        exact GPS coordinates of every shot don't end up on a public page.
+      </p>
+
+      <div class="row2">
+        <div class="field">
+          <label for="pw">Upload password</label>
+          <input type="password" id="pw" autocomplete="current-password" placeholder="••••••" />
+        </div>
+        <div class="field">
+          <label for="by">Posted by (optional)</label>
+          <input type="text" id="by" maxlength="40" placeholder="Alex" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="cap">Caption for this batch (optional)</label>
+        <input type="text" id="cap" maxlength="280" placeholder="Sete Cidades, before the cloud came in" />
+      </div>
+
+      <div class="drop" id="drop">
+        <p>Drag photos here, or</p>
+        <button class="btn" id="pickBtn" type="button">Choose photos</button>
+        <input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden />
+        <small>
+          JPEG, PNG or WebP. Straight from an iPhone is fine — iOS converts to JPEG
+          when you pick from the library.
+        </small>
+      </div>
+
+      <div class="queue" id="queue"></div>
+      <div class="msg" id="msg"></div>
+    </section>
+
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" style="display:none">Loading photos…</div>
+  </div>
+
+  <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Photo">
+    <button class="lb-x" id="lbX" type="button" aria-label="Close">✕</button>
+    <button class="lb-nav lb-prev" id="lbPrev" type="button" aria-label="Previous">‹</button>
+    <button class="lb-nav lb-next" id="lbNext" type="button" aria-label="Next">›</button>
+    <div class="lb-inner">
+      <img id="lbImg" alt="" />
+      <div>
+        <div class="lb-cap" id="lbCap"></div>
+        <div class="lb-when" id="lbWhen"></div>
+      </div>
+      <div class="lb-tools">
+        <a class="btn small" id="lbOpen" target="_blank" rel="noopener">Open full size</a>
+        <button class="btn small" id="lbDel" type="button">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ---------------------------------------------------------------------------
+  // Photos. Reading is public; adding and removing go through /api/photos, which
+  // checks the password on the server. Nothing here is a security boundary — a
+  // password checked in this file would be readable by anyone viewing source.
+  // ---------------------------------------------------------------------------
+  const API = "/api/photos";
+  const MAX_EDGE = 2000;   // longest side of the stored image
+  const THUMB_EDGE = 640;  // longest side of the grid thumbnail
+  const QUALITY = 0.82;
+  const PW_KEY = "azores-photo-pw";
+
+  const $ = (id) => document.getElementById(id);
+  let photos = [];
+  let lbIndex = -1;
+
+  // ---- Small helpers -------------------------------------------------------
+  function relDay(iso) {
+    const t = Date.parse(iso);
+    if (isNaN(t)) return "";
+    const mins = (Date.now() - t) / 60000;
+    if (mins < 60) return Math.max(1, Math.round(mins)) + " min ago";
+    if (mins < 1440) return Math.round(mins / 60) + "h ago";
+    return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  function showMsg(kind, text) {
+    const m = $("msg");
+    m.className = "msg show " + kind;
+    m.textContent = text;
+  }
+  function clearMsg() { $("msg").className = "msg"; }
+
+  // ---- Load and render the gallery ----------------------------------------
+  async function loadPhotos() {
+    try {
+      const r = await fetch(API, { cache: "no-store" });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "Could not load photos.");
+      photos = d.photos || [];
+      renderGrid();
+    } catch (e) {
+      $("grid").innerHTML = "";
+      $("empty").style.display = "block";
+      $("empty").textContent = "Could not load photos: " + (e.message || e);
+    }
+  }
+
+  function renderGrid() {
+    const grid = $("grid");
+    grid.innerHTML = "";
+    if (!photos.length) {
+      $("empty").style.display = "block";
+      $("empty").innerHTML =
+        "No photos yet.<br><span style='color:var(--steel-dim);font-size:13px'>" +
+        "They'll show up here as we post them.</span>";
+      return;
+    }
+    $("empty").style.display = "none";
+    photos.forEach((p, i) => {
+      const fig = document.createElement("figure");
+      fig.className = "tile";
+      fig.tabIndex = 0;
+      fig.setAttribute("role", "button");
+      const img = document.createElement("img");
+      img.src = API + "?id=" + encodeURIComponent(p.id) + "&size=thumb";
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.alt = p.caption || "Trip photo";
+      fig.appendChild(img);
+      if (p.caption || p.ts) {
+        const cap = document.createElement("figcaption");
+        const text = document.createElement("span");
+        text.className = "cap-text";
+        text.textContent = p.caption || "";
+        cap.appendChild(text);
+        const when = document.createElement("span");
+        when.className = "when";
+        when.textContent = relDay(p.ts) + (p.by ? " · " + p.by : "");
+        cap.appendChild(when);
+        fig.appendChild(cap);
+      }
+      const open = () => openLb(i);
+      fig.addEventListener("click", open);
+      fig.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      });
+      grid.appendChild(fig);
+    });
+  }
+
+  // ---- Lightbox ------------------------------------------------------------
+  function openLb(i) {
+    if (i < 0 || i >= photos.length) return;
+    lbIndex = i;
+    const p = photos[i];
+    const url = API + "?id=" + encodeURIComponent(p.id);
+    $("lbImg").src = url;
+    $("lbImg").alt = p.caption || "Trip photo";
+    $("lbCap").textContent = p.caption || "";
+    $("lbWhen").textContent =
+      new Date(p.ts).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) +
+      (p.by ? " · " + p.by : "");
+    $("lbOpen").href = url;
+    $("lb").classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+  function closeLb() {
+    $("lb").classList.remove("open");
+    $("lbImg").src = "";
+    document.body.style.overflow = "";
+    lbIndex = -1;
+  }
+  const step = (d) => openLb((lbIndex + d + photos.length) % photos.length);
+
+  $("lbX").addEventListener("click", closeLb);
+  $("lbPrev").addEventListener("click", () => step(-1));
+  $("lbNext").addEventListener("click", () => step(1));
+  $("lb").addEventListener("click", (e) => { if (e.target === $("lb")) closeLb(); });
+  document.addEventListener("keydown", (e) => {
+    if (!$("lb").classList.contains("open")) return;
+    if (e.key === "Escape") closeLb();
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+  });
+
+  $("lbDel").addEventListener("click", async () => {
+    if (lbIndex < 0) return;
+    const p = photos[lbIndex];
+    const pw = $("pw").value || localStorage.getItem(PW_KEY) || window.prompt("Upload password to remove this photo:") || "";
+    if (!pw) return;
+    if (!window.confirm("Remove this photo for everyone?")) return;
+    try {
+      const r = await fetch(API + "?id=" + encodeURIComponent(p.id), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "Could not remove it.");
+      closeLb();
+      await loadPhotos();
+    } catch (e) {
+      window.alert(e.message || e);
+    }
+  });
+
+  // ---- Resize in the browser ----------------------------------------------
+  // Two reasons this happens client-side rather than on the server: a 12 MB
+  // phone photo would not survive the function's request limit, and the canvas
+  // re-encode drops EXIF — including the GPS tag — which should not be
+  // published on an open page.
+  function fitTo(w, h, edge) {
+    if (w <= edge && h <= edge) return [w, h];
+    return w >= h
+      ? [edge, Math.round((h / w) * edge)]
+      : [Math.round((w / h) * edge), edge];
+  }
+
+  async function shrink(file) {
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch (e) {
+      // HEIC is the usual culprit on a Mac; browsers cannot decode it.
+      throw new Error(
+        /heic|heif/i.test(file.type + file.name)
+          ? "This browser can't read HEIC. On iPhone, Settings → Camera → Formats → Most Compatible, or AirDrop/share the photo first to convert it to JPEG."
+          : "That file could not be read as an image."
+      );
+    }
+    const draw = (edge) => {
+      const [w, h] = fitTo(bitmap.width, bitmap.height, edge);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+      return { url: c.toDataURL("image/jpeg", QUALITY), w, h };
+    };
+    const full = draw(MAX_EDGE);
+    const thumb = draw(THUMB_EDGE);
+    bitmap.close && bitmap.close();
+    return { full, thumb, w: full.w, h: full.h };
+  }
+
+  // ---- Upload --------------------------------------------------------------
+  let busy = false;
+
+  async function uploadAll(files) {
+    if (busy) return;
+    const pw = $("pw").value.trim();
+    if (!pw) { showMsg("err", "Enter the upload password first."); $("pw").focus(); return; }
+
+    const list = [...files].filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+    if (!list.length) { showMsg("err", "No image files in that selection."); return; }
+
+    busy = true;
+    clearMsg();
+    $("addBtn").disabled = true;
+    const q = $("queue");
+    q.innerHTML = "";
+
+    const rows = list.map((f) => {
+      const row = document.createElement("div");
+      row.className = "qrow";
+      row.innerHTML =
+        '<img class="qthumb" alt="" />' +
+        '<div><div class="qname"></div><div class="qmeta"></div></div>' +
+        '<div class="qstate wait">waiting</div>';
+      row.querySelector(".qname").textContent = f.name;
+      row.querySelector(".qmeta").textContent = (f.size / 1048576).toFixed(1) + " MB";
+      q.appendChild(row);
+      return row;
+    });
+
+    let ok = 0, failed = 0;
+    // Sequential on purpose: one at a time is far more reliable than six
+    // parallel uploads on hotel or cellular wifi, and the queue shows progress.
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      const row = rows[i];
+      const state = row.querySelector(".qstate");
+      try {
+        state.className = "qstate work";
+        state.textContent = "resizing";
+        const { full, thumb, w, h } = await shrink(file);
+        row.querySelector(".qthumb").src = thumb.url;
+        row.querySelector(".qmeta").textContent =
+          (file.size / 1048576).toFixed(1) + " MB → " +
+          Math.round((full.url.length * 0.75) / 1024) + " KB";
+
+        state.textContent = "uploading";
+        const r = await fetch(API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            password: pw,
+            caption: $("cap").value.trim(),
+            by: $("by").value.trim(),
+            image: full.url,
+            thumb: thumb.url,
+            w, h,
+          }),
+        });
+        const d = await r.json().catch(() => ({ ok: false, error: "Server sent an unreadable reply." }));
+        if (!d.ok) throw new Error(d.error || ("Upload failed (" + r.status + ")."));
+
+        state.className = "qstate done";
+        state.textContent = "posted";
+        ok++;
+        // A correct password is worth remembering so it is typed once a trip.
+        try { localStorage.setItem(PW_KEY, pw); } catch (e) {}
+      } catch (e) {
+        state.className = "qstate fail";
+        state.textContent = "failed";
+        row.querySelector(".qmeta").textContent = e.message || String(e);
+        failed++;
+        // A wrong password will fail every remaining file the same way.
+        if (/password/i.test(e.message || "")) {
+          for (let j = i + 1; j < rows.length; j++) {
+            const s = rows[j].querySelector(".qstate");
+            s.className = "qstate fail";
+            s.textContent = "skipped";
+          }
+          break;
+        }
+      }
+    }
+
+    busy = false;
+    $("addBtn").disabled = false;
+    if (ok && !failed) showMsg("ok", ok === 1 ? "Photo posted." : ok + " photos posted.");
+    else if (ok && failed) showMsg("err", ok + " posted, " + failed + " failed. See the rows above.");
+    else showMsg("err", "Nothing was posted. See the rows above.");
+    if (ok) await loadPhotos();
+  }
+
+  // ---- Wiring --------------------------------------------------------------
+  $("addBtn").addEventListener("click", () => {
+    const up = $("up");
+    up.classList.toggle("open");
+    if (up.classList.contains("open")) {
+      try {
+        const saved = localStorage.getItem(PW_KEY);
+        if (saved && !$("pw").value) $("pw").value = saved;
+      } catch (e) {}
+      $("pw").focus();
+      up.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+  $("pickBtn").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", (e) => {
+    uploadAll(e.target.files);
+    e.target.value = "";
+  });
+
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach((ev) =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("hot"); }));
+  ["dragleave", "drop"].forEach((ev) =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("hot"); }));
+  drop.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files.length) uploadAll(e.dataTransfer.files);
+  });
+
+  loadPhotos();
+  </script>
+</body>
+</html>
