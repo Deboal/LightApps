@@ -39,6 +39,24 @@ for dir in apps/*/; do
     --jsx=transform --loader:.js=jsx --outfile="public/$name/bundle.js"
   cp "${dir}"*.html "public/$name/"
 
+  # An app may run part of itself off the main thread. Each src/*.worker.js is
+  # bundled separately, because a Worker needs its own entry point — the app
+  # loads it by name, e.g. new Worker("worker.js").
+  for wsrc in "${dir}"src/*worker.js; do
+    [ -f "$wsrc" ] || continue
+    wname=$(basename "$wsrc")
+    echo "  bundling $name/$wname"
+    "$ESBUILD" "$wsrc" \
+      --bundle --minify --format=iife --platform=browser --target=es2018 \
+      --outfile="public/$name/$wname"
+  done
+
+  # Static data the app fetches at runtime (grids, lookup tables, images).
+  if [ -d "${dir}assets" ]; then
+    echo "  copying $name/assets"
+    cp -R "${dir}assets" "public/$name/"
+  fi
+
   # An app may ship a browser extension alongside it; publish it as a download.
   # Guarded so a missing zip binary can never fail the deploy.
   if [ -d "${dir}extension" ]; then

@@ -5,3 +5,4 @@ package-lock.json
 offline/
 __pycache__/
 *.pyc
+apps/*/data/.work/
