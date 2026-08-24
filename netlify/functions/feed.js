@@ -27,13 +27,51 @@
 //               The MapShare feed password must be BLANK for this to read it.
 //               Set the env var to point at a different device or trip.
 //
-//   TRIP_START  ISO date the historical track starts from.
-//               Default 2026-08-23T00:00:00Z (departure for São Miguel).
+//   TRIP_START  ISO date the historical track starts from. Default
+//               2026-08-24T08:00:00Z, just before landing at PDL — not the
+//               departure, which would include the drive to SFO and the
+//               crossing.
+//
+//   TRIP_END    ISO date the track stops at. Default 2026-09-01T12:00:00Z,
+//               the return flight, so pings from home afterwards do not start
+//               reappearing on the map.
+//
+//   TRACK_BBOX  "south,west,north,east" bounding the trip area. Default is the
+//               whole Azores archipelago; see DEFAULT_BBOX. Widen it to put
+//               the crossing back on the map.
 
 // The device behind this trip. Not a secret: the same MapShare code is linked
 // publicly from the itinerary page, and the feed is readable by anyone who has
 // it — which is the point of MapShare. Override with the FEED_URL env var.
 const DEFAULT_FEED_URL = "https://share.garmin.com/Feed/Share/VH5B5";
+
+// Where the trip actually happens. A track that also contains California and
+// the middle of the Atlantic makes Leaflet fit the map to a hemisphere, which
+// turns São Miguel into a dot — the island detail is the whole point of the
+// map, so the crossing is discarded rather than drawn.
+//
+// This box covers the entire Azores archipelago, Flores (-31.3) through Santa
+// Maria (-25.0), so a day trip to another island still plots. Everything in
+// the continental US is west of -66, so it falls outside without the rule
+// having to name a country. Points on the final approach into PDL are inside
+// the box and kept, which is why the track still shows an arrival.
+//
+// Override with TRACK_BBOX="south,west,north,east" — widen it to see the
+// crossing again.
+const DEFAULT_BBOX = { south: 36.5, west: -32.0, north: 40.0, east: -24.0 };
+
+function readBbox() {
+  const raw = process.env.TRACK_BBOX;
+  if (!raw) return DEFAULT_BBOX;
+  const n = String(raw).split(",").map((x) => parseFloat(x.trim()));
+  if (n.length !== 4 || n.some((v) => !isFinite(v))) return DEFAULT_BBOX;
+  const [south, west, north, east] = n;
+  if (south >= north || west >= east) return DEFAULT_BBOX;
+  return { south, west, north, east };
+}
+
+const inBox = (p, b) =>
+  p.lat >= b.south && p.lat <= b.north && p.lon >= b.west && p.lon <= b.east;
 
 function num(s) {
   if (s === undefined || s === null) return NaN;
@@ -112,9 +150,17 @@ exports.handler = async () => {
   };
 
   const base = process.env.FEED_URL || DEFAULT_FEED_URL;
-  const tripStart = process.env.TRIP_START || "2026-08-23T00:00:00Z";
+  // Landing, not departure. The old default of 2026-08-23T00:00:00Z is 5pm on
+  // the 22nd in California, so the window opened the evening before the flight
+  // and swept up every ping from home and the whole crossing.
+  const tripStart = process.env.TRIP_START || "2026-08-24T08:00:00Z";
+  const tripEnd = process.env.TRIP_END || "2026-09-01T12:00:00Z";
+  const bbox = readBbox();
 
-  const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  // Stop the window at the return flight so pings from home afterwards do not
+  // start reappearing on the map once the trip is over.
+  const now = nowIso < tripEnd ? nowIso : tripEnd;
   const sep = base.includes("?") ? "&" : "?";
   const trackUrl = base + sep + "d1=" + encodeURIComponent(tripStart) + "&d2=" + encodeURIComponent(now);
 
@@ -146,16 +192,30 @@ exports.handler = async () => {
     }
     track = deduped;
 
-    // Latest: newest valid fix from the dedicated current read; if that came
-    // back empty, fall back to the newest point on the track.
-    const latest = newestTimed(current) || (track.length ? track[track.length - 1] : null);
+    // Drop anything outside the trip area. Counted rather than silently
+    // discarded, so a wrong box shows up as a number instead of as a mystery.
+    const before = track.length;
+    track = track.filter((p) => inBox(p, bbox));
+    const droppedOffArea = before - track.length;
+
+    // Latest: newest valid fix from the dedicated current read, filtered the
+    // same way — the "no date params" read happily returns a point from home
+    // if that is genuinely the most recent one, which would drag the live
+    // marker back across the Atlantic on its own.
+    const currentInArea = current.filter((p) => inBox(p, bbox));
+    const latest = newestTimed(currentInArea) || (track.length ? track[track.length - 1] : null);
 
     return { statusCode: 200, headers, body: JSON.stringify({
       ok: true,
       count: track.length,
       points: track,
       latest,
-      generatedAt: now,
+      generatedAt: nowIso,
+      filtered: {
+        offArea: droppedOffArea,
+        bbox,
+        window: { from: tripStart, to: now },
+      },
     })};
   } catch (err) {
     const isHttp = err && err.status;
