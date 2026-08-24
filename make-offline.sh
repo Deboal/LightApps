@@ -23,6 +23,15 @@ if grep -rqE 'shared/(client|store|auth)\.js' "$SRC_DIR/src" 2>/dev/null; then
   exit 1
 fi
 
+# Same reasoning for an app that fetches its own data or spawns a worker: only
+# bundle.js gets inlined below, so those requests would fail on a file:// page
+# and the export would look fine right up until someone opened it.
+if [ -d "$SRC_DIR/assets" ] || ls "$SRC_DIR"/src/*worker.js > /dev/null 2>&1; then
+  echo "refusing: $APP loads sidecar files (assets/ or a worker) that this" >&2
+  echo "  script does not inline, so the export would break offline." >&2
+  exit 1
+fi
+
 [ -f "public/$APP/bundle.js" ] || bash build.sh > /dev/null
 
 mkdir -p offline

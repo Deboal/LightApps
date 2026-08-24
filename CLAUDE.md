@@ -12,6 +12,10 @@ to one Netlify site. See `SETUP.md` for the one-time backend/Netlify setup and
   (public Supabase URL + publishable key; safe to commit).
 - `build.sh` — bundles every `apps/*/src/app.jsx` into `public/<name>/` with
   esbuild and generates the landing page. Netlify runs it via `netlify.toml`.
+  It also picks up two optional sidecars per app:
+  `apps/<name>/src/*worker.js` gets its own bundle (a Worker needs its own entry
+  point; load it as `new Worker("worker.js")`), and `apps/<name>/assets/` is
+  copied verbatim for anything the app fetches at runtime.
 - React + esbuild only. No framework, no router — each app is a standalone
   bundle served at `/<name>/`.
 
@@ -55,7 +59,9 @@ Iterating is the same loop: edit → PR → merge → redeploys shortly after.
 For an app with no backend, you can hand the user one file that runs offline
 (great for spotty signal): `bash make-offline.sh <name>` writes
 `offline/<name>.html` with the bundle inlined. It refuses apps that import
-`shared/client|store|auth`, since a `file://` page needing Supabase just spins.
+`shared/client|store|auth`, since a `file://` page needing Supabase just spins —
+and likewise apps with an `assets/` folder or a worker, whose sidecar files it
+does not inline.
 Verify the result by loading it as a `file://` URL with all network requests
 blocked. `offline/` is gitignored; the file is a build artifact to hand over,
 not something to commit.
