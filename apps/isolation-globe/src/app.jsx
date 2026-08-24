@@ -71,6 +71,32 @@ const fmtArea = (v) =>
     : v >= 1000 ? `${Math.round(v).toLocaleString()} km²`
       : `${v.toFixed(0)} km²`;
 
+/* Kilometres are abstract; "nineteen days under sail" is not. These are honest
+ * sustained averages rather than top speeds — a cruising yacht makes about six
+ * knots over a day once you count the calms, and a walker five kilometres an
+ * hour only while actually walking. */
+const SPEEDS = [
+  { id: "walk", label: "Walk", kmh: 5, note: "5 km/h" },
+  { id: "sail", label: "Sail", kmh: 11.1, note: "6 kn" },
+  { id: "ship", label: "Ship", kmh: 37, note: "20 kn" },
+  { id: "drive", label: "Drive", kmh: 80, note: "80 km/h" },
+  { id: "fly", label: "Fly", kmh: 800, note: "800 km/h" },
+];
+const speedOf = (id) => SPEEDS.find((s) => s.id === id) || SPEEDS[1];
+
+const plural = (n, unit) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+
+/** Time to cover `km` at `kmh`, never more precise than the number deserves. */
+function fmtDuration(km, kmh) {
+  if (km == null || km < 0) return "—";
+  const h = km / kmh;
+  if (h < 1) return plural(Math.max(1, Math.round(h * 60)), "minute");
+  if (h < 48) return h < 10 ? `${h.toFixed(1)} hours` : plural(Math.round(h), "hour");
+  const d = h / 24;
+  if (d < 365) return d < 10 ? `${d.toFixed(1)} days` : plural(Math.round(d), "day");
+  return `${(d / 365).toFixed(1)} years`;
+}
+
 /* ---- data loading -------------------------------------------------------- */
 
 const loadImage = (src) =>
@@ -259,6 +285,12 @@ function App() {
   // lose where the other slider was.
   const [stepIdx, setStepIdx] = useState({ elev: 0, pop: 10 });
   const [mode, setMode] = useState("sea");
+  // Remembered per browser: whoever is reading this map is usually asking the
+  // same kind of question every time they open it.
+  const [speed, setSpeed] = useState(() => {
+    try { return localStorage.getItem("isolation-globe.speed") || "sail"; }
+    catch { return "sail"; }
+  });
   const [sel, setSel] = useState(null);
   const [showAbout, setShowAbout] = useState(false);
   const [wide, setWide] = useState(() => window.innerWidth >= 900);
@@ -286,6 +318,10 @@ function App() {
   useEffect(() => {
     loadTerrain().then(setData).catch((e) => setErr(e.message));
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem("isolation-globe.speed", speed); } catch { /* private mode */ }
+  }, [speed]);
 
   useEffect(() => {
     const onResize = () => { setWide(window.innerWidth >= 900); draw(); };
@@ -544,7 +580,7 @@ function App() {
         stepIdx={stepIdx[kind]} setStepIdx={(v) => setStepIdx((s) => ({ ...s, [kind]: v }))}
         threshold={threshold} pending={pending}
         commit={() => compute(kind, threshold)}
-        mode={mode} setMode={setMode}
+        mode={mode} setMode={setMode} speed={speed} setSpeed={setSpeed}
         field={field} data={data} namer={namer}
         sel={sel} ranked={ranked} flyTo={flyTo} setSel={setSel}
       />
@@ -665,7 +701,7 @@ const fmtLon = (v) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? "E" : "W"}`;
 
 function Panel({
   wide, kind, setKind, target, shown, stepIdx, setStepIdx, threshold, pending, commit,
-  mode, setMode, field, data, namer, sel, ranked, flyTo, setSel,
+  mode, setMode, speed, setSpeed, field, data, namer, sel, ranked, flyTo, setSel,
 }) {
   const [tab, setTab] = useState("point");
   const far = field && data && namer
@@ -749,7 +785,13 @@ function Panel({
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 22px", minHeight: 0 }}>
-        {tab === "point" && (sel ? <Selection sel={sel} /> : <Hint far={far} isPop={field && field.kind === "pop"} />)}
+        {tab === "point" && (
+          <>
+            {sel ? <Selection sel={sel} speed={speed} />
+              : <Hint far={far} isPop={field && field.kind === "pop"} speed={speed} />}
+            <SpeedPicker value={speed} onChange={setSpeed} />
+          </>
+        )}
         {tab === "top" && <TopList ranked={ranked} shown={shown} field={field} onPick={(r) => { flyTo(r.lat, r.lon); setSel(null); }} />}
         {tab === "key" && <Key mode={mode} shown={shown} field={field} />}
       </div>
@@ -757,7 +799,8 @@ function Panel({
   );
 }
 
-function Selection({ sel }) {
+function Selection({ sel, speed }) {
+  const sp = speedOf(speed);
   return (
     <div>
       <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-.01em" }}>{sel.title}</div>
@@ -765,6 +808,11 @@ function Selection({ sel }) {
       <div style={{ margin: "16px 0 4px", fontSize: 34, fontWeight: 800, letterSpacing: "-.03em", color: C.accent, fontVariantNumeric: "tabular-nums" }}>
         {fmtKm(sel.headline)}
       </div>
+      {sel.headline >= 0 && (
+        <div style={{ color: C.warm, fontSize: 14, fontWeight: 600, marginBottom: 6, fontVariantNumeric: "tabular-nums" }}>
+          {fmtDuration(sel.headline, sp.kmh)} at {sp.note}
+        </div>
+      )}
       <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.45 }}>
         {sel.headlineLabel} — <span style={{ color: C.text }}>{sel.toward}</span>
         {sel.towardSub ? <span style={{ color: C.faint }}> · {sel.towardSub}</span> : null}
@@ -792,7 +840,8 @@ function Selection({ sel }) {
   );
 }
 
-function Hint({ far, isPop }) {
+function Hint({ far, isPop, speed }) {
+  const sp = speedOf(speed);
   return (
     <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>
       <p style={{ margin: "0 0 14px" }}>
@@ -806,11 +855,43 @@ function Hint({ far, isPop }) {
           <div style={{ fontSize: 26, fontWeight: 800, color: C.accent, letterSpacing: "-.02em", margin: "5px 0 2px", fontVariantNumeric: "tabular-nums" }}>
             {fmtKm(far.km)}
           </div>
+          <div style={{ color: C.warm, fontSize: 13, fontWeight: 600, margin: "0 0 5px", fontVariantNumeric: "tabular-nums" }}>
+            {fmtDuration(far.km, sp.kmh)} at {sp.note}
+          </div>
           <div style={{ fontSize: 12, color: C.dim }}>
             {fmtLat(far.lat)} {fmtLon(far.lon)} — nearest is {far.toward}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* Straight-line time, and said so plainly. The distance being converted is a
+ * great circle, so this is the best case and nothing more — no tacking, no
+ * roads, no stops. That is still the useful number: it says whether somewhere is
+ * a morning away or a fortnight. */
+function SpeedPicker({ value, onChange }) {
+  return (
+    <div style={{ marginTop: 20, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+      <div style={{ ...lbl, marginBottom: 8 }}>Travel time at</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {SPEEDS.map((s) => (
+          <button key={s.id} onClick={() => onChange(s.id)} style={{
+            ...btn, padding: "6px 10px", fontSize: 12, lineHeight: 1.25,
+            background: value === s.id ? "#132330" : "transparent",
+            color: value === s.id ? C.text : C.faint,
+            borderColor: value === s.id ? C.accent : C.line,
+            fontWeight: value === s.id ? 700 : 500,
+          }}>
+            {s.label}<span style={{ color: C.faint, fontWeight: 500 }}> · {s.note}</span>
+          </button>
+        ))}
+      </div>
+      <p style={{ color: C.faint, fontSize: 11.5, lineHeight: 1.5, margin: "10px 0 0" }}>
+        Straight down the great circle at a steady pace — no tacking, no roads,
+        no stopping. Real journeys are longer.
+      </p>
     </div>
   );
 }
@@ -921,6 +1002,13 @@ function About({ onClose }) {
             surveyed heights stamped in for ~700 named summits. Taking the maximum
             rather than the mean is what keeps both a low atoll and a sharp peak
             from being averaged out of existence.
+          </p>
+          <p>
+            <strong style={{ color: C.text }}>Travel time</strong> converts the
+            distance at a steady pace, because "2,700 km" says less than "ten
+            days under sail". It follows the great circle and never stops, so
+            treat it as a floor: a real passage tacks, a real drive follows
+            roads, and neither goes all night.
           </p>
           <p>
             <strong style={{ color: C.text }}>Populations</strong> are Natural
