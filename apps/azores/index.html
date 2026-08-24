@@ -606,8 +606,12 @@
     else if (m <= 120) setStatus("recent", "Recent · " + relTime(latest.time));
     else setStatus("stale", "Last seen " + relTime(latest.time));
 
+    // Say so when points were dropped. Filtering that leaves no trace is the
+    // kind of thing that later reads as missing data.
+    const off = data.filtered && data.filtered.offArea;
     $("note").textContent =
-      "Positions arrive by satellite about every 10 minutes when the device has a clear view of the sky. Gaps are normal inland, in the crater bowls, and anywhere under tree cover.";
+      "Positions arrive by satellite about every 10 minutes when the device has a clear view of the sky. Gaps are normal inland, in the crater bowls, and anywhere under tree cover." +
+      (off ? " " + off + " ping" + (off === 1 ? "" : "s") + " from outside the Azores are hidden, so the map stays on the island." : "");
 
     // Everything above is plain DOM and always runs. Only the drawing below
     // needs Leaflet, so a missing library costs the map, not the readout.
