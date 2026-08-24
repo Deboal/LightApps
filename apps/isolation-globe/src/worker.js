@@ -1,16 +1,18 @@
 /* Isolation field worker.
  *
- * Given a global elevation grid and a reference elevation E, it answers two
- * questions for every cell on Earth:
+ * Given a grid of values and a threshold T, it answers two questions for every
+ * cell on Earth:
  *
- *   1. How far is the nearest ground that reaches E?      -> dist[]
- *   2. For ground that reaches E: how far is the nearest   -> comp[] + compIso[]
- *      *separate* mass of ground that also reaches E?
+ *   1. How far is the nearest cell that reaches T?         -> dist[]
+ *   2. For cells that reach T: how far is the nearest       -> comp[] + iso[]
+ *      *separate* cluster of cells that also reach T?
  *
- * At E = 0 that is "distance to the nearest land or island" and "how isolated is
- * this island". Raise E and "land" shrinks to only the terrain above that line,
- * so the same two questions become "how far to the nearest 3,000 m ground" and
- * "how isolated is this massif" — which is the whole point of the slider.
+ * Nothing here knows what the values mean, which is the point. Point it at
+ * elevation and T = 0 gives "distance to the nearest land or island" and "how
+ * isolated is this island"; T = 3000 gives the same two questions about ground
+ * above 3,000 m. Point it at settlement population and the very same code
+ * answers "how far to the nearest city of 100,000" and "which city is the most
+ * isolated on Earth".
  *
  * Everything runs off-thread because a full pass is ~2.3M cells.
  */
@@ -20,7 +22,10 @@
 const R_EARTH = 6371.0088;
 
 let W = 0, H = 0, N = 0;
-let elev = null;
+// The two grids a threshold can be applied to. `src` points at whichever one
+// the current request names, so every loop below reads one array and knows
+// nothing about which question it is answering.
+let elev = null, pop = null, src = null;
 let sinLat = null, cosLat = null, cosDlon = null;
 
 // Scratch buffers, allocated once and reused across slider moves.
@@ -83,20 +88,20 @@ function label(threshold) {
   // landmasses that span 180 degrees, Antarctica and Afro-Eurasia.
   for (let i = 0; i < N; i++) {
     parent[i] = i;
-    if (elev[i] < threshold) comp[i] = -1;
+    if (src[i] < threshold) comp[i] = -1;
   }
   for (let r = 0, i = 0; r < H; r++) {
     for (let c = 0; c < W; c++, i++) {
-      if (elev[i] < threshold) continue;
+      if (src[i] < threshold) continue;
       const w = c === 0 ? i + W - 1 : i - 1;
-      if (elev[w] >= threshold) union(i, w);
+      if (src[w] >= threshold) union(i, w);
       if (r > 0) {
         const up = i - W;
-        if (elev[up] >= threshold) union(i, up);
+        if (src[up] >= threshold) union(i, up);
         const ul = c === 0 ? up + W - 1 : up - 1;
-        if (elev[ul] >= threshold) union(i, ul);
+        if (src[ul] >= threshold) union(i, ul);
         const ur = c === W - 1 ? up - W + 1 : up + 1;
-        if (elev[ur] >= threshold) union(i, ur);
+        if (src[ur] >= threshold) union(i, ur);
       }
     }
   }
@@ -105,7 +110,7 @@ function label(threshold) {
   for (const row of [0, H - 1]) {
     let first = -1;
     for (let c = 0, i = row * W; c < W; c++, i++) {
-      if (elev[i] < threshold) continue;
+      if (src[i] < threshold) continue;
       if (first < 0) first = i; else union(first, i);
     }
   }
@@ -116,7 +121,7 @@ function label(threshold) {
   // lookup table required.
   let n = 0;
   for (let i = 0; i < N; i++) {
-    if (elev[i] < threshold) continue;
+    if (src[i] < threshold) continue;
     const root = find(i);
     comp[i] = root === i ? n++ : comp[root];
   }
@@ -133,7 +138,7 @@ function label(threshold) {
  * which a single round cannot do. */
 function transform(threshold) {
   for (let i = 0; i < N; i++) {
-    if (elev[i] >= threshold) { near[i] = i; bestDot[i] = 1; }
+    if (src[i] >= threshold) { near[i] = i; bestDot[i] = 1; }
     else { near[i] = -1; bestDot[i] = -2; }
   }
 
@@ -211,7 +216,7 @@ function separations(n) {
 
 /* ---- per-mass summary ---------------------------------------------------- */
 
-function summarise(n, threshold) {
+function summarise(n) {
   const cells = new Int32Array(n);
   const area = new Float64Array(n); // km^2, cos-latitude weighted
   const peak = new Int32Array(n).fill(-1);
@@ -226,10 +231,10 @@ function summarise(n, threshold) {
       if (id < 0) continue;
       cells[id]++;
       area[id] += a;
-      if (elev[i] > peakM[id]) { peakM[id] = elev[i]; peak[id] = i; }
+      if (src[i] > peakM[id]) { peakM[id] = src[i]; peak[id] = i; }
     }
   }
-  return { cells, area, peak, peakM, threshold };
+  return { cells, area, peak, peakM };
 }
 
 /* ---- message plumbing ---------------------------------------------------- */
@@ -239,6 +244,7 @@ self.onmessage = (e) => {
   if (msg.type === "init") {
     W = msg.W; H = msg.H; N = W * H;
     elev = new Int16Array(msg.elev);
+    pop = new Int32Array(msg.pop);
     initTables();
     self.postMessage({ type: "ready" });
     return;
@@ -247,10 +253,13 @@ self.onmessage = (e) => {
 
   const t0 = Date.now();
   const threshold = msg.threshold;
+  // Elevation carries -1 for "no land here" and population 0 for "nobody here";
+  // both sit below any threshold the app offers, so neither needs a special case.
+  src = msg.kind === "pop" ? pop : elev;
   const n = label(threshold);
   transform(threshold);
   const sep = separations(n);
-  const sum = summarise(n, threshold);
+  const sum = summarise(n);
 
   // The single most remote spot in the ocean at this threshold — the pole of
   // inaccessibility, which is the headline number people come for.
@@ -260,6 +269,7 @@ self.onmessage = (e) => {
   const out = {
     type: "result",
     seq: msg.seq,
+    kind: msg.kind === "pop" ? "pop" : "elev",
     threshold,
     ms: Date.now() - t0,
     count: n,
