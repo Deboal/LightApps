@@ -110,17 +110,18 @@ let shadeCache = null;
  * mode "sea"  – colour open water by how far it is from qualifying ground
  * mode "iso"  – colour each landmass by how far it is from the nearest other one
  */
-export function paintMap(target, { elev, dist, comp, iso, threshold, mode, W, H }) {
+export function paintMap(target, { elev, src, dist, comp, iso, threshold, kind, mode, W, H }) {
   if (!shadeCache || shadeCache.length !== W * H) shadeCache = buildShade(elev, W, H);
   const shade = shadeCache;
   const px = target.data;
+  const isPop = kind === "pop";
 
   for (let i = 0, o = 0; i < W * H; i++, o += 4) {
     const h = elev[i];
     const d = dist[i];
     let R, G, B, sh = 1;
 
-    if (h >= threshold) {
+    if (src[i] >= threshold) {
       sh = shade[i];
       if (mode === "iso") {
         const k = comp[i];
@@ -144,10 +145,11 @@ export function paintMap(target, { elev, dist, comp, iso, threshold, mode, W, H 
         R = R * 0.34 + 8; G = G * 0.34 + 11; B = B * 0.38 + 20;
       }
       if (h >= 0) {
-        // Land that the current reference elevation has "drowned". It keeps the
-        // distance colour, because that distance is real, but it also keeps its
-        // relief and a warm cast — otherwise raising the slider dissolves the
-        // continents and you lose all sense of where you are looking.
+        // Land that does not qualify — below the reference elevation, or simply
+        // nobody's home. It keeps the distance colour, because that distance is
+        // real, but it also keeps its relief and a warm cast: otherwise moving
+        // the slider dissolves the continents and you lose all sense of where
+        // you are looking.
         sh = shade[i];
         R = R * 0.72 + 46; G = G * 0.72 + 40; B = B * 0.72 + 30;
       }
@@ -158,7 +160,50 @@ export function paintMap(target, { elev, dist, comp, iso, threshold, mode, W, H 
     px[o + 2] = B * sh;
     px[o + 3] = 255;
   }
+  if (isPop) drawSettlements(px, { src, comp, iso, threshold, mode, W, H });
   return target;
+}
+
+/* A qualifying settlement occupies one cell — about 18 km, which is a third of a
+ * pixel on a globe this size, i.e. invisible. So they are drawn again on top
+ * with a one-cell halo. This is presentation only: the halo never reaches the
+ * grid the distances were measured on, so a city looks like a place without
+ * pretending to cover one. */
+function drawSettlements(px, { src, comp, iso, threshold, mode, W, H }) {
+  const N = W * H;
+  const weight = new Float32Array(N);
+  const from = new Int32Array(N).fill(-1);
+  for (let r = 0, i = 0; r < H; r++) {
+    for (let c = 0; c < W; c++, i++) {
+      if (src[i] < threshold) continue;
+      for (let dr = -1; dr <= 1; dr++) {
+        const rr = r + dr;
+        if (rr < 0 || rr >= H) continue;
+        for (let dc = -1; dc <= 1; dc++) {
+          const cc = (c + dc + W) % W;
+          const j = rr * W + cc;
+          const w = dr === 0 && dc === 0 ? 1 : 0.5;
+          if (w > weight[j]) { weight[j] = w; from[j] = i; }
+        }
+      }
+    }
+  }
+  for (let i = 0, o = 0; i < N; i++, o += 4) {
+    const w = weight[i];
+    if (w === 0) continue;
+    let R, G, B;
+    if (mode === "iso") {
+      const k = comp[from[i]];
+      const v = k >= 0 ? iso[k] : -1;
+      if (v < 0) { R = 250; G = 250; B = 252; }
+      else { const j = lookup(ISO_LUT, v); R = ISO_LUT[j]; G = ISO_LUT[j + 1]; B = ISO_LUT[j + 2]; }
+    } else {
+      R = 255; G = 236; B = 178;
+    }
+    px[o] = px[o] * (1 - w) + R * w;
+    px[o + 1] = px[o + 1] * (1 - w) + G * w;
+    px[o + 2] = px[o + 2] * (1 - w) + B * w;
+  }
 }
 
 export function resetShade() { shadeCache = null; }

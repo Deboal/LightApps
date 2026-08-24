@@ -20,6 +20,11 @@ belongs to. It is a second file rather than a fourth channel because packing it
 into terrain.png would interleave two unrelated signals into the same bytes and
 cost more in lost PNG compression than the extra header saves.
 
+cities.json is the settlement list the population filter runs on, as
+[name, lat, lon, population, isApproximate, territory]. Population is Natural
+Earth's POP_MAX -- the metro figure where a city has one, the town's own count
+otherwise -- plus the hand-added remote settlements listed below.
+
 Elevation is the MAXIMUM ground in the cell, never the mean. That single choice
 is what makes both of the app's questions answerable from one grid: a cell whose
 only land is a 400 m atoll still reads as land, and a cell holding one 4,000 m
@@ -69,6 +74,60 @@ NE_LAYERS = [
     "ne_10m_geography_regions_points",
     "ne_10m_geography_regions_elevation_points",
     "ne_10m_geography_regions_polys",
+    "ne_10m_populated_places",
+]
+
+# Settlements Natural Earth's gazetteer omits, added by hand.
+#
+# NE covers island *nations* and large territories well — Faroe, Azores, Fiji,
+# Tarawa, Maldives, Palau — but drops almost every small dependent island and
+# outer atoll. Without these rows the population map is not merely incomplete,
+# it is wrong in the one region it exists to describe: Easter Island, Nauru,
+# Kiritimati, the Marquesas, Wallis and Norfolk all read as uninhabited, and the
+# Pacific comes out far emptier than it is.
+#
+# The populations are APPROXIMATE and rounded to two significant figures, which
+# is the honest precision for figures assembled this way. That is enough for
+# what the app does with them: the filter works in steps (500, 1k, 5k, 10k...)
+# and every entry here sits comfortably inside its step. They are flagged in the
+# output so the app can render them with a "~".
+#
+# Research stations and military posts are deliberately excluded — Kerguelen,
+# Amsterdam, Jan Mayen, Macquarie, Wake, Midway, Diego Garcia. Their headcounts
+# are seasonal or unpublished, and "somewhere people live" is a different claim
+# from "somewhere a rotating crew is posted".
+REMOTE_SETTLEMENTS = [
+    # name, lat, lon, approx pop, territory
+    ("Adamstown", -25.066, -130.100, 50, "Pitcairn Islands"),
+    ("Edinburgh of the Seven Seas", -37.068, -12.311, 240, "Tristan da Cunha"),
+    ("Jamestown", -15.928, -5.717, 4400, "Saint Helena"),
+    ("Georgetown", -7.927, -14.412, 800, "Ascension Island"),
+    ("Hanga Roa", -27.149, -109.432, 7000, "Chile"),
+    ("Kingston", -29.056, 167.961, 2200, "Norfolk Island"),
+    ("Lord Howe Island", -31.552, 159.083, 450, "Australia"),
+    ("Flying Fish Cove", -10.422, 105.679, 1700, "Christmas Island"),
+    ("West Island", -12.188, 96.829, 600, "Cocos (Keeling) Islands"),
+    ("Mata-Utu", -13.282, -176.176, 8100, "Wallis and Futuna"),
+    ("Leava", -14.293, -178.158, 3100, "Wallis and Futuna"),
+    ("Yaren", -0.547, 166.921, 12500, "Nauru"),
+    ("Tabwakea", 1.986, -157.476, 7400, "Kiribati"),
+    ("Taiohae", -8.911, -140.100, 3000, "French Polynesia"),
+    ("Atuona", -9.803, -139.033, 2200, "French Polynesia"),
+    ("Rikitea", -23.120, -134.969, 1500, "French Polynesia"),
+    ("Ahurei", -27.620, -144.333, 500, "French Polynesia"),
+    ("Fakaofo", -9.377, -171.216, 500, "Tokelau"),
+    ("Nukunonu", -9.169, -171.819, 400, "Tokelau"),
+    ("Weno", 7.445, 151.858, 14000, "Federated States of Micronesia"),
+    ("Colonia", 9.514, 138.129, 3000, "Federated States of Micronesia"),
+    ("Tofol", 5.325, 163.008, 6600, "Federated States of Micronesia"),
+    ("Saint-Pierre", 46.781, -56.172, 5400, "Saint Pierre and Miquelon"),
+    ("Adak", 51.880, -176.636, 170, "United States of America"),
+    ("Nikolskoye", 55.198, 165.988, 600, "Russia"),
+    ("Yuzhno-Kurilsk", 44.026, 145.860, 7700, "Russia"),
+    ("Chichijima", 27.094, 142.194, 2000, "Japan"),
+    ("Ishigaki", 24.345, 124.157, 48000, "Japan"),
+    ("Port Mathurin", -19.683, 63.417, 43000, "Mauritius"),
+    ("Banaba", -0.865, 169.539, 300, "Kiribati"),
 ]
 # Painted broadest-first so the most specific name ends up on top: an island in
 # an archipelago on a continental shelf should read as the island.
@@ -420,6 +479,29 @@ def assemble(work, nedir, mask, dem6, dem8, outdir):
     rpng = os.path.join(outdir, "regions.png")
     Image.fromarray(rrgb, "RGB").save(rpng, optimize=True, compress_level=9)
 
+    # Settlements. POP_MAX is Natural Earth's "metro area if there is one, the
+    # town itself otherwise" figure — New York reads 19.0M rather than the 8.0M
+    # city proper, Longyearbyen reads 1,232 — which is exactly the mix the
+    # population filter wants. NE assigns the agglomeration figure to the
+    # primary city and leaves suburbs their own count, so there is nothing to
+    # de-duplicate: Newark sits at 280k next to New York's 19.0M.
+    cities = []
+    for f in load_ne(nedir, "ne_10m_populated_places"):
+        p = f["properties"]
+        pop = p.get("POP_MAX") or 0
+        name = p.get("NAME_EN") or p.get("NAME") or p.get("NAMEASCII")
+        if pop <= 0 or not name:
+            continue
+        lon, lat = f["geometry"]["coordinates"][:2]
+        cities.append([name, round(lat, 3), round(lon, 3), int(pop), 0, p.get("ADM0NAME") or ""])
+    ne_count = len(cities)
+    for name, lat, lon, pop, adm in REMOTE_SETTLEMENTS:
+        cities.append([name, lat, lon, pop, 1, adm])
+    cities.sort(key=lambda c: -c[3])
+    print(f"  {ne_count:,} Natural Earth settlements + {len(REMOTE_SETTLEMENTS)} added by hand", flush=True)
+    with open(os.path.join(outdir, "cities.json"), "w") as f:
+        json.dump({"cities": cities}, f, separators=(",", ":"), ensure_ascii=False)
+
     islands = []
     for f in load_ne(nedir, "ne_10m_geography_regions_points"):
         p = f["properties"]
@@ -444,7 +526,8 @@ def assemble(work, nedir, mask, dem6, dem8, outdir):
         json.dump(meta, f, separators=(",", ":"))
     print(f"  terrain.png {os.path.getsize(png)/1e6:.2f} MB  "
           f"regions.png {os.path.getsize(rpng)/1e3:.0f} kB  "
-          f"labels.json {os.path.getsize(os.path.join(outdir,'labels.json'))/1e3:.0f} kB", flush=True)
+          f"labels.json {os.path.getsize(os.path.join(outdir,'labels.json'))/1e3:.0f} kB  "
+          f"cities.json {os.path.getsize(os.path.join(outdir,'cities.json'))/1e3:.0f} kB", flush=True)
 
 
 def bbox_area(feature):
