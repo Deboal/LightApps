@@ -58,6 +58,60 @@ export const ANSWERS = [
   { t: "deny", s: "No — the maintenance tail eats the savings." },
 ];
 
+// The house specials: verdicts that come down from a specific desk instead of
+// from the ether. Roughly a quarter of shakes land here (SPECIAL_RATE), and
+// the card badges them with `via` so you can see who ruled.
+//
+// Ground rule for anything added below: every line should be something the
+// named person would laugh at, because this deploys to a public URL and they
+// will eventually see it. Ribbing, never a real accusation.
+export const SPECIAL_RATE = 0.25;
+
+export const SPECIALS = [
+  // --- Seth: finds the money -------------------------------------------
+  { t: "approve", via: "Seth", s: "Seth found it in another bucket. Go." },
+  { t: "approve", via: "Seth", s: "Seth says yes — and he'll act surprised at the review." },
+  { t: "approve", via: "Seth", s: "Approved. Seth owes you one and is finally paying up." },
+  { t: "approve", via: "Seth", s: "Seth already signed it. Don't make him regret it." },
+  { t: "defer", via: "Seth", s: "Seth wants it in writing first. Then yes." },
+  { t: "deny", via: "Seth", s: "Seth spent this year's favor on somebody else. Sorry." },
+
+  // --- Kyle: knows a guy ------------------------------------------------
+  { t: "approve", via: "Kyle", s: "Kyle knows a guy. The price just dropped." },
+  { t: "approve", via: "Kyle", s: "Kyle's pulling it from a job that slipped. Yours now." },
+  { t: "approve", via: "Kyle", s: "Kyle says buy it before the price list resets." },
+  { t: "approve", via: "Kyle", s: "Kyle green-lit it somewhere between the shop and the airport." },
+  { t: "defer", via: "Kyle", s: "Kyle can make this work — after the shutdown." },
+  { t: "deny", via: "Kyle", s: "Kyle has one of these in a conex already. Go look." },
+  { t: "approve", via: "Seth & Kyle", s: "Seth and Kyle both nodded. That's a quorum." },
+
+  // --- Daren: guards the plan -------------------------------------------
+  { t: "deny", via: "Daren", s: "Daren capped the plan. You're over it." },
+  { t: "deny", via: "Daren", s: "Not in Daren's budget. Not in Daren's mood." },
+  { t: "deny", via: "Daren", s: "Daren wants the old one run one more season." },
+  { t: "deny", via: "Daren", s: "Over Daren's threshold — which means corporate, which means no." },
+  { t: "defer", via: "Daren", s: "Daren asks what falls off the list to make room." },
+  { t: "defer", via: "Daren", s: "Daren wants payback under three years. Sharpen it." },
+  { t: "defer", via: "Daren", s: "Daren will look at it in the next planning cycle. He will." },
+  { t: "approve", via: "Daren", s: "Daren approved it. Print the email. Frame the email." },
+
+  // --- The rest of the building -----------------------------------------
+  { t: "defer", via: "Corporate", s: "Corporate wants it on the five-year plan first." },
+  { t: "deny", via: "Corporate", s: "Houston reclassified it. It's OPEX now. Congratulations." },
+  { t: "deny", via: "Corporate", s: "Capex is frozen through quarter-end. You know this." },
+  { t: "approve", via: "Corporate", s: "It cleared corporate on a technicality. Move quickly." },
+  { t: "defer", via: "Houston", s: "Build the AFE deck. Present it in Houston. Then we'll talk." },
+  { t: "defer", via: "FP&A", s: "It isn't real until it's in the forecast." },
+  { t: "deny", via: "FP&A", s: "FP&A pulled your last three estimates. Bold of you to come back." },
+  { t: "defer", via: "The board", s: "Above the threshold. That's a board slide now." },
+  { t: "approve", via: "Safety", s: "Safety wants it, so nobody will argue. Buy it." },
+  { t: "approve", via: "Maintenance", s: "Maintenance has been asking for this for years. Yes." },
+  { t: "deny", via: "Ops", s: "Ops swears they'll make the old one work. They always swear that." },
+  { t: "defer", via: "Procurement", s: "Procurement wants three bids. You have zero." },
+  { t: "approve", via: "Tax", s: "Bonus depreciation makes this look brilliant. Go." },
+  { t: "deny", via: "Treasury", s: "Treasury is watching the cash line. Not this month." },
+];
+
 export const FINE_PRINT = [
   "Not financial advice. Obviously.",
   "Estimates unaudited and cheerfully invented.",
@@ -67,6 +121,8 @@ export const FINE_PRINT = [
   "Rounding differences are the ball's love language.",
   "Consult a human before wiring money.",
   "The ball does not accept purchase orders.",
+  "No one named here was consulted. They'd tell you the same thing.",
+  "The ball is not on the approval matrix. Yet.",
 ];
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -92,22 +148,30 @@ export function metricsFor(tone) {
 
 // Weighted tone first, then a line from that tone — avoiding whatever the ball
 // said last, so back-to-back shakes never echo.
+//
+// The specials roll *inside* the chosen tone rather than replacing it, so
+// adding a pile of Daren denials never quietly turns the ball pessimistic:
+// the 10/5/5 split holds no matter how the special pools are stocked.
+function drawFor(tone) {
+  const house = SPECIALS.filter((a) => a.t === tone);
+  if (house.length && Math.random() < SPECIAL_RATE) return pick(house);
+  return pick(ANSWERS.filter((a) => a.t === tone));
+}
+
 export function rollAnswer(lastLine) {
   const bag = [];
   for (const t of Object.keys(WEIGHTS)) for (let i = 0; i < WEIGHTS[t]; i++) bag.push(t);
 
+  let choice = null;
   for (let attempt = 0; attempt < 8; attempt++) {
-    const tone = pick(bag);
-    const choice = pick(ANSWERS.filter((a) => a.t === tone));
-    if (choice.s !== lastLine) {
-      return { tone, line: choice.s, metrics: metricsFor(tone), print: pick(FINE_PRINT) };
-    }
+    choice = drawFor(pick(bag));
+    if (choice.s !== lastLine) break;
   }
-  const fallback = pick(ANSWERS);
   return {
-    tone: fallback.t,
-    line: fallback.s,
-    metrics: metricsFor(fallback.t),
+    tone: choice.t,
+    line: choice.s,
+    via: choice.via || null,
+    metrics: metricsFor(choice.t),
     print: pick(FINE_PRINT),
   };
 }

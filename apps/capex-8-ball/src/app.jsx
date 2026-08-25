@@ -299,9 +299,17 @@ function App() {
           ...card, borderColor: `${tone.color}55`, background: `linear-gradient(180deg, ${tone.color}12, ${C.panel} 60%)`,
           animation: "fade-up .35s ease both",
         }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
             <span style={{ ...label, color: tone.color }}>{tone.label}</span>
-            <span style={{ fontSize: 12.5, color: C.faint }}>{tone.note}</span>
+            {verdict.via ? (
+              <span style={{
+                fontSize: 11.5, fontWeight: 700, color: tone.color,
+                border: `1px solid ${tone.color}55`, background: `${tone.color}14`,
+                borderRadius: 999, padding: "3px 9px",
+              }}>via {verdict.via}</span>
+            ) : (
+              <span style={{ fontSize: 12.5, color: C.faint }}>{tone.note}</span>
+            )}
           </div>
           {verdict.q && (
             <div style={{ marginTop: 10, fontSize: 13.5, color: C.dim, fontStyle: "italic" }}>“{verdict.q}”</div>
@@ -345,6 +353,7 @@ function App() {
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 14, lineHeight: 1.35 }}>{h.line}</div>
                     <div style={{ fontSize: 12, color: C.faint, marginTop: 2 }}>
+                      {h.via ? <span style={{ color: t.color }}>via {h.via} · </span> : null}
                       {h.q ? `${h.q} · ` : ""}{clockOf(h.at)}
                     </div>
                   </div>
