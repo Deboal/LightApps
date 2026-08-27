@@ -27,6 +27,34 @@ import { getStore } from "@netlify/blobs";
 const STORE = "azores-photos";
 const INDEX_KEY = "index.json";
 
+// Video does not go through this function, and cannot.
+//
+// A synchronous Netlify function caps request AND response at 6 MB, and base64
+// inflates bytes by a third, so the photo path tops out around 4.5 MB of real
+// file. Ten seconds of iPhone 1080p is roughly 8 MB; twenty seconds at 60fps is
+// nearer 30. Serving it back would hit the same ceiling from the other side.
+//
+// So the browser PUTs video straight into the hub's existing public Supabase
+// bucket and viewers read it from Supabase's CDN, which also gives real range
+// requests, so scrubbing works. This function only ever handles the small part:
+// the poster frame and the metadata, which is what keeps the password check on
+// the server where it belongs.
+// Both values are the hub's existing public ones, already committed in
+// shared/config.js — the security boundary for them is Postgres row-level
+// security, not secrecy. No new environment variable to set.
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://fycvuanvyjujtyjsmyaf.supabase.co";
+const SUPABASE_KEY = process.env.SUPABASE_KEY || "sb_publishable_fqukDTDrWlTU_w-ZLXyyPw_p2rSiiYW";
+const BUCKET = "hub-files";
+const VIDEO_PREFIX = "azores-video";
+const VIDEO_EXT = { mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", m4v: "video/x-m4v" };
+
+// The public URL is built here from a validated token, never taken from the
+// request. A client-supplied URL would let anyone put an arbitrary link — or
+// script — into the gallery for every viewer.
+const videoPath = (token, ext) => `${VIDEO_PREFIX}/${token}.${ext}`;
+const videoUrl = (token, ext) =>
+  `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${videoPath(token, ext)}`;
+
 // A downscaled 2000px JPEG lands around 400-700 KB and its thumb around 60 KB,
 // so this is generous. It also keeps the request under Netlify's own body cap.
 const MAX_BYTES = 5_000_000;
@@ -179,6 +207,62 @@ export default async (req) => {
       return json({ ok: true, rebuilt: rebuilt.length });
     }
 
+    // ---- Video: register one the browser has already uploaded -------------
+    // Only the poster frame and the metadata arrive here; the file itself went
+    // straight to Supabase. Registration happens after the upload succeeds, so
+    // the index never lists a video whose bytes are missing.
+    if (body?.kind === "video") {
+      const token = String(body?.token || "");
+      const ext = String(body?.ext || "").toLowerCase();
+      if (!/^[a-z0-9]{8,32}$/.test(token)) {
+        return json({ ok: false, error: "Bad video token." }, 400);
+      }
+      if (!VIDEO_EXT[ext]) {
+        return json({
+          ok: false,
+          error: "Unsupported video type. Use MP4, MOV, M4V or WebM.",
+        }, 400);
+      }
+
+      const poster = decodeDataUrl(body?.thumb);
+      if (!poster) {
+        return json({ ok: false, error: "The video's poster frame could not be read." }, 400);
+      }
+
+      const photos = await readIndex(store);
+      if (photos.length >= MAX_PHOTOS) {
+        return json({
+          ok: false,
+          error: `The gallery is full at ${MAX_PHOTOS} items. Delete some before adding more.`,
+        }, 409);
+      }
+
+      const vid = newId();
+      const entry = {
+        id: vid,
+        kind: "video",
+        url: videoUrl(token, ext),
+        path: videoPath(token, ext),
+        mime: VIDEO_EXT[ext],
+        dur: Number(body?.dur) > 0 ? Math.round(Number(body.dur)) : null,
+        caption: String(body?.caption || "").slice(0, MAX_CAPTION),
+        by: String(body?.by || "").slice(0, 40),
+        ts: new Date().toISOString(),
+        w: Number(body?.w) || null,
+        h: Number(body?.h) || null,
+      };
+
+      // The poster lives in Blobs under the same key shape a photo thumbnail
+      // uses, so the gallery grid needs no special case to draw the tile.
+      await store.set(`thumb/${vid}`, poster.bytes, {
+        metadata: { kind: "video", caption: entry.caption, by: entry.by, ts: entry.ts },
+      });
+
+      photos.unshift(entry);
+      await store.setJSON(INDEX_KEY, photos);
+      return json({ ok: true, photo: entry, count: photos.length });
+    }
+
     const full = decodeDataUrl(body?.image);
     if (!full) {
       return json({
@@ -243,14 +327,34 @@ export default async (req) => {
 
     if (!id) return json({ ok: false, error: "Missing id." }, 400);
 
+    const photos = await readIndex(store);
+    const target = photos.find((p) => p.id === id);
+
     await store.delete(`img/${id}`).catch(() => {});
     await store.delete(`thumb/${id}`).catch(() => {});
 
-    const photos = await readIndex(store);
+    // A video's bytes are in Supabase, not Blobs. Removing the index entry is
+    // what takes it out of the gallery; this also tries to delete the file, and
+    // reports honestly when it could not, rather than leaving the caller to
+    // assume storage was reclaimed.
+    let fileRemoved = null;
+    if (target?.kind === "video" && target.path) {
+      fileRemoved = false;
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${target.path}`,
+          { method: "DELETE", headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+        );
+        fileRemoved = res.ok;
+      } catch {
+        fileRemoved = false;
+      }
+    }
+
     const next = photos.filter((p) => p.id !== id);
     await store.setJSON(INDEX_KEY, next);
 
-    return json({ ok: true, removed: id, count: next.length });
+    return json({ ok: true, removed: id, count: next.length, fileRemoved });
   }
 
   return json({ ok: false, error: "Method not allowed." }, 405);

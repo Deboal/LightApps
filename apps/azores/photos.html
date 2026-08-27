@@ -141,6 +141,27 @@
   .tile .cap-text {
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
+  /* Video tiles: a play badge so a still poster does not read as a photo. */
+  .tile .play {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(6,12,20,0.62); border: 1.5px solid rgba(255,255,255,0.85);
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(2px); pointer-events: none;
+  }
+  .tile .play::after {
+    content: ""; margin-left: 3px;
+    border-left: 14px solid #fff; border-top: 9px solid transparent; border-bottom: 9px solid transparent;
+  }
+  .tile .dur {
+    position: absolute; top: 8px; right: 8px; pointer-events: none;
+    font-family: "Space Mono", monospace; font-size: 10px; color: #fff;
+    background: rgba(6,12,20,0.72); border-radius: 5px; padding: 2px 6px;
+  }
+  .lb video {
+    max-width: 100%; max-height: 74dvh; border-radius: 10px; display: block;
+    background: #000;
+  }
   .tile .when { font-family: "Space Mono", monospace; font-size: 9.5px; color: var(--steel); display: block; margin-top: 3px; }
 
   .empty {
@@ -211,7 +232,7 @@
       <button class="btn primary" id="addBtn" type="button">Add photos</button>
     </div>
     <p class="lede">
-      Posted as we go, newest first. Anyone can look; only we can add.
+      Photos and video, posted as we go, newest first. Anyone can look; only we can add.
     </p>
 
     <section class="up" id="up" aria-label="Add photos">
@@ -241,10 +262,10 @@
       <div class="drop" id="drop">
         <p>Drag photos here, or</p>
         <button class="btn" id="pickBtn" type="button">Choose photos</button>
-        <input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden />
+        <input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/*,video/mp4,video/quicktime,video/webm,video/*" multiple hidden />
         <small>
-          JPEG, PNG or WebP. Straight from an iPhone is fine — iOS converts to JPEG
-          when you pick from the library.
+          Photos as JPEG, PNG or WebP; video as MP4, MOV, M4V or WebM up to 50 MB —
+          roughly a minute of 1080p. Straight from an iPhone is fine.
         </small>
       </div>
 
@@ -262,6 +283,7 @@
     <button class="lb-nav lb-next" id="lbNext" type="button" aria-label="Next">›</button>
     <div class="lb-inner">
       <img id="lbImg" alt="" />
+      <video id="lbVid" controls playsinline preload="metadata" style="display:none"></video>
       <div>
         <div class="lb-cap" id="lbCap"></div>
         <div class="lb-when" id="lbWhen"></div>
@@ -285,6 +307,22 @@
   const QUALITY = 0.82;
   const PW_KEY = "azores-photo-pw";
 
+  // Video bypasses /api/photos entirely and goes straight into the hub's public
+  // Supabase bucket. A Netlify function caps request and response at 6 MB, and
+  // base64 costs another third on top, so the photo path tops out around 4.5 MB
+  // of real file — less than ten seconds of phone video. Only the poster frame
+  // and the metadata go through the function afterwards.
+  const SUPABASE_URL = "https://fycvuanvyjujtyjsmyaf.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_fqukDTDrWlTU_w-ZLXyyPw_p2rSiiYW";
+  const BUCKET = "hub-files";
+  const VIDEO_PREFIX = "azores-video";
+  // Supabase's default per-object ceiling on the free plan. Checked here so an
+  // oversized file fails instantly with an explanation, rather than after the
+  // viewer has waited out a long upload.
+  const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+  const VIDEO_EXTS = { "video/mp4": "mp4", "video/quicktime": "mov", "video/x-m4v": "m4v", "video/webm": "webm" };
+  const isVideo = (f) => /^video\//.test(f.type) || /\.(mp4|mov|m4v|webm)$/i.test(f.name);
+
   const $ = (id) => document.getElementById(id);
   let photos = [];
   let lbIndex = -1;
@@ -302,6 +340,10 @@
     if (mins < 1440) return Math.round(mins / 60) + "h ago";
     return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
+  const fmtDur = (sec) => {
+    const s = Math.max(0, Math.round(sec));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  };
   function showMsg(kind, text) {
     const m = $("msg");
     m.className = "msg show " + kind;
@@ -348,8 +390,19 @@
       img.loading = i < 8 ? "eager" : "lazy";
       if (i === 0) img.fetchPriority = "high";
       img.decoding = "async";
-      img.alt = p.caption || "Trip photo";
+      img.alt = p.caption || (p.kind === "video" ? "Trip video" : "Trip photo");
       fig.appendChild(img);
+      if (p.kind === "video") {
+        const play = document.createElement("span");
+        play.className = "play";
+        fig.appendChild(play);
+        if (p.dur) {
+          const dur = document.createElement("span");
+          dur.className = "dur";
+          dur.textContent = fmtDur(p.dur);
+          fig.appendChild(dur);
+        }
+      }
       if (p.caption || p.ts) {
         const cap = document.createElement("figcaption");
         const text = document.createElement("span");
@@ -377,18 +430,41 @@
     lbIndex = i;
     const p = photos[i];
     const url = API + "?id=" + encodeURIComponent(p.id);
-    $("lbImg").src = url;
-    $("lbImg").alt = p.caption || "Trip photo";
+    const vid = $("lbVid"), img = $("lbImg");
+
+    if (p.kind === "video" && p.url) {
+      // Played straight from Supabase, which honours range requests, so
+      // scrubbing works instead of forcing a full download first.
+      img.style.display = "none";
+      img.removeAttribute("src");
+      vid.style.display = "block";
+      vid.poster = localThumbs.get(p.id) || (url + "&size=thumb");
+      vid.src = p.url;
+      $("lbOpen").textContent = "Open the video file";
+    } else {
+      vid.pause();
+      vid.removeAttribute("src");
+      vid.style.display = "none";
+      img.style.display = "block";
+      img.src = url;
+      img.alt = p.caption || "Trip photo";
+      $("lbOpen").textContent = "Open full size";
+    }
     $("lbCap").textContent = p.caption || "";
     $("lbWhen").textContent =
       new Date(p.ts).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) +
       (p.by ? " · " + p.by : "");
-    $("lbOpen").href = url;
+    $("lbOpen").href = (p.kind === "video" && p.url) ? p.url : url;
     $("lb").classList.add("open");
     document.body.style.overflow = "hidden";
   }
   function closeLb() {
     $("lb").classList.remove("open");
+    // Without the pause the audio carries on playing behind a closed overlay.
+    const vid = $("lbVid");
+    vid.pause();
+    vid.removeAttribute("src");
+    vid.style.display = "none";
     $("lbImg").src = "";
     document.body.style.overflow = "";
     lbIndex = -1;
@@ -402,8 +478,10 @@
   document.addEventListener("keydown", (e) => {
     if (!$("lb").classList.contains("open")) return;
     if (e.key === "Escape") closeLb();
-    if (e.key === "ArrowLeft") step(-1);
-    if (e.key === "ArrowRight") step(1);
+    // Let the video element keep the arrow keys for seeking when it has focus.
+    const onVideo = document.activeElement === $("lbVid");
+    if (!onVideo && e.key === "ArrowLeft") step(-1);
+    if (!onVideo && e.key === "ArrowRight") step(1);
   });
 
   $("lbDel").addEventListener("click", async () => {
@@ -464,6 +542,139 @@
     return { full, thumb, w: full.w, h: full.h };
   }
 
+  // ---- Video ---------------------------------------------------------------
+  // Read dimensions and duration, and grab a frame to use as the grid tile.
+  // Seeking a little way in rather than to 0 avoids the black first frame most
+  // phone clips open on.
+  function videoMeta(file) {
+    return new Promise((resolve, reject) => {
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.muted = true;
+      v.playsInline = true;
+
+      const url = URL.createObjectURL(file);
+      let dur = null;      // set on loadedmetadata, read on seeked — must outlive both
+      let settled = false;
+
+      const cleanup = () => { URL.revokeObjectURL(url); v.removeAttribute("src"); };
+      // The cause travels with the message. An earlier version threw this away,
+      // which turned a one-line scoping slip into "your browser cannot read
+      // this video" and sent the search in the wrong direction entirely.
+      const fail = (why) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const detail = why ? " (" + why + ")" : "";
+        reject(new Error("That video could not be read" + detail + "."));
+      };
+      const done = (poster) => {
+        if (settled) return;
+        settled = true;
+        const w = v.videoWidth, h = v.videoHeight;
+        cleanup();
+        resolve({ poster, w, h, dur: isFinite(dur) && dur > 0 ? dur : null });
+      };
+
+      const grab = () => {
+        try {
+          if (!v.videoWidth) return fail("no video track");
+          const [w, h] = fitTo(v.videoWidth, v.videoHeight, THUMB_EDGE);
+          const c = document.createElement("canvas");
+          c.width = w; c.height = h;
+          c.getContext("2d").drawImage(v, 0, 0, w, h);
+          done(c.toDataURL("image/jpeg", QUALITY));
+        } catch (e) {
+          fail(e && e.name ? e.name + ": " + e.message : String(e));
+        }
+      };
+
+      v.onerror = () => fail(v.error ? "media error " + v.error.code : "media error");
+      v.onloadedmetadata = () => {
+        dur = v.duration;
+        // A tenth of the way in, so the poster is not the black frame most
+        // clips open on. Some files report Infinity (anything recorded as a
+        // stream), and seeking to 0 when already at 0 may fire no event at
+        // all, so fall back to a small fixed offset rather than zero.
+        const target = isFinite(dur) && dur > 0 ? Math.min(dur * 0.1, 2) : 0.1;
+        v.currentTime = target;
+      };
+      v.onseeked = grab;
+      // Last resort: if no seeked event ever arrives, draw whatever decoded.
+      setTimeout(() => { if (!settled) (v.readyState >= 2 ? grab() : fail("timed out")); }, 6000);
+
+      v.src = url;
+    });
+  }
+
+  // XHR rather than fetch, because fetch still cannot report upload progress —
+  // and on a 40 MB clip over island wifi, a percentage is the difference
+  // between waiting and assuming it has hung.
+  function putToSupabase(path, file, onPct) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", SUPABASE_URL + "/storage/v1/object/" + BUCKET + "/" + path, true);
+      xhr.setRequestHeader("apikey", SUPABASE_KEY);
+      xhr.setRequestHeader("Authorization", "Bearer " + SUPABASE_KEY);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.setRequestHeader("x-upsert", "false");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onPct) onPct(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) return resolve();
+        if (xhr.status === 403 || xhr.status === 401) {
+          return reject(new Error(
+            "Supabase refused the upload (" + xhr.status + "). The hub's storage rules no longer " +
+            "allow anonymous writes, so video needs a signed upload instead. Photos still work."
+          ));
+        }
+        if (xhr.status === 413) return reject(new Error("Supabase rejected the file as too large."));
+        reject(new Error("Upload failed (" + xhr.status + ")."));
+      };
+      xhr.onerror = () => reject(new Error("Network error during upload."));
+      xhr.send(file);
+    });
+  }
+
+  async function uploadVideo(file, pw, row, state) {
+    if (file.size > MAX_VIDEO_BYTES) {
+      throw new Error(
+        "That clip is " + (file.size / 1048576).toFixed(0) + " MB; the limit is 50 MB. " +
+        "Trim it in Photos first, or share a shorter piece."
+      );
+    }
+    const ext = VIDEO_EXTS[file.type] || (file.name.match(/\.(mp4|mov|m4v|webm)$/i) || [])[1]?.toLowerCase();
+    if (!ext) throw new Error("Unsupported video type. Use MP4, MOV, M4V or WebM.");
+
+    state.textContent = "reading";
+    const meta = await videoMeta(file);
+    row.querySelector(".qthumb").src = meta.poster;
+
+    // A random object name, generated here, is what the server validates and
+    // turns into a public URL. The page never gets to choose the final URL.
+    const token = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : Math.random().toString(36).slice(2).padEnd(16, "0")).slice(0, 24);
+    const path = VIDEO_PREFIX + "/" + token + "." + ext;
+
+    await putToSupabase(path, file, (pct) => { state.textContent = pct + "%"; });
+
+    // Register only after the bytes are safely up, so the gallery can never
+    // list a video that is not there.
+    state.textContent = "posting";
+    const r = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "video", token, ext, password: pw,
+        caption: $("cap").value.trim(), by: $("by").value.trim(),
+        thumb: meta.poster, w: meta.w, h: meta.h, dur: meta.dur,
+      }),
+    });
+    const d = await r.json().catch(() => ({ ok: false, error: "Server sent an unreadable reply." }));
+    if (!d.ok) throw new Error(d.error || "Could not register the video (" + r.status + ").");
+    return { d, localThumb: meta.poster, sizeNote: (file.size / 1048576).toFixed(1) + " MB video" };
+  }
+
   // ---- Upload --------------------------------------------------------------
   let busy = false;
 
@@ -472,8 +683,9 @@
     const pw = $("pw").value.trim();
     if (!pw) { showMsg("err", "Enter the upload password first."); $("pw").focus(); return; }
 
-    const list = [...files].filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
-    if (!list.length) { showMsg("err", "No image files in that selection."); return; }
+    const list = [...files].filter((f) =>
+      /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name) || isVideo(f));
+    if (!list.length) { showMsg("err", "No photos or videos in that selection."); return; }
 
     busy = true;
     clearMsg();
@@ -503,28 +715,38 @@
       const state = row.querySelector(".qstate");
       try {
         state.className = "qstate work";
-        state.textContent = "resizing";
-        const { full, thumb, w, h } = await shrink(file);
-        row.querySelector(".qthumb").src = thumb.url;
-        row.querySelector(".qmeta").textContent =
-          (file.size / 1048576).toFixed(1) + " MB → " +
-          Math.round((full.url.length * 0.75) / 1024) + " KB";
+        let d, localThumb;
 
-        state.textContent = "uploading";
-        const r = await fetch(API, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            password: pw,
-            caption: $("cap").value.trim(),
-            by: $("by").value.trim(),
-            image: full.url,
-            thumb: thumb.url,
-            w, h,
-          }),
-        });
-        const d = await r.json().catch(() => ({ ok: false, error: "Server sent an unreadable reply." }));
-        if (!d.ok) throw new Error(d.error || ("Upload failed (" + r.status + ")."));
+        if (isVideo(file)) {
+          const out = await uploadVideo(file, pw, row, state);
+          d = out.d;
+          localThumb = out.localThumb;
+          row.querySelector(".qmeta").textContent = out.sizeNote;
+        } else {
+          state.textContent = "resizing";
+          const { full, thumb, w, h } = await shrink(file);
+          row.querySelector(".qthumb").src = thumb.url;
+          row.querySelector(".qmeta").textContent =
+            (file.size / 1048576).toFixed(1) + " MB → " +
+            Math.round((full.url.length * 0.75) / 1024) + " KB";
+
+          state.textContent = "uploading";
+          const r = await fetch(API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              password: pw,
+              caption: $("cap").value.trim(),
+              by: $("by").value.trim(),
+              image: full.url,
+              thumb: thumb.url,
+              w, h,
+            }),
+          });
+          d = await r.json().catch(() => ({ ok: false, error: "Server sent an unreadable reply." }));
+          if (!d.ok) throw new Error(d.error || ("Upload failed (" + r.status + ")."));
+          localThumb = thumb.url;
+        }
 
         state.className = "qstate done";
         state.textContent = "posted";
@@ -535,7 +757,7 @@
         // fetch every thumbnail back from the server — so on a slow connection
         // a photo could be stored and still not visible for several seconds.
         if (d.photo && d.photo.id) {
-          localThumbs.set(d.photo.id, thumb.url);
+          localThumbs.set(d.photo.id, localThumb);
           photos.unshift(d.photo);
           renderGrid();
         }
