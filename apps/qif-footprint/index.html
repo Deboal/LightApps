@@ -83,6 +83,8 @@ body.unlocked .gate{display:none}
 .gate p{font-size:10.5px;color:#8B8A88;letter-spacing:.02em;margin-top:2px}
 .gate .btn{width:100%;margin-top:10px;padding:9px}
 .gate .err{font-size:11px;color:#FF8A93;margin-top:9px;min-height:15px}
+.gate .btn[disabled]{opacity:.6;cursor:default}
+#save[data-s=conflict]{cursor:pointer;border-color:#5E4A30}
 </style></head><body>
 <div class="gate" id="gate">
   <form id="gateForm">
@@ -113,6 +115,7 @@ body.unlocked .gate{display:none}
     <span class="sp"></span>
     <span class="chip" id="stat"></span>
     <span class="chip" id="coll"></span>
+    <span class="chip" id="save"></span>
     <button class="btn" id="svgBtn">Download SVG</button>
     <button class="btn" id="pngBtn">Download PNG</button>
   </div>
@@ -170,6 +173,9 @@ function render(){
   s.appendChild(el('text',{x:40,y:698,'font-family':'Proxima Nova, Arial','font-size':9,fill:'#8B8B8B'},txt.footer));
   s.appendChild(el('text',{x:1240,y:698,'text-anchor':'end','font-family':'Proxima Nova, Arial','font-size':9,'font-weight':700,fill:'#8B8B8B'},'Quanta Services \u00b7 Supply Chain'));
   updateChips();
+  // Every mutation already routes through render(), so this is the one place
+  // autosave has to hook in. Debounced, so a drag saves once at the end.
+  scheduleSave();
 }
 function pin(st){let[x,y]=canvasXY(st.lng,st.lat);return[x+(st.pdx||0),y+(st.pdy||0)];}
 function card(st){
@@ -451,36 +457,122 @@ $('addBtn').addEventListener('click',()=>{
 $('autoBtn').addEventListener('click',autoArrange);
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{tab=t.dataset.t;sel=null;paint();render();}));
 let tt;function toast(m){const n=$('toast');n.textContent=m;n.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>n.classList.remove('on'),1900);}
-/* ---- passphrase gate ----
-   A doorway, not a lock. The whole editor is one static page, so everything it
-   needs is already in the source a visitor downloaded — this keeps the tool from
-   being read by whoever stumbles onto the URL, and nothing more. Only the SHA-256
-   digest of the passphrase is stored, so the passphrase itself stays out of this
-   public repo; that hides it from view-source and grep, not from anyone who cares
-   to try. Move the check server-side (a Netlify function reading an env var, the
-   way netlify/functions/photos.mjs gates uploads) if this ever needs to hold. */
+/* ---- passphrase gate and saved state ----
+   The passphrase is checked by /api/footprint against the QIF_PASSWORD env var,
+   so the real one lives on the server and never in this public repo. That same
+   call returns the saved dataset, which is how edits survive a reload and follow
+   the editor between browsers and machines.
+
+   The SHA-256 digest below is only the fallback for when the site has no
+   QIF_PASSWORD set: the editor still opens and still works, it just cannot save.
+   Without it, an unconfigured site would lock everyone out entirely. It is
+   obfuscation, not security — it keeps the passphrase out of view-source and
+   grep, and stops nobody who tries. Once QIF_PASSWORD is set, the server is the
+   authority and this path is never taken.
+
+   What none of this hides: the baseline. This page is public and ships the map,
+   the city list and the starting 18 sites inline, so the gate protects saved
+   state, not the blank slate. */
 const PW_SHA256='c74052c4e05539badfeed94c6fa67756e3b65f1f2c2ad4fbde4b43edfebe633f';
-const SEEN='qif-footprint-unlocked';
+const API='/api/footprint';
+// The passphrase is held in memory only, never in storage, so it cannot be read
+// back out of the browser later. The cost is a re-prompt on reload — cheap now
+// that the work itself is saved server-side.
+let PW=null, rev=0, persist='off', dirty=false, booted=false, saveArmed=false, conflict=false;
 async function sha256(s){
   const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
-let booted=false;
-function boot(){if(booted)return;booted=true;document.body.classList.add('unlocked');render();paint();}
-// Unlocking is remembered for the tab only, so a shared machine re-asks in a new
-// one. A blocked or absent sessionStorage must not break the gate, hence try/catch.
-function remembered(){try{return sessionStorage.getItem(SEEN)==='1';}catch(e){return false;}}
-function remember(){try{sessionStorage.setItem(SEEN,'1');}catch(e){}}
+function setSave(state,label){
+  const n=$('save');n.dataset.s=state;
+  const cls=state==='saved'?'ok':(state==='conflict'||state==='off'?'warn':'');
+  n.innerHTML=cls?`<span class="${cls}">${label}</span>`:label;
+}
+const hhmm=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+function boot(){
+  if(booted)return;booted=true;
+  document.body.classList.add('unlocked');
+  render();paint();
+  // Armed only after the first render, so restoring a saved dataset does not
+  // immediately save it back, and the baseline never overwrites a real save.
+  saveArmed=true;
+}
+/* ---- save ---- */
+let saveT;
+function scheduleSave(){
+  if(!saveArmed||persist!=='on'||conflict)return;
+  dirty=true;setSave('dirty','• unsaved');
+  clearTimeout(saveT);saveT=setTimeout(()=>doSave(false),1200);
+}
+async function doSave(force){
+  if(persist!=='on')return;
+  setSave('saving','saving…');
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({password:PW,data:{sites,legend,txt},rev,force:!!force})});
+    const o=await r.json().catch(()=>({}));
+    if(r.ok&&o.ok){rev=o.rev;dirty=false;conflict=false;setSave('saved',`✓ saved ${hhmm()}`);return;}
+    if(r.status===409){
+      // Someone else saved since this page loaded. Autosave stops rather than
+      // clobbering them; the chip becomes the deliberate overwrite.
+      conflict=true;setSave('conflict','⚑ newer version exists — click to overwrite');
+      toast('Someone else saved a newer version. Reload to take theirs, or click the chip to overwrite.');
+      return;
+    }
+    setSave('dirty','• unsaved');toast(o.error||`Could not save (${r.status}).`);
+  }catch(e){
+    setSave('dirty','• unsaved');toast('Could not reach the server to save.');
+  }
+}
+$('save').addEventListener('click',()=>{if(conflict){conflict=false;doSave(true);}});
+/* ---- unlock ---- */
+async function unlock(pw){
+  // The server is asked first: it holds the real passphrase and the saved state.
+  let r=null;
+  try{
+    r=await fetch(`${API}?password=${encodeURIComponent(pw)}`,{cache:'no-store'});
+  }catch(e){
+    r=null; // offline or the function is missing — fall through to the local check
+  }
+  if(r&&r.status===401)return{ok:false,msg:'Wrong passphrase.'};
+  if(r&&r.ok){
+    const o=await r.json().catch(()=>({}));
+    PW=pw;persist='on';rev=Number(o.rev)||0;
+    if(o.data&&Array.isArray(o.data.sites)&&o.data.sites.length){
+      sites=o.data.sites;
+      if(Array.isArray(o.data.legend)&&o.data.legend.length)legend=o.data.legend;
+      if(o.data.txt)txt=o.data.txt;
+      sel=null;
+    }
+    boot();
+    setSave('saved',o.ts?`✓ saved ${new Date(o.ts).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}`:'✓ synced');
+    if(o.data)toast('Loaded the saved slide');
+    return{ok:true};
+  }
+  // No QIF_PASSWORD on the site (503), or the server was unreachable. Check the
+  // digest locally so the editor still opens — read-only in the sense that
+  // nothing it does will be kept.
+  let local=false;
+  try{local=await sha256(pw)===PW_SHA256;}
+  catch(e){return{ok:false,msg:'This page needs HTTPS to check the passphrase.'};}
+  if(!local)return{ok:false,msg:'Wrong passphrase.'};
+  persist='off';boot();
+  setSave('off','⚑ not saving — edits lost on reload');
+  toast('Saving is off: set QIF_PASSWORD on the Netlify site to keep edits. Use Data → Export JSON meanwhile.');
+  return{ok:true};
+}
 $('gateForm').addEventListener('submit',async e=>{
   e.preventDefault();
-  const err=$('gateErr');err.textContent='';
-  try{
-    if(await sha256($('gatePw').value)===PW_SHA256){remember();boot();}
-    else{err.textContent='Wrong passphrase.';$('gatePw').select();}
-  }catch(ex){
-    // crypto.subtle only exists in a secure context (https or localhost).
-    err.textContent='This page needs to be served over HTTPS to check the passphrase.';
-  }
+  const err=$('gateErr'),btn=e.target.querySelector('button[type=submit]');
+  err.textContent='';btn.disabled=true;btn.textContent='Checking…';
+  const res=await unlock($('gatePw').value);
+  if(!res.ok){err.textContent=res.msg;$('gatePw').select();}
+  btn.disabled=false;btn.textContent='Unlock';
 });
-if(remembered())boot();
+// A save is in flight or pending, or nothing is being saved at all: either way
+// closing now loses work, so say so. Browsers ignore custom text here.
+addEventListener('beforeunload',e=>{
+  if(!booted)return;
+  if(persist!=='on'||dirty||conflict){e.preventDefault();e.returnValue='';}
+});
 </script></body></html>

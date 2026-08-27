@@ -17,6 +17,13 @@
   to = "/.netlify/functions/photos"
   status = 200
 
+# QIF Footprint Editor saved state: read and save the dataset. Same ordering
+# rule as above.
+[[redirects]]
+  from = "/api/footprint"
+  to = "/.netlify/functions/footprint"
+  status = 200
+
 # Clean URLs: /gear-tracker/ serves apps/gear-tracker
 [[redirects]]
   from = "/*"
