@@ -107,12 +107,17 @@
   .lcard.good h3 { color: var(--laurel); }
   .lcard.odd h3 { color: var(--glacier); }
   .lcard.bad h3 { color: var(--ember); }
+  .lcard.skip { background: linear-gradient(180deg, rgba(242,184,75,0.05), var(--panel)); border-color: rgba(242,184,75,0.28); }
+  .lcard.skip h3 { color: var(--warn); }
+  .lcard.skip li { text-decoration: none; }
+  .lcard.skip li b { color: var(--ice); }
   .lcard ul { margin: 0; padding: 0; list-style: none; }
   .lcard li { font-size: 13px; line-height: 1.55; color: var(--steel); padding: 8px 0 8px 16px; position: relative; border-top: 1px solid var(--line); }
   .lcard li:first-child { border-top: 0; padding-top: 0; }
   .lcard li::before { content: ""; position: absolute; left: 0; top: 15px; width: 5px; height: 5px; border-radius: 50%; background: var(--steel-dim); }
   .lcard li:first-child::before { top: 7px; }
   .lcard li b { color: var(--ice); font-weight: 600; }
+  .lcard li a { color: var(--ice); }
 
   footer.note { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--steel-dim); line-height: 1.6; }
   footer.note a { color: var(--steel); }
@@ -166,6 +171,7 @@
       <span class="fact">Three hotels · <b>Furnas the favourite</b></span>
       <span class="fact">Four <b>sperm whales</b></span>
       <span class="fact">One €53 whale figurine</span>
+      <span class="fact"><b>Five planned stops</b> skipped</span>
     </div>
 
     <div class="best">
@@ -180,6 +186,28 @@
 
     <div class="sec-head"><h2>Day by day</h2><span class="rule"></span></div>
     <div id="timeline"></div>
+
+    <div class="sec-head"><h2>Planned, and skipped</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard skip">
+        <h3>The eastern half of the plan</h3>
+        <ul>
+          <li><b>Nordeste and the eastern viewpoints.</b> The plan's best drive — the waterfalls at Ribeira dos Caldeirões, the landscaped overlooks at Santa Iria and Ponta do Sossego, and the lighthouse at Farol do Arnel. Fifty minutes each way from Furnas, and we never made it.</li>
+          <li><b>Salto do Prego.</b> About four and a half miles to a waterfall you can swim under, through forest and a restored hamlet. The plan called it the prettiest short walk on the island.</li>
+          <li><b>Gorreana.</b> The only commercial tea plantation in Europe, growing since 1883, free to walk through and free to taste — fifteen minutes from the last hotel.</li>
+        </ul>
+      </div>
+      <div class="lcard skip">
+        <h3>Furnas, unfinished</h3>
+        <ul>
+          <li><b>Poça da Dona Beija.</b> Small thermal pools lit up after dark, open until half past nine, meant to be an evening slot booked for a set time. Two nights in Furnas and we did not go.</li>
+          <li><b>Eating the cozido.</b> We stood at the pits on Day 6 and watched a bag of meat and potatoes swapped out of the geyser — seven hours in volcanic ground — and never sat down to a plate of it.</li>
+          <li>Not for lack of a plan: every one of these was written into the
+            <a href="./itinerary.html">itinerary</a> and simply did not get done. Separately, the
+            winery was shut for the weekend and Pete's Volcanic Coffee could not be found at all.</li>
+        </ul>
+      </div>
+    </div>
 
     <div class="sec-head"><h2>What we liked</h2><span class="rule"></span></div>
     <div class="lists">
