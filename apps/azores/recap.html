@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · How It Went</title>
+<meta name="description" content="What actually happened across eight days on São Miguel." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320; --bg-2: #0e1828; --panel: #13202f; --panel-2: #16263a;
+    --line: #22344a; --ice: #e9eef5; --steel: #8a9cb1; --steel-dim: #58697e;
+    --glacier: #5fd0e6; --laurel: #4fd39a; --ember: #ff8a52; --warn: #f2b84b;
+    --bar-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 480px at 80% -10%, rgba(255,138,82,0.08), transparent 60%),
+      radial-gradient(820px 520px at 0% 0%, rgba(79,211,154,0.07), transparent 55%),
+      var(--bg);
+    color: var(--ice);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+
+  .bar {
+    height: var(--bar-h);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 18px;
+    background: linear-gradient(180deg, var(--bg-2), rgba(11,19,32,0.85));
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 14px var(--ember); align-self: center; flex: 0 0 auto; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav { display: flex; gap: 16px; }
+  .nav a {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--steel); text-decoration: none; padding: 4px 0; border-bottom: 1px solid transparent;
+  }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a:focus-visible { outline: 2px solid var(--glacier); outline-offset: 3px; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 22px 72px; }
+  .eyebrow { font-family: "Space Mono", monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ember); margin: 0 0 12px; }
+  h1 { font-size: clamp(30px, 6vw, 52px); line-height: 1.04; margin: 0 0 14px; letter-spacing: -0.02em; font-weight: 700; }
+  .lede { font-size: 16px; line-height: 1.6; color: var(--steel); max-width: 60ch; margin: 0 0 24px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 10px; }
+  .fact {
+    font-family: "Space Mono", monospace; font-size: 12px; color: var(--ice);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 13px;
+  }
+  .fact b { color: var(--ember); font-weight: 700; }
+
+  /* The single best thing gets its own block. */
+  .best {
+    margin-top: 26px; background: linear-gradient(180deg, rgba(255,138,82,0.09), var(--panel));
+    border: 1px solid rgba(255,138,82,0.4); border-radius: 14px; padding: 20px 22px;
+  }
+  .best h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--ember); letter-spacing: 0.1em; text-transform: uppercase; }
+  .best p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--ice); }
+
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin: 52px 0 18px; }
+  .sec-head h2 { font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--steel); margin: 0; font-weight: 600; }
+  .sec-head .rule { flex: 1 1 auto; height: 1px; background: var(--line); }
+
+  /* Day cards */
+  .day {
+    display: grid; grid-template-columns: 92px 1fr auto; gap: 16px; align-items: start;
+    padding: 16px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); margin-bottom: 10px;
+  }
+  .day.star { border-color: rgba(255,138,82,0.5); background: linear-gradient(180deg, rgba(255,138,82,0.06), var(--panel)); }
+  .day-when { display: flex; flex-direction: column; gap: 2px; }
+  .day-no { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); letter-spacing: 0.06em; }
+  .day-date { font-family: "Space Mono", monospace; font-size: 13px; color: var(--ice); font-weight: 700; }
+  .day-body { min-width: 0; }
+  .day-title { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
+  .day-title .badge {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ember);
+    border: 1px solid rgba(255,138,82,0.45); border-radius: 999px; padding: 2px 8px;
+    margin-left: 8px; vertical-align: middle; white-space: nowrap;
+  }
+  .day-place { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel); margin: 0 0 7px; }
+  .day-note { font-size: 13.5px; line-height: 1.55; color: var(--steel); margin: 0; }
+  .day-note + .day-note { margin-top: 7px; }
+  .day-base { text-align: right; white-space: nowrap; }
+  .day-base .m { font-family: "Space Mono", monospace; font-weight: 700; font-size: 13px; color: var(--laurel); }
+  .day-base .ft { font-family: "Space Mono", monospace; font-size: 10px; color: var(--steel-dim); display: block; margin-top: 1px; }
+
+  /* Gap notice */
+  .gap {
+    border: 1px dashed rgba(242,184,75,0.45); background: rgba(242,184,75,0.06);
+    border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+    font-size: 13px; line-height: 1.55; color: var(--warn);
+  }
+  .gap b { color: var(--ice); }
+
+  /* Verdict lists */
+  .lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+  .lcard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .lcard h3 { font-size: 13px; margin: 0 0 12px; font-weight: 700; letter-spacing: 0.02em; }
+  .lcard.good h3 { color: var(--laurel); }
+  .lcard.odd h3 { color: var(--glacier); }
+  .lcard.bad h3 { color: var(--ember); }
+  .lcard ul { margin: 0; padding: 0; list-style: none; }
+  .lcard li { font-size: 13px; line-height: 1.55; color: var(--steel); padding: 8px 0 8px 16px; position: relative; border-top: 1px solid var(--line); }
+  .lcard li:first-child { border-top: 0; padding-top: 0; }
+  .lcard li::before { content: ""; position: absolute; left: 0; top: 15px; width: 5px; height: 5px; border-radius: 50%; background: var(--steel-dim); }
+  .lcard li:first-child::before { top: 7px; }
+  .lcard li b { color: var(--ice); font-weight: 600; }
+
+  footer.note { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--steel-dim); line-height: 1.6; }
+  footer.note a { color: var(--steel); }
+
+  .nav a .s { display: none; }
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 8px; }
+    .nav a { font-size: 10.5px; letter-spacing: 0.02em; }
+    .bar { padding: 0 13px; gap: 8px; }
+  }
+  @media (max-width: 560px) {
+    .day { grid-template-columns: 70px 1fr; }
+    .day-base { grid-column: 2 / 3; text-align: left; margin-top: 4px; }
+    .day-base .ft { display: inline; margin-left: 6px; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+    </div>
+    <nav class="nav">
+      <a href="./"><span class="l">Live map</span><span class="s">Map</span></a>
+      <a href="./itinerary.html"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+      <a href="./terrain.html"><span class="l">3D terrain</span><span class="s">3D</span></a>
+      <a href="./photos.html"><span class="l">Photos</span><span class="s">Pic</span></a>
+      <a href="./time.html"><span class="l">Time</span><span class="s">TZ</span></a>
+      <a href="./recap.html" class="nav-on"><span class="l">How it went</span><span class="s">Recap</span></a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+    <p class="eyebrow">Aug 24 – Sep 1, 2026 · São Miguel</p>
+    <h1>How it actually went.</h1>
+    <p class="lede">
+      The plan was three places to sleep and a mostly empty calendar, decided each
+      morning off the forecast. That held up — but almost nothing landed on the day
+      it was pencilled in for, the rain was heavier and more frequent than expected,
+      and the island turned out to need far more booking ahead than a plan built on
+      spontaneity assumed.
+    </p>
+    <div class="facts">
+      <span class="fact">Eight days on the ground</span>
+      <span class="fact">Three hotels · <b>Furnas the favourite</b></span>
+      <span class="fact">Four <b>sperm whales</b></span>
+      <span class="fact">One €53 whale figurine</span>
+    </div>
+
+    <div class="best">
+      <h3>Best thing we did</h3>
+      <p>
+        Whale watching, without much competition. Dolphins with pink bellies jumping
+        and feeding, chasing birds alongside the boat, then four sperm whales — the
+        last two raising their tails as they went down. The Zodiac took rain and big
+        waves to get there and it was still the clear favourite of the trip.
+      </p>
+    </div>
+
+    <div class="sec-head"><h2>Day by day</h2><span class="rule"></span></div>
+    <div id="timeline"></div>
+
+    <div class="sec-head"><h2>What we liked</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard good">
+        <h3>Nature and water</h3>
+        <ul>
+          <li><b>Whale watching</b> — dolphins and four sperm whales, two tail sightings. The best thing we did.</li>
+          <li><b>Lagoa do Fogo</b>, twice: windy and clear by bus, then again on a genuinely sunny day.</li>
+          <li>Black-sand beaches, waterfalls, ocean overlooks, and the hike down to the lake.</li>
+          <li><b>Whaler's Cove</b> — the historic place the whales were brought in, one steep section on the way down.</li>
+        </ul>
+      </div>
+      <div class="lcard good">
+        <h3>Food</h3>
+        <ul>
+          <li><b>Wood-fired and Azores-style steak</b>, with garlic and salted red pepper. Ordered medium rare, arrived considerably rarer.</li>
+          <li><b>White cod</b> — oily and much better than that sounds. Fried cod and the tuna too.</li>
+          <li><b>Cheese boards.</b> The three-cheese platter with spicy pepper jam, and cheese generally as a regional thing.</li>
+          <li>The late 9:30pm dinner on the last full night — pizza, steak, crème brûlée, and Neapolitan ice cream where the strawberry stood out.</li>
+        </ul>
+      </div>
+      <div class="lcard good">
+        <h3>Hotels and kit</h3>
+        <ul>
+          <li><b>All three had extensive breakfasts.</b> The third had the best breakfast and the best views; Furnas was the overall favourite — comfortable, and "White Lotus vibes".</li>
+          <li>The packing list held: linen and cotton, a rain jacket, swimsuits, hair ties, battery banks, two pairs of shoes.</li>
+          <li><b>Ray-Ban Meta glasses</b> for photos and a <b>Garmin</b> for tracking both earned their place.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>What surprised us</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard odd">
+        <h3>You have to book ahead</h3>
+        <ul>
+          <li>Restaurants, wineries and excursions wanted reservations — <b>including restaurants with visibly empty tables.</b></li>
+          <li>Bookings often ran over WhatsApp rather than a website or a phone call.</li>
+          <li>The plan was deliberately built to stay loose. On this island that was the wrong instinct.</li>
+        </ul>
+      </div>
+      <div class="lcard odd">
+        <h3>Weather and roads</h3>
+        <ul>
+          <li>Cool rain to humid heat <b>within minutes</b>, repeatedly. Rain was frequent and heavy, not the short bursts we'd read about.</li>
+          <li>Cobblestones, no sidewalks, fast traffic, close tailgating. The car was necessary and stressful in equal measure.</li>
+        </ul>
+      </div>
+      <div class="lcard odd">
+        <h3>Small things</h3>
+        <ul>
+          <li><b>Pineapples take about two and a half years.</b> Two greenhouse visits, and only 30–40 plants visible at a time — the real farming must happen somewhere else.</li>
+          <li>Level 5 of the treetop course was far harder than the rest, and Level 6 was easy straight after it.</li>
+          <li>Everyday differences: breakfast, minimal-makeup norms, espresso after meals, and cheese, fish, stewed meats, rice and potatoes everywhere.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>What we would change</h2><span class="rule"></span></div>
+    <div class="lists">
+      <div class="lcard bad">
+        <h3>Spontaneity did not work</h3>
+        <ul>
+          <li>The one thing the plan was built around turned out to be the thing the island least rewarded.</li>
+          <li><b>The winery never happened</b> — wineries are closed at weekends.</li>
+          <li>Pete's Volcanic Coffee could not be found at all: the website and the Instagram pin gave the same wrong location, and we crossed the same river repeatedly looking. It may have burned down.</li>
+        </ul>
+      </div>
+      <div class="lcard bad">
+        <h3>Driving and getting about</h3>
+        <ul>
+          <li><b>A further 1.5-hour wait</b> for the rental car, after arriving early, dropping bags, and coming back to the airport for it.</li>
+          <li>Road conditions, tailgating, narrow streets, and hectic traffic on the scooters — which topped out at 20 km/h.</li>
+          <li>The rental car <b>clicked the entire trip.</b></li>
+        </ul>
+      </div>
+      <div class="lcard bad">
+        <h3>Misses and mishaps</h3>
+        <ul>
+          <li>Two beaches in a row turned out to be <b>concrete slabs, not sand</b> — the second after walking about four miles to reach it.</li>
+          <li>The buffet lunch of stewed pork and clams probably explains the stomach trouble that followed.</li>
+          <li>The whale figurine was €53, against an expected €10–15. It was suggested it might be actual whale bone.</li>
+          <li>Music near the Furnas hotel ran to 2am and made sleeping hard.</li>
+        </ul>
+      </div>
+    </div>
+
+    <footer class="note">
+      Written up from our own notes after getting home, so the day numbering follows
+      the days we were on the ground rather than the ten-day version on the
+      <a href="./itinerary.html">itinerary page</a>, which counts the flights.
+      The <a href="./photos.html">photos</a> and the
+      <a href="./">final track</a> are still up.
+    </footer>
+  </div>
+
+  <script>
+  // ---------------------------------------------------------------------------
+  // What happened, from the notes. Dates are as recorded. Where the notes
+  // hedged, the hedge is kept — except the first hotel, which the hotel's own
+  // history settles: it was a convent, then the city hospital for a hundred
+  // years, before it became a hotel.
+  // ---------------------------------------------------------------------------
+  const DAYS = [
+    {
+      day: 1, date: "Mon, Aug 24", base: "Ponta Delgada",
+      place: "Arrival · Sete Cidades · black-sand beach",
+      title: "Landed, and drove straight into the rain",
+      notes: [
+        "Overnight SFO → Newark → Azores, on the ground at 8am. The hotel turned out to be the old convent that spent a hundred years as the city hospital. A first walk went into an industrial stretch; north looked far better.",
+        "Getting the rental car took a second trip to the airport and another hour and a half of waiting. The roads made their impression immediately: cobblestone, narrow, frequently no sidewalk, and busy with fast drivers and trucks in the rain.",
+        "Drove to Lago das Sete Cidades in heavy rain that cleared just enough for a short walk — ginger lilies on the way, and a wild horse. Then a black-sand beach, warm and overcast, where Alex wrote “Alex loves Jackie” on a rock before a nap on the rocks and another two hours asleep in the car. Home through pouring rain.",
+        "The hotel spa: a punishing steam room, a sauna advertised at 150 degrees, a large underground bath area, and no hot tub. Dinner on a lively restaurant street — Azores-style steak, marinated in garlic and spicy pepper, delivered far rarer than the medium rare requested; chicken alfredo with mushrooms, rice and fries.",
+      ],
+    },
+    {
+      day: 2, date: "Tue, Aug 25", base: "Ponta Delgada",
+      place: "Lagoa do Fogo · waterfall · rum distillery",
+      title: "A bus to the crater lake, and a café that does not exist",
+      notes: [
+        "Breakfast was good but unfamiliar: charcuterie-style plates, coffee only if you asked, pineapple, and a chalky, pulpy carrot cleansing juice. The yogurt was thinner and milder than expected.",
+        "A grocery run turned into a small expedition — broken elevator, no obvious stairway, and a stretch of road with no sidewalk next to traffic. The Hypermark itself was an ordinary supermarket.",
+        "Took the bus up to Lagoa do Fogo. Clear enough to see the ocean on both sides, and extremely windy. The hike down to the lake was there for the taking; we did not have what we needed with us.",
+        "A long hunt for Pete's Volcanic Coffee failed outright: website and Instagram both pointed at the same wrong spot, and we crossed the same river several times in the car. Best guess is it burned down. Salvaged the afternoon with an award-winning rum distillery, a waterfall hike, and Santa Bárbara black-sand beach — we heard the falls before seeing them, got briefly lost looking for reception, and found a metal catwalk with a view of canyoneers rappelling.",
+        "Dinner took three attempts: one too crowded, one reservations-only, and a third that looked reservations-only and seated us anyway. A T-bone billed for two, and tuna described simply as excellent.",
+      ],
+    },
+    {
+      day: 3, date: "Thu, Aug 27", base: "Ponta Delgada", star: true,
+      place: "Whale watching · scooters · rooftop bar",
+      title: "Four sperm whales", badge: "Best day",
+      notes: [
+        "8am pickup, a half-hour drive to the marina, and a Zodiac out through rain and big waves. Dolphins with pink bellies, jumping, chasing birds and feeding — then four sperm whales, the last two raising their tails.",
+        "The beach plan afterwards did not survive contact: the first beach was concrete slabs rather than sand, and after walking about four miles to a second recommended one, so was that. Rented scooters for the way back — hectic traffic, a bike path that helped, and a top speed of 20 km/h. A Dramamine nap followed.",
+        "Souvenirs in the evening, then a rooftop bar at a five-star hotel, found on the second elevator. Excellent until rain pushed everyone inside. Local cheese noted as a regional specialty. Wandered into a casino that felt sketchy, found Amisa Club closed, and ended at a small bar where one bartender was handling an extraordinary volume of orders alone.",
+      ],
+    },
+    {
+      day: 4, date: "Fri, Aug 28", base: "Ponta Delgada",
+      place: "Beach · 10-mile run · crater lake",
+      title: "The sunny day, and a drum band",
+      notes: [
+        "A late start and a genuinely sandy beach 10–15 minutes from the hotel, warm for most of the day. Alex ran about ten miles; Jackie stayed at the beach.",
+        "Harbour lunch of white cod — oily, and much better than it sounds. Back up to the crater lake, this time in sun, though the mountain climb was off the table in flip-flops.",
+        "Dinner at Paw Evening: passion fruit, fish, chorizo, steak. Charged per plate with no sharing allowed, which did not stop Alex helping Jackie finish hers.",
+        "A small whale figurine came to €53 against an expected €10–15; it was suggested it might be actual whale bone. The evening finished with a Japanese-style drum band. The spa, Turkish bath and sauna were all shut.",
+      ],
+    },
+    {
+      day: 5, date: "Sat, Aug 29", base: "Furnas",
+      place: "Move to Furnas · sea caves",
+      title: "Moved inland, and a rough boat",
+      notes: [
+        "Relocated to Furnas. The hotel was comfortable and nice, with what the notes call “White Lotus vibes” — the overall favourite of the three.",
+        "A morning boat to the sea caves was beaten by the water: too rough and choppy to get close.",
+        "Arrived early into an unusual part of town, found zoomorphic sculptures, and kept half an eye on the car while older and middle-aged men sat outside watching.",
+        "The rest of the day was deliberately nothing: Practical Magic, two naps, and Alex staying up to at least midnight to keep work hours despite being wrecked after a run.",
+      ],
+    },
+    {
+      day: 6, date: "Sun, Aug 30", base: "Furnas",
+      place: "Sulfur pits · treetop course · festival",
+      title: "Geothermal, then six levels of zipline",
+      notes: [
+        "Started at the Furnas sulfur pits: hot and cold springs side by side, spouts labelled with their temperatures, rusty iron-coloured water, and a mild sulfuric smell. Watched someone swap out a cozido bag of meat and potatoes cooking in the geyser. A mountain drive gave a clear overlook of the lake and the pits below.",
+        "At the treetop course we skipped Level 1 — full of children — and did 2 through 6. Level 5 was harder than everything else combined: an open-square ladder, a ball-seat zipline, an unexpected climbing wall, and awkward harness re-clipping. Its spider-web jump was the event of the day: Jackie jumped, bounced off the web, landed, and then needed staff help to get unhooked. Level 6 was easy by comparison.",
+        "Lunch at what looked like a cheese tasting and turned out to be a full restaurant: a three-cheese platter with spicy pepper jam, a hanging beef skewer with salt and roasted garlic oil, and a hamburger with thick-cut chips that were soft in the middle.",
+        "An Azores festival in the evening after a shuttle and a wait on the beach — live music, a DJ set, and a very fast van ride through narrow streets. Music near the hotel carried on until 2am.",
+      ],
+    },
+    {
+      day: 7, date: "Mon, Aug 31", base: "Fenais da Luz",
+      place: "Third hotel · Whaler's Cove",
+      title: "The best hotel, and a late dinner worth waiting for",
+      notes: [
+        "Slept until ten, missed breakfast, packed, and drove to the third hotel. Bags went in early; the room was not ready.",
+        "Walked down to Whaler's Cove, the historic place the whales were brought in — one steep section, and two swimmers below with a buoy, possibly crabbing.",
+        "Buffet lunch of fried cod and pork stewed with clams in red wine. The meat-inside-clams combination is the leading suspect for the stomach trouble that followed. At a large supermarket: salted codfish at around €25 a pound, octopus, energy drinks, and raspberry chocolates in white and dark.",
+        "After resting off feeling unwell, a 9:30pm dinner that the notes call well worth the wait: pepperoni pizza, Azores-style steak with garlic and salted red pepper, Neapolitan ice cream with the strawberry standing out, and crème brûlée. The hotel itself became a highlight for the ocean views and the path down to the water.",
+      ],
+    },
+    {
+      day: 8, date: "Tue, Sep 1", base: "Home",
+      place: "Pineapple greenhouses · harbour dinner · flight home",
+      title: "Pineapples, and a steak billed for two",
+      notes: [
+        "Breakfast over the ocean with the window open and the sun coming in. Pancakes, bacon, cappuccino and fruit — and hot sauce for the eggs, finally.",
+        "Shopping needed a new duffel bag, because nothing else fit any more. A purple shirt, blue-and-white pottery, a coffee cup and a tile.",
+        "Two pineapple greenhouse operations, and the fact that stuck: about two and a half years to grow one. Only 30–40 plants visible at a time, which makes us think the actual farming happens elsewhere.",
+        "Harbour dinner — rockfish with eggplant, nectarine and pesto; and a steak listed for two people, eaten despite repeated warnings from the restaurant about the size.",
+        "On the airport morning we arrived before the flight was even on the board. A minor gas-station hassle, some worry about breakables in the checked bags, and a rental car still clicking.",
+      ],
+    },
+  ];
+
+  const tl = document.getElementById("timeline");
+  DAYS.forEach((d) => {
+    const el = document.createElement("div");
+    el.className = "day" + (d.star ? " star" : "");
+    el.innerHTML =
+      '<div class="day-when">' +
+        '<span class="day-no">Day ' + d.day + '</span>' +
+        '<span class="day-date">' + d.date + '</span>' +
+      '</div>' +
+      '<div class="day-body">' +
+        '<p class="day-title">' + d.title + (d.badge ? '<span class="badge">' + d.badge + '</span>' : '') + '</p>' +
+        '<p class="day-place">' + d.place + '</p>' +
+        d.notes.map((n) => '<p class="day-note">' + n + '</p>').join('') +
+      '</div>' +
+      '<div class="day-base"><span class="m">' + d.base + '</span>' +
+        '<span class="ft">' + (d.base === "Home" ? "flew out" : "slept") + '</span></div>';
+    tl.appendChild(el);
+
+    // The notes jump from the 25th to the 27th. Rather than renumber the days
+    // and quietly close the gap, it is marked where it falls.
+    if (d.day === 2) {
+      const gap = document.createElement("div");
+      gap.className = "gap";
+      gap.innerHTML =
+        "<b>Wednesday, Aug 26 is missing from the notes.</b> That was the day the " +
+        "whale-watching boat was originally booked for, and whale watching is " +
+        "written up on the 27th — so either the tour moved a day, or a day went " +
+        "unrecorded. Left as a gap rather than guessed at.";
+      tl.appendChild(gap);
+    }
+  });
+  </script>
+</body>
+</html>
