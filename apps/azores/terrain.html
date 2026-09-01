@@ -100,6 +100,11 @@
     .brand-name { font-size: 12px; }
     .nav a { font-size: 11px; }
     .bar-right { gap: 12px; }
+    /* Six nav items plus the status pill overflow a 390px bar. The dot still
+       carries live / recent / stale by colour, and index.html repeats the same
+       value as "Last update" in the strip below, so the text is what gives way. */
+    #statusText { display: none; }
+    .status { gap: 0; }
     .nav { gap: 11px; }
     .hint { display: none; }
   }
@@ -162,6 +167,7 @@
         <a href="./terrain.html" class="nav-on"><span class="l">3D terrain</span><span class="s">3D</span></a>
         <a href="./photos.html"><span class="l">Photos</span><span class="s">Pic</span></a>
         <a href="./time.html"><span class="l">Time</span><span class="s">TZ</span></a>
+        <a href="./recap.html"><span class="l">How it went</span><span class="s">Recap</span></a>
       </nav>
       <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Loading…</span></div>
     </div>
@@ -408,6 +414,7 @@
   function setStatus(kind, text) {
     document.getElementById("statusDot").className = "dot " + kind;
     document.getElementById("statusText").textContent = text;
+    document.getElementById("statusDot").title = text;
   }
   function relTime(iso) {
     const m = (Date.now() - Date.parse(iso)) / 60000;
