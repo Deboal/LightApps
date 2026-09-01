@@ -77,14 +77,14 @@
 
   /* Day cards */
   .day {
-    display: grid; grid-template-columns: 92px 1fr auto; gap: 16px; align-items: start;
+    display: grid; grid-template-columns: 58px 1fr auto; gap: 16px; align-items: start;
     padding: 16px; border: 1px solid var(--line); border-radius: 12px;
     background: var(--panel); margin-bottom: 10px;
   }
   .day.star { border-color: rgba(255,138,82,0.5); background: linear-gradient(180deg, rgba(255,138,82,0.06), var(--panel)); }
   .day-when { display: flex; flex-direction: column; gap: 2px; }
-  .day-no { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); letter-spacing: 0.06em; }
-  .day-date { font-family: "Space Mono", monospace; font-size: 13px; color: var(--ice); font-weight: 700; }
+  .day-no { font-family: "Space Mono", monospace; font-size: 10px; color: var(--steel-dim); letter-spacing: 0.14em; text-transform: uppercase; }
+  .day-num { font-family: "Space Mono", monospace; font-size: 26px; line-height: 1; color: var(--ice); font-weight: 700; }
   .day-body { min-width: 0; }
   .day-title { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
   .day-title .badge {
@@ -99,13 +99,6 @@
   .day-base .m { font-family: "Space Mono", monospace; font-weight: 700; font-size: 13px; color: var(--laurel); }
   .day-base .ft { font-family: "Space Mono", monospace; font-size: 10px; color: var(--steel-dim); display: block; margin-top: 1px; }
 
-  /* Gap notice */
-  .gap {
-    border: 1px dashed rgba(242,184,75,0.45); background: rgba(242,184,75,0.06);
-    border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
-    font-size: 13px; line-height: 1.55; color: var(--warn);
-  }
-  .gap b { color: var(--ice); }
 
   /* Verdict lists */
   .lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
@@ -136,7 +129,7 @@
     .bar { padding: 0 13px; gap: 8px; }
   }
   @media (max-width: 560px) {
-    .day { grid-template-columns: 70px 1fr; }
+    .day { grid-template-columns: 46px 1fr; }
     .day-base { grid-column: 2 / 3; text-align: left; margin-top: 4px; }
     .day-base .ft { display: inline; margin-left: 6px; }
   }
@@ -159,14 +152,14 @@
   </header>
 
   <div class="wrap">
-    <p class="eyebrow">Aug 24 – Sep 1, 2026 · São Miguel</p>
+    <p class="eyebrow">Eight days on São Miguel</p>
     <h1>How it actually went.</h1>
     <p class="lede">
       The plan was three places to sleep and a mostly empty calendar, decided each
-      morning off the forecast. That held up — but almost nothing landed on the day
-      it was pencilled in for, the rain was heavier and more frequent than expected,
-      and the island turned out to need far more booking ahead than a plan built on
-      spontaneity assumed.
+      morning off the forecast. Three bases worked. The empty calendar less so: the
+      rain was heavier and more frequent than expected, and the island wanted far
+      more booking ahead than a plan built on spontaneity had allowed for. Counted
+      from the first morning on the ground, not from the flights.
     </p>
     <div class="facts">
       <span class="fact">Eight days on the ground</span>
@@ -275,9 +268,11 @@
     </div>
 
     <footer class="note">
-      Written up from our own notes after getting home, so the day numbering follows
-      the days we were on the ground rather than the ten-day version on the
-      <a href="./itinerary.html">itinerary page</a>, which counts the flights.
+      Written up from our own notes after getting home. Days are numbered from the
+      first morning on the ground, so Day 1 here is Day 2 on the
+      <a href="./itinerary.html">plan</a>, which counts the outbound flight. No
+      calendar dates: the notes were written up afterwards and the dates in them
+      did not hold, while the order of the days did.
       The <a href="./photos.html">photos</a> and the
       <a href="./">final track</a> are still up.
     </footer>
@@ -285,14 +280,16 @@
 
   <script>
   // ---------------------------------------------------------------------------
-  // What happened, from the notes. Dates are as recorded. Where the notes
+  // What happened, from the notes, in order. Deliberately no calendar dates —
+  // the notes were written up after getting home and their dates did not hold,
+  // so the day number is the only ordering claim being made. Where the notes
   // hedged, the hedge is kept — except the first hotel, which the hotel's own
   // history settles: it was a convent, then the city hospital for a hundred
   // years, before it became a hotel.
   // ---------------------------------------------------------------------------
   const DAYS = [
     {
-      day: 1, date: "Mon, Aug 24", base: "Ponta Delgada",
+      day: 1, base: "Ponta Delgada",
       place: "Arrival · Sete Cidades · black-sand beach",
       title: "Landed, and drove straight into the rain",
       notes: [
@@ -303,7 +300,7 @@
       ],
     },
     {
-      day: 2, date: "Tue, Aug 25", base: "Ponta Delgada",
+      day: 2, base: "Ponta Delgada",
       place: "Lagoa do Fogo · waterfall · rum distillery",
       title: "A bus to the crater lake, and a café that does not exist",
       notes: [
@@ -315,7 +312,7 @@
       ],
     },
     {
-      day: 3, date: "Thu, Aug 27", base: "Ponta Delgada", star: true,
+      day: 3, base: "Ponta Delgada", star: true,
       place: "Whale watching · scooters · rooftop bar",
       title: "Four sperm whales", badge: "Best day",
       notes: [
@@ -325,7 +322,7 @@
       ],
     },
     {
-      day: 4, date: "Fri, Aug 28", base: "Ponta Delgada",
+      day: 4, base: "Ponta Delgada",
       place: "Beach · 10-mile run · crater lake",
       title: "The sunny day, and a drum band",
       notes: [
@@ -336,7 +333,7 @@
       ],
     },
     {
-      day: 5, date: "Sat, Aug 29", base: "Furnas",
+      day: 5, base: "Furnas",
       place: "Move to Furnas · sea caves",
       title: "Moved inland, and a rough boat",
       notes: [
@@ -347,7 +344,7 @@
       ],
     },
     {
-      day: 6, date: "Sun, Aug 30", base: "Furnas",
+      day: 6, base: "Furnas",
       place: "Sulfur pits · treetop course · festival",
       title: "Geothermal, then six levels of zipline",
       notes: [
@@ -358,7 +355,7 @@
       ],
     },
     {
-      day: 7, date: "Mon, Aug 31", base: "Fenais da Luz",
+      day: 7, base: "Fenais da Luz",
       place: "Third hotel · Whaler's Cove",
       title: "The best hotel, and a late dinner worth waiting for",
       notes: [
@@ -369,7 +366,7 @@
       ],
     },
     {
-      day: 8, date: "Tue, Sep 1", base: "Home",
+      day: 8, base: "Home",
       place: "Pineapple greenhouses · harbour dinner · flight home",
       title: "Pineapples, and a steak billed for two",
       notes: [
@@ -388,8 +385,8 @@
     el.className = "day" + (d.star ? " star" : "");
     el.innerHTML =
       '<div class="day-when">' +
-        '<span class="day-no">Day ' + d.day + '</span>' +
-        '<span class="day-date">' + d.date + '</span>' +
+        '<span class="day-no">Day</span>' +
+        '<span class="day-num">' + d.day + '</span>' +
       '</div>' +
       '<div class="day-body">' +
         '<p class="day-title">' + d.title + (d.badge ? '<span class="badge">' + d.badge + '</span>' : '') + '</p>' +
@@ -400,18 +397,6 @@
         '<span class="ft">' + (d.base === "Home" ? "flew out" : "slept") + '</span></div>';
     tl.appendChild(el);
 
-    // The notes jump from the 25th to the 27th. Rather than renumber the days
-    // and quietly close the gap, it is marked where it falls.
-    if (d.day === 2) {
-      const gap = document.createElement("div");
-      gap.className = "gap";
-      gap.innerHTML =
-        "<b>Wednesday, Aug 26 is missing from the notes.</b> That was the day the " +
-        "whale-watching boat was originally booked for, and whale watching is " +
-        "written up on the 27th — so either the tour moved a day, or a day went " +
-        "unrecorded. Left as a gap rather than guessed at.";
-      tl.appendChild(gap);
-    }
   });
   </script>
 </body>
