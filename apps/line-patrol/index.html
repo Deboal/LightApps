@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Line Patrol</title>
+  <meta name="description" content="PG&amp;E transmission lines and 2025 helicopter activity around them." />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""
+    onerror="this.onerror=null;this.removeAttribute('integrity');this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';" />
+
+  <style>
+    :root{--bg:#0f1318;--panel:#161c23;--panel-2:#1b222b;--line:#2a333d;--text:#e7edf2;--dim:#8b97a3;--accent:#33c2b0;}
+    *{box-sizing:border-box;}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      overscroll-behavior:none;}
+    #root{position:fixed;inset:0;}
+    .leaflet-container{background:#0b0f13;font-family:inherit;}
+    .leaflet-control-attribution{background:rgba(15,19,24,0.75) !important;color:var(--dim) !important;font-size:10px !important;}
+    .leaflet-control-attribution a{color:var(--dim) !important;}
+    .leaflet-bar a{background:var(--panel) !important;color:var(--text) !important;border-bottom-color:var(--line) !important;}
+    .leaflet-bar a:hover{background:var(--panel-2) !important;}
+    .lp-popup .leaflet-popup-content-wrapper{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;}
+    .lp-popup .leaflet-popup-tip{background:var(--panel);border:1px solid var(--line);}
+    .lp-popup .leaflet-popup-content{margin:11px 13px;font-size:13px;line-height:1.5;}
+    a{color:var(--accent);}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="bundle.js"></script>
+</body>
+</html>
