@@ -10,11 +10,12 @@ mod png;
 
 use std::process::ExitCode;
 
+use gba_core::cable::Cable;
 use gba_core::{Emulator, KeyState};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: gba-headless <rom.gba> [--bios <bios.bin>] [--frames N] [--steps N]\n                            [--determinism] [--screenshot out.png] [--scale N]"
+        "usage: gba-headless <rom.gba> [--bios <bios.bin>] [--frames N] [--steps N]\n                            [--determinism] [--screenshot out.png] [--scale N]\n                            [--link | --link-rom <second.gba>]"
     );
     ExitCode::from(2)
 }
@@ -31,6 +32,7 @@ fn main() -> ExitCode {
     let mut mash_until: Option<u64> = None;
     let mut save_in: Option<String> = None;
     let mut save_out: Option<String> = None;
+    let mut link: Option<Option<String>> = None;
     let mut determinism = false;
     let mut screenshot: Option<String> = None;
     let mut scale: usize = 3;
@@ -46,6 +48,11 @@ fn main() -> ExitCode {
             "--mash-until" => mash_until = args.next().and_then(|v| v.parse().ok()),
             "--save-in" => save_in = args.next(),
             "--save-out" => save_out = args.next(),
+            // A bare --link runs two copies of the same cartridge; --link-rom
+            // takes a second one. Making --link greedy would have it swallow
+            // the next flag.
+            "--link" => link = Some(link.flatten()),
+            "--link-rom" => link = Some(args.next()),
             "--watch" => {
                 watch = args
                     .next()
@@ -110,6 +117,28 @@ fn main() -> ExitCode {
             a.state_hash, b.state_hash
         );
         return ExitCode::FAILURE;
+    }
+
+    // Two machines on a cable, stepped in lockstep by the same driver netplay
+    // will use. The second ROM defaults to the first: two copies of the same
+    // cartridge is the ordinary case.
+    if let Some(second) = link {
+        let other = match second.as_deref().map(std::fs::read).transpose() {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => rom.clone(),
+            Err(e) => {
+                eprintln!("cannot read the second ROM: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        return run_cable(
+            &rom,
+            &other,
+            bios.as_deref(),
+            options.frames,
+            screenshot,
+            scale,
+        );
     }
 
     let outcome = run(&rom, bios.as_deref(), &options);
@@ -380,6 +409,54 @@ fn print_report(rom: &[u8], outcome: &Outcome) {
             );
         }
     }
+}
+
+fn run_cable(
+    first: &[u8],
+    second: &[u8],
+    bios: Option<&[u8]>,
+    frames: u64,
+    screenshot: Option<String>,
+    scale: usize,
+) -> ExitCode {
+    let mut cable = Cable::new(vec![
+        Emulator::new(first, bios, None),
+        Emulator::new(second, bios, None),
+    ]);
+    for _ in 0..frames {
+        cable.run_frame(&[KeyState::default(), KeyState::default()]);
+    }
+
+    for (index, machine) in cable.machines.iter().enumerate() {
+        println!(
+            "unit {index}: id {} of {}  pc {:08x}  siocnt {:04x}  multi {:04x} {:04x}",
+            machine.mem.link.id,
+            machine.mem.link.players,
+            machine.cpu.r[15],
+            machine.mem.siocnt(),
+            machine.mem.read_io16(gba_core::link::SIOMULTI0),
+            machine.mem.read_io16(gba_core::link::SIOMULTI1),
+        );
+    }
+    println!("cable state hash {:016x}", cable.state_hash());
+
+    if let Some(path) = screenshot {
+        for (index, machine) in cable.machines.iter().enumerate() {
+            let out = path.replace(".png", &format!("-{index}.png"));
+            let image = png::encode(
+                machine.framebuffer(),
+                gba_core::SCREEN_WIDTH,
+                gba_core::SCREEN_HEIGHT,
+                scale.max(1),
+            );
+            if let Err(e) = std::fs::write(&out, image) {
+                eprintln!("cannot write {out}: {e}");
+                return ExitCode::FAILURE;
+            }
+            println!("wrote {out}");
+        }
+    }
+    ExitCode::SUCCESS
 }
 
 /// Parse `frame:BUTTONS` entries, e.g. "1850:START,1900:A+B".

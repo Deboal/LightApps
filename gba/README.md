@@ -269,6 +269,33 @@ eat a playthrough the first time you play on the phone and then the Mac.
 `build.sh` ignores the `gba/` directory entirely and publishes `apps/gba/`
 like any other app.
 
+## Link cable
+
+`gba-core` emulates the serial port in multiplayer mode, and `cable::Cable`
+runs two to four machines wired together in one process, stepped along a fixed
+256-cycle grid so the interleaving does not depend on how long any instruction
+happened to take.
+
+That shape is the point. Each participant emulates *every* machine and feeds
+each one its own player's buttons; the cable traffic is then generated
+locally, by emulated hardware both sides compute identically. A network only
+has to carry button presses, which is far more forgiving of latency than
+forwarding link bytes would be — and it only works because the core is
+deterministic, which is what decision 1.2 bought.
+
+```sh
+cargo run --release -p gba-headless -- rom.gba --link --frames 600 --screenshot out.png
+```
+
+Two machines cost almost exactly twice one: 4.7x realtime for the pair against
+8.2x for a single machine.
+
+**Unproven:** the register plumbing is tested, but no game has yet agreed to
+talk over it. Pokemon's link protocol is timing-sensitive, and this core's
+timing is scanline-approximate with no wait-state accuracy. `transfer_cycles`
+is derived rather than measured and is the first thing to tune if a game
+decides the cable has timed out.
+
 ## Next
 
 1. **Windows and blending.** Deferred by the plan, and the plan was right to
