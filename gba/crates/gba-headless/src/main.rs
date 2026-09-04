@@ -29,6 +29,8 @@ fn main() -> ExitCode {
     let mut script: Vec<(u64, u16)> = Vec::new();
     let mut mash_from: Option<u64> = None;
     let mut mash_until: Option<u64> = None;
+    let mut save_in: Option<String> = None;
+    let mut save_out: Option<String> = None;
     let mut determinism = false;
     let mut screenshot: Option<String> = None;
     let mut scale: usize = 3;
@@ -42,6 +44,8 @@ fn main() -> ExitCode {
             "--script" => script = args.next().map(|v| parse_script(&v)).unwrap_or_default(),
             "--mash-from" => mash_from = args.next().and_then(|v| v.parse().ok()),
             "--mash-until" => mash_until = args.next().and_then(|v| v.parse().ok()),
+            "--save-in" => save_in = args.next(),
+            "--save-out" => save_out = args.next(),
             "--watch" => {
                 watch = args
                     .next()
@@ -73,7 +77,15 @@ fn main() -> ExitCode {
         }
     };
 
+    let save = match save_in.as_deref().map(std::fs::read).transpose() {
+        Ok(save) => save,
+        Err(e) => {
+            eprintln!("cannot read save: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let options = Run {
+        save,
         frames: frames.unwrap_or(600),
         steps,
         watch,
@@ -83,7 +95,10 @@ fn main() -> ExitCode {
     };
 
     if determinism {
-        let quiet = Run { watch: None, ..options };
+        let quiet = Run {
+            watch: None,
+            ..options
+        };
         let a = run(&rom, bios.as_deref(), &quiet);
         let b = run(&rom, bios.as_deref(), &quiet);
         if a.state_hash == b.state_hash {
@@ -99,6 +114,16 @@ fn main() -> ExitCode {
 
     let outcome = run(&rom, bios.as_deref(), &options);
     print_report(&rom, &outcome);
+
+    if let Some(path) = save_out {
+        match &outcome.save {
+            Some(save) => match std::fs::write(&path, save) {
+                Ok(()) => println!("wrote {path} ({} bytes)", save.len()),
+                Err(e) => eprintln!("cannot write {path}: {e}"),
+            },
+            None => eprintln!("this cartridge has no save memory"),
+        }
+    }
 
     if let Some(path) = screenshot {
         let image = png::encode(
@@ -143,6 +168,7 @@ struct Outcome {
     trail: Vec<Trace>,
     save_len: usize,
     save_dirty: bool,
+    save: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -159,6 +185,7 @@ struct Trace {
 #[derive(Default)]
 struct Run {
     frames: u64,
+    save: Option<Vec<u8>>,
     steps: Option<u64>,
     watch: Option<u32>,
     script: Vec<(u64, u16)>,
@@ -167,10 +194,18 @@ struct Run {
 }
 
 fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
-    let Run { frames, steps, watch, script, mash_from, mash_until } = options;
+    let Run {
+        frames,
+        steps,
+        watch,
+        script,
+        mash_from,
+        mash_until,
+        save,
+    } = options;
     let (frames, steps, watch, mash_from, mash_until) =
         (*frames, *steps, *watch, *mash_from, *mash_until);
-    let mut emu = Emulator::new(rom, bios, None);
+    let mut emu = Emulator::new(rom, bios, save.as_deref());
     let budget = steps.unwrap_or(frames * gba_core::CYCLES_PER_FRAME);
 
     // A test ROM signals completion by branching to itself; a real game never
@@ -282,6 +317,7 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
         trail,
         save_len: emu.save_data().map(|s| s.len()).unwrap_or(0),
         save_dirty: emu.save_dirty(),
+        save: emu.save_data().map(|s| s.to_vec()),
     }
 }
 

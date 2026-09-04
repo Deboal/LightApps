@@ -432,6 +432,21 @@ function Player({ core, rom, onEject }) {
     flash(ok ? "State loaded" : "State is from a different build");
   };
 
+  // Re-seed the cartridge from a .sav file. Worth having even before cloud
+  // sync exists: browser storage is evictable, and this is how a save moves
+  // between two devices in the meantime.
+  const importSave = async (file) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const romPtr = intoWasm(core, rom);
+    const savePtr = intoWasm(core, bytes);
+    const ok = core.gba_init(romPtr, rom.length, savePtr, bytes.length);
+    core.gba_free(savePtr, bytes.length);
+    core.gba_free(romPtr, rom.length);
+    if (!ok) return flash("That file was refused");
+    await dbPut(`sav:${gameCodeOf(core)}`, bytes);
+    flash("Save imported");
+  };
+
   const exportSave = async () => {
     const length = core.gba_read_save();
     const save = readTransfer(core, length);
@@ -477,6 +492,19 @@ function Player({ core, rom, onEject }) {
         <Button onClick={saveState}>Save state</Button>
         <Button onClick={loadState}>Load state</Button>
         <Button onClick={exportSave}>Export .sav</Button>
+        <label style={{ ...panel, padding: "10px 14px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          <input
+            type="file"
+            accept=".sav,application/octet-stream"
+            style={{ display: "none" }}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) importSave(file);
+              event.target.value = "";
+            }}
+          />
+          Import .sav
+        </label>
       </div>
 
       <Controls onDown={press} onUp={release} />
