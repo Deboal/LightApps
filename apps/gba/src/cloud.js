@@ -69,48 +69,73 @@ export function saveKey(gameCode, romSha) {
   return `${gameCode}-${romSha.slice(0, 12)}`;
 }
 
+// app_data's primary key is (app, collection, doc_id) -- global, with no user
+// column in it. Two accounts holding the same cartridge would collide on an
+// identical doc_id: the second insert fails the primary key rather than being
+// hidden by row-level security, which reads as a phantom conflict. Every
+// doc_id is therefore prefixed with the owner.
+const docId = (uid, id) => `${uid}:${id}`;
+const stripOwner = (id) => id.slice(id.indexOf(":") + 1);
+
+/** Turn a storage error into something a person can act on. */
+function explain(error) {
+  const message = error?.message || String(error);
+  if (/bucket not found/i.test(message)) {
+    return new Error("The 'gba' storage bucket is missing — run schema-gba.sql in the Supabase SQL editor.");
+  }
+  if (/row-level security|violates policy/i.test(message)) {
+    return new Error("The storage policy rejected this — check that schema-gba.sql ran fully.");
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 // -- ROMs ----------------------------------------------------------------
 
 export async function listRoms() {
-  return db.list("roms");
+  const uid = await userId();
+  const rows = await db.list("roms");
+  return rows
+    .filter((row) => row.id.startsWith(`${uid}:`))
+    .map((row) => ({ ...row, id: stripOwner(row.id) }));
 }
 
 /** Upload a ROM unless its hash is already on the server. Returns metadata. */
-export async function putRom(bytes, meta) {
+export async function putRom(bytes, meta = {}) {
   const uid = await userId();
   const sha = meta.sha || (await sha256Hex(bytes));
   const path = `${uid}/roms/${sha}.gba`;
 
-  const existing = await db.get("roms", sha);
-  if (!existing) {
+  const existing = await db.get("roms", docId(uid, sha));
+  if (!existing || meta.force) {
     const { error } = await client()
       .storage.from(BUCKET)
       .upload(path, new Blob([bytes], { type: "application/octet-stream" }), {
         upsert: true,
         contentType: "application/octet-stream",
       });
-    if (error) throw error;
+    if (error) throw explain(error);
   }
 
   const record = {
-    title: meta.title || "",
-    gameCode: meta.gameCode || "",
+    title: meta.title || existing?.title || "",
+    gameCode: meta.gameCode || existing?.gameCode || "",
     bytes: bytes.length,
     path,
     addedAt: existing?.addedAt || new Date().toISOString(),
   };
-  await db.set("roms", record, sha);
+  await db.set("roms", record, docId(uid, sha));
   return { id: sha, ...record };
 }
 
 export async function getRom(path) {
   const { data, error } = await client().storage.from(BUCKET).download(path);
-  if (error) throw error;
+  if (error) throw explain(error);
   return new Uint8Array(await data.arrayBuffer());
 }
 
 export async function forgetRom(sha, path) {
-  await db.remove("roms", sha);
+  const uid = await userId();
+  await db.remove("roms", docId(uid, sha));
   if (path) await client().storage.from(BUCKET).remove([path]);
 }
 
@@ -119,14 +144,15 @@ export async function forgetRom(sha, path) {
 /** The server's current view of one cartridge's save, or null if it has
  *  never been pushed. */
 export async function saveMeta(key) {
-  return db.get("saves", key);
+  const uid = await userId();
+  return db.get("saves", docId(uid, key));
 }
 
 export async function pullSave(key) {
   const meta = await saveMeta(key);
   if (!meta) return null;
   const { data, error } = await client().storage.from(BUCKET).download(meta.path);
-  if (error) throw error;
+  if (error) throw explain(error);
   return { meta, bytes: new Uint8Array(await data.arrayBuffer()) };
 }
 
@@ -139,7 +165,18 @@ export async function pullSave(key) {
  */
 export async function pushSave(key, bytes, parentVersion) {
   const uid = await userId();
-  const version = parentVersion + 1;
+  const table = client().from("app_data");
+  const id = docId(uid, key);
+
+  // Read first only to choose the branch. The write itself is what makes this
+  // safe: an insert is guarded by the primary key, an update by the version
+  // filter, so a racing client still loses cleanly.
+  const remote = await saveMeta(key);
+  if (remote && remote.version !== parentVersion) {
+    return { conflict: true, meta: remote };
+  }
+
+  const version = (remote?.version ?? 0) + 1;
   const path = `${uid}/saves/${key}/v${version}.sav`;
 
   const { error: uploadError } = await client()
@@ -148,7 +185,7 @@ export async function pushSave(key, bytes, parentVersion) {
       upsert: true,
       contentType: "application/octet-stream",
     });
-  if (uploadError) throw uploadError;
+  if (uploadError) throw explain(uploadError);
 
   const record = {
     version,
@@ -157,20 +194,18 @@ export async function pushSave(key, bytes, parentVersion) {
     device: deviceId(),
     updatedAt: new Date().toISOString(),
   };
-
-  const table = client().from("app_data");
   const row = {
     app: APP,
     collection: "saves",
-    doc_id: key,
+    doc_id: id,
     data: record,
     visibility: "private",
     updated_at: record.updatedAt,
   };
 
-  if (parentVersion === 0) {
+  if (!remote) {
     // First push for this cartridge. A plain insert races correctly: the
-    // (app, collection, doc_id) unique constraint rejects the loser.
+    // primary key rejects the loser.
     const { error } = await table.insert(row);
     if (error) {
       if (error.code === "23505") return { conflict: true, meta: await saveMeta(key) };
@@ -183,7 +218,7 @@ export async function pushSave(key, bytes, parentVersion) {
       .update(row)
       .eq("app", APP)
       .eq("collection", "saves")
-      .eq("doc_id", key)
+      .eq("doc_id", id)
       .eq("data->>version", String(parentVersion))
       .select("doc_id");
     if (error) throw error;
@@ -216,7 +251,7 @@ export async function saveHistory(key) {
   const { data, error } = await client()
     .storage.from(BUCKET)
     .list(`${uid}/saves/${key}`, { limit: 100, sortBy: { column: "name", order: "desc" } });
-  if (error) throw error;
+  if (error) throw explain(error);
   return (data || [])
     .map((entry) => ({
       version: Number(entry.name.replace(/^v|\.sav$/g, "")),
@@ -230,6 +265,6 @@ export async function saveHistory(key) {
 
 export async function getBlob(path) {
   const { data, error } = await client().storage.from(BUCKET).download(path);
-  if (error) throw error;
+  if (error) throw explain(error);
   return new Uint8Array(await data.arrayBuffer());
 }
