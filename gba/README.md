@@ -199,7 +199,10 @@ enough to be complacent about the renderer.
 The web shell is a LightApps app at `apps/gba/`. Open `/gba/` on the deployed
 site, pick a `.gba` file, and it runs: canvas, touch controls on a phone,
 keyboard on a desktop (arrows, Z/X for A/B, Enter for Start, Shift for
-Select, A/S for the shoulders), tiered fast-forward and save states.
+Select, A/S for the shoulders), tiered fast-forward and named save states.
+
+It opens to a library rather than dropping straight into the game, because
+the save states are the thing worth seeing first; resuming is one tap.
 
 Storage is local-first. The emulator always reads and writes this browser's
 IndexedDB, so the app works signed out and offline; the cartridge save is
@@ -224,6 +227,13 @@ durable copy:
   before anything changes). Nothing is discarded silently.
 - The last ten versions are retained and restorable from the History button.
   128 KB each; storage is cheap relative to losing a playthrough.
+- **Save states** are named, dated, tagged with the device that took them, and
+  carry the frame that was on screen — so the app opens to a shelf of
+  screenshots you can resume from, on either device. They are gated on the
+  core's state version: a state written by an older build is listed and
+  labelled rather than failing when you click it, because a state encodes the
+  emulator's internal layout and every core change invalidates it. The `.sav`
+  stays the source of truth; states are a convenience.
 
 Run `schema-gba.sql` once in the Supabase SQL editor before signing in. It
 creates a private `gba` bucket whose objects are scoped to the uploader by
