@@ -703,6 +703,26 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const saveTimer = useRef(null);
   const keyRef = useRef("");
 
+  // The signed-in user is read through a ref, never a dependency.
+  //
+  // Supabase re-validates the session whenever the tab regains focus and
+  // hands back a *new* user object each time. Depending on that object made
+  // the boot effect re-run on every focus change, which called gba_init and
+  // restarted the game: tabbing away and back looked like a crash. Nothing
+  // about who is signed in should ever reset the machine.
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  // Which cartridge is actually running, and whether it has finished booting.
+  // Booting is guarded on this rather than on the effect's dependencies, so a
+  // re-render for *any* reason cannot restart a game in progress. Depending on
+  // the effect deps alone means every future edit to this component is one
+  // stray dependency away from wiping someone's afternoon.
+  const bootedRef = useRef("");
+  const [booted, setBooted] = useState(false);
+
   const flash = useCallback((message) => {
     setNote(message);
     setTimeout(() => setNote(""), 2200);
@@ -733,7 +753,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       core.gba_clear_save_dirty();
 
       const meta = await localMeta(key);
-      if (!user || !cloud.configured) {
+      const account = userRef.current;
+      if (!account || !cloud.configured) {
         await setLocalMeta(key, { ...meta, dirty: true });
         if (manual) flash("Saved locally");
         return;
@@ -763,11 +784,15 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       }
       setSyncing(false);
     },
-    [core, user, readSave, flash]
+    [core, readSave, flash]
   );
 
   // Boot, then reconcile with the server before the game gets far.
   useEffect(() => {
+    if (bootedRef.current === romSha) return;
+    bootedRef.current = romSha;
+    setBooted(false);
+
     let cancelled = false;
     (async () => {
       const romPtr = intoWasm(core, rom);
@@ -781,7 +806,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       let local = (await dbGet(`sav:${key}`)) || (await dbGet(`sav:${gameCode}`));
       let meta = await localMeta(key);
 
-      if (user && cloud.configured) {
+      if (userRef.current && cloud.configured) {
         try {
           const remote = await cloud.pullSave(key);
           if (remote) {
@@ -814,26 +839,41 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       // 16 MB of it, which matters on a phone.
       core.gba_free(romPtr, rom.length);
 
-      // Resuming from a state chosen on the library screen. It goes on last
-      // because it supersedes everything, cartridge save included.
-      if (!cancelled && pendingState) {
-        try {
-          const bytes = await states.load(pendingState);
-          const ptr = intoWasm(core, bytes);
-          core.gba_write_state(ptr, bytes.length);
-          core.gba_free(ptr, bytes.length);
-        } catch (e) {
-          console.error(e);
-        }
-        onStateConsumed?.();
+      if (!cancelled) {
+        setCode(gameCode);
+        setBooted(true);
       }
-      if (!cancelled) setCode(gameCode);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Deliberately keyed on the cartridge alone: booting is about which ROM
+    // is loaded, nothing else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [core, rom, romSha]);
+
+  // A state chosen on the library screen is applied once the machine is up.
+  // It goes on last because it supersedes everything, cartridge save included.
+  useEffect(() => {
+    if (!booted || !pendingState) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const bytes = await states.load(pendingState);
+        if (cancelled) return;
+        const ptr = intoWasm(core, bytes);
+        core.gba_write_state(ptr, bytes.length);
+        core.gba_free(ptr, bytes.length);
+      } catch (e) {
+        console.error(e);
+      }
+      onStateConsumed?.();
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [core, rom, romSha, user]);
+  }, [booted, pendingState?.id]);
 
   // The frame loop. Time is accumulated rather than assuming one animation
   // frame equals one GBA frame, so a 120 Hz display does not run the game at
@@ -952,9 +992,9 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     });
 
   const refreshStates = useCallback(async () => {
-    const all = await states.list(user);
+    const all = await states.list(userRef.current);
     setStateList(all.filter((entry) => entry.key === keyRef.current));
-  }, [user]);
+  }, []);
 
   const openStates = async () => {
     setStateList([]);
@@ -966,7 +1006,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     try {
       const state = readTransfer(core, core.gba_read_state());
       if (!state) return flash("Nothing to save yet");
-      const result = await states.save(user, {
+      const result = await states.save(userRef.current, {
         key: keyRef.current,
         romSha,
         gameCode: code,
@@ -1004,14 +1044,14 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   };
 
   const removeState = async (entry) => {
-    await states.remove(user, entry);
+    await states.remove(userRef.current, entry);
     await refreshStates();
   };
 
   const renameState = async (entry) => {
     const name = window.prompt("Name this state", entry.name);
     if (name === null) return;
-    await states.rename(user, entry, name.trim() || entry.name);
+    await states.rename(userRef.current, entry, name.trim() || entry.name);
     await refreshStates();
   };
 
@@ -1232,6 +1272,10 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
 function App() {
   const user = useAuth();
+  // Effects key on the account id, never the user object: Supabase hands back
+  // a fresh object every time it re-validates the session, which happens on
+  // every tab focus.
+  const accountId = user?.id ?? null;
   const [core, setCore] = useState(null);
   const [rom, setRom] = useState(null);
   const [romSha, setRomSha] = useState("");
@@ -1284,7 +1328,8 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
 
   // Back-fill on sign-in. Uploading only at the moment a file is picked meant
   // a cartridge loaded before signing in was never sent anywhere, and the
@@ -1313,7 +1358,8 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [user, rom, romSha, library.loaded, library.roms]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, rom, romSha, library.loaded, library.roms]);
 
   const backUpNow = async () => {
     if (!rom || !romSha) return;
@@ -1337,7 +1383,10 @@ function App() {
     } catch (e) {
       console.error(e);
     }
-  }, [user]);
+    // Keyed on the id: a refreshed session is the same account, and refetching
+    // on every focus change is noise.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
 
   useEffect(() => {
     if (!playing) refreshStates();
