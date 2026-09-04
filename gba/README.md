@@ -42,7 +42,7 @@ presses. That covers the exit criteria for phases 4 and 5.
 | 3 — BIOS | Complete enough. A real BIOS image loads and runs; without one, a synthesized image supplies the vectors and 25 SWIs are serviced in software |
 | 4 — PPU | Modes 0–5, four backgrounds, affine, bitmap, priority compositing. No windows, blending or mosaic yet |
 | 5 — Sprites, DMA, timers, IRQ | All four DMA channels with their timing modes, four timers with cascade, the interrupt controller, 128 sprites regular and affine |
-| 6 — Flash save | Command state machine complete and unit-tested, including bank switching and chip ID. Not yet exercised by an in-game save |
+| 6 — Flash save | **Complete.** FireRed saved in-game, the `.sav` was dumped, a fresh boot with it offers CONTINUE with the right name and playtime |
 | 7 — Save states | Explicit versioned serialization, refuses a mismatched version |
 
 Reproduce the milestones (the ROM is yours; nothing here ships one):
@@ -97,6 +97,21 @@ decompressors.
 **Verified by the game:** FireRed boots to its title screen and into
 gameplay dialogue, and two 600-frame runs of it serialize to identical
 bytes — 40M instructions of real ARM and Thumb code, bit-identical.
+
+The save round trip is proven end to end, which is the one thing unit tests
+could not settle. Scripted input drives the game through its intro to an
+in-game save; the cartridge flash is then dumped and a fresh emulator booted
+with it, and the game offers CONTINUE with the right player name and
+playtime:
+
+```sh
+cargo run --release -p gba-headless -- FireRed.gba --frames 51000 \
+    --mash-from 1900 --mash-until 42000 \
+    --script "1850:START,42200:START,42500:DOWN,42800:A,43200:A,43600:A,44000:A,44400:A,44800:START,45100:DOWN,45400:A,45800:A,46200:A,46600:A,48200:DOWN,48500:A,48900:A,49500:A,50100:A,50600:A" \
+    --save-out firered.sav
+cargo run --release -p gba-headless -- FireRed.gba --save-in firered.sav \
+    --frames 2100 --script "1850:START" --screenshot continue.png
+```
 
 **Not verified:** jsmolka's `gba-tests` are the real oracle for phase 1 and
 they could not be fetched in the environment this was built in — the network
@@ -224,12 +239,9 @@ like any other app.
 1. **Windows and blending.** Deferred by the plan, and the plan was right to
    defer them, but FireRed's battle transitions and menus use both. This is
    the next thing that will look wrong.
-2. **Prove a save round-trips in-game.** The flash state machine is
-   unit-tested but no real save has been written by the game yet. Until that
-   works, this cannot hold a playthrough — which is the whole point.
-3. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
+2. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
    weak instruction-level oracle; it exercises the paths Pokémon happens to
    use and nothing else.
-4. **Cloud save sync.** The web shell exists; saves are local to one browser.
+3. **Cloud save sync.** The web shell exists; saves are local to one browser.
    Section 4 of the handoff is the design, and `shared/store.js` is most of
    the implementation.
