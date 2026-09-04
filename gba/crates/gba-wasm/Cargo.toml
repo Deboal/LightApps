@@ -1,0 +1,13 @@
+[package]
+name = "gba-wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# No wasm-bindgen. The interface is a handful of C-ABI functions and a shared
+# linear memory, which needs no post-processing step and no build tooling
+# beyond cargo -- so the .wasm can be produced anywhere and committed.
+[dependencies]
+gba-core = { path = "../gba-core" }

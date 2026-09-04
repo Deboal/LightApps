@@ -28,6 +28,7 @@ fn main() -> ExitCode {
     let mut watch: Option<u32> = None;
     let mut script: Vec<(u64, u16)> = Vec::new();
     let mut mash_from: Option<u64> = None;
+    let mut mash_until: Option<u64> = None;
     let mut determinism = false;
     let mut screenshot: Option<String> = None;
     let mut scale: usize = 3;
@@ -40,6 +41,7 @@ fn main() -> ExitCode {
             "--determinism" => determinism = true,
             "--script" => script = args.next().map(|v| parse_script(&v)).unwrap_or_default(),
             "--mash-from" => mash_from = args.next().and_then(|v| v.parse().ok()),
+            "--mash-until" => mash_until = args.next().and_then(|v| v.parse().ok()),
             "--watch" => {
                 watch = args
                     .next()
@@ -71,25 +73,19 @@ fn main() -> ExitCode {
         }
     };
 
+    let options = Run {
+        frames: frames.unwrap_or(600),
+        steps,
+        watch,
+        script,
+        mash_from,
+        mash_until,
+    };
+
     if determinism {
-        let a = run(
-            &rom,
-            bios.as_deref(),
-            frames.unwrap_or(600),
-            steps,
-            None,
-            &script,
-            mash_from,
-        );
-        let b = run(
-            &rom,
-            bios.as_deref(),
-            frames.unwrap_or(600),
-            steps,
-            None,
-            &script,
-            mash_from,
-        );
+        let quiet = Run { watch: None, ..options };
+        let a = run(&rom, bios.as_deref(), &quiet);
+        let b = run(&rom, bios.as_deref(), &quiet);
         if a.state_hash == b.state_hash {
             println!("deterministic: two runs agree (hash {:016x})", a.state_hash);
             return ExitCode::SUCCESS;
@@ -101,15 +97,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let outcome = run(
-        &rom,
-        bios.as_deref(),
-        frames.unwrap_or(600),
-        steps,
-        watch,
-        &script,
-        mash_from,
-    );
+    let outcome = run(&rom, bios.as_deref(), &options);
     print_report(&rom, &outcome);
 
     if let Some(path) = screenshot {
@@ -153,6 +141,8 @@ struct Outcome {
     io: Vec<u8>,
     timers: Vec<(u16, u16, bool)>,
     trail: Vec<Trace>,
+    save_len: usize,
+    save_dirty: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -164,15 +154,22 @@ struct Trace {
     cycles: u64,
 }
 
-fn run(
-    rom: &[u8],
-    bios: Option<&[u8]>,
+/// Everything that shapes a run, gathered so the signature stays readable as
+/// the harness grows.
+#[derive(Default)]
+struct Run {
     frames: u64,
     steps: Option<u64>,
     watch: Option<u32>,
-    script: &[(u64, u16)],
+    script: Vec<(u64, u16)>,
     mash_from: Option<u64>,
-) -> Outcome {
+    mash_until: Option<u64>,
+}
+
+fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
+    let Run { frames, steps, watch, script, mash_from, mash_until } = options;
+    let (frames, steps, watch, mash_from, mash_until) =
+        (*frames, *steps, *watch, *mash_from, *mash_until);
     let mut emu = Emulator::new(rom, bios, None);
     let budget = steps.unwrap_or(frames * gba_core::CYCLES_PER_FRAME);
 
@@ -242,7 +239,8 @@ fn run(
                 }
             }
             if let Some(start) = mash_from {
-                if frame >= start && (frame - start) % 24 < 6 {
+                let stop = mash_until.unwrap_or(u64::MAX);
+                if frame >= start && frame < stop && (frame - start) % 24 < 6 {
                     keys |= KeyState::A;
                 }
             }
@@ -282,6 +280,8 @@ fn run(
             .map(|t| (t.counter, t.control, t.enabled))
             .collect(),
         trail,
+        save_len: emu.save_data().map(|s| s.len()).unwrap_or(0),
+        save_dirty: emu.save_dirty(),
     }
 }
 
@@ -316,6 +316,15 @@ fn print_report(rom: &[u8], outcome: &Outcome) {
     );
     println!("state hash {:016x}", outcome.state_hash);
     println!("timers (count/ctrl/on) {:04x?}", outcome.timers);
+    println!(
+        "cartridge save: {} bytes, {}",
+        outcome.save_len,
+        if outcome.save_dirty {
+            "written by the game"
+        } else {
+            "untouched"
+        }
+    );
     println!(
         "IE {:04x} IF {:04x} IME {:04x}",
         u16::from_le_bytes([outcome.io[0x200], outcome.io[0x201]]),
