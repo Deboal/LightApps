@@ -201,10 +201,33 @@ site, pick a `.gba` file, and it runs: canvas, touch controls on a phone,
 keyboard on a desktop (arrows, Z/X for A/B, Enter for Start, Shift for
 Select, A/S for the shoulders), tiered fast-forward and save states.
 
-The ROM and the save live in that browser's IndexedDB and are never uploaded.
-The cartridge save is written a few seconds after the game stops touching
-flash, and again on `visibilitychange` — the last reliable moment before iOS
-kills a backgrounded tab.
+Storage is local-first. The emulator always reads and writes this browser's
+IndexedDB, so the app works signed out and offline; the cartridge save is
+written a few seconds after the game stops touching flash, and again on
+`visibilitychange` — the last reliable moment before iOS kills a backgrounded
+tab.
+
+Signing in (optional, magic link, shared with the rest of the hub) adds a
+durable copy:
+
+- **Cartridges** are uploaded once, keyed by SHA-256, so a second device never
+  needs the file again. This is a deliberate departure from the plan's "the
+  server stores saves, not ROMs": the bucket is private and scoped to one
+  account, and the alternative is re-picking a 16 MB file every time a browser
+  evicts its storage.
+- **Saves** carry a monotonic version and are pushed with a compare-and-swap,
+  never last-write-wins on a timestamp — device clocks disagree, and "later"
+  is not "correct". A losing push returns the server's copy and asks: keep
+  mine, keep theirs, or keep both (which hands you the other side as a file
+  before anything changes). Nothing is discarded silently.
+- The last ten versions are retained and restorable from the History button.
+  128 KB each; storage is cheap relative to losing a playthrough.
+
+Run `schema-gba.sql` once in the Supabase SQL editor before signing in. It
+creates a private `gba` bucket whose objects are scoped to the uploader by
+path, and a database trigger that refuses a save whose version does not
+advance — so the compare-and-swap is an invariant rather than a convention the
+client is trusted to follow.
 
 Netlify does not build Rust, so the `.wasm` is a committed artifact. Rebuild
 it whenever the core changes:
@@ -242,6 +265,7 @@ like any other app.
 2. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
    weak instruction-level oracle; it exercises the paths Pokémon happens to
    use and nothing else.
-3. **Cloud save sync.** The web shell exists; saves are local to one browser.
-   Section 4 of the handoff is the design, and `shared/store.js` is most of
-   the implementation.
+3. **Exercise the sync against the live backend.** Cloud saves are built, but
+   the conflict path has never run against a real Supabase project: this
+   container cannot reach one, and magic-link sign-in needs an inbox. Two
+   devices editing the same save is the case to try first.
