@@ -9,6 +9,7 @@ pub mod flash;
 
 use crate::bus::Bus;
 use crate::dma::{self, DmaChannel};
+use crate::link::{self, Link};
 use crate::ppu::{self, Ppu};
 use crate::timers::{self, Timer};
 use cart::Cartridge;
@@ -40,6 +41,9 @@ pub struct Memory {
     pub ppu: Ppu,
     pub dma: [DmaChannel; 4],
     pub timers: [Timer; 4],
+    /// Serial link state. Inert unless a driver wires several machines
+    /// together; a lone machine reads every remote slot as disconnected.
+    pub link: Link,
 
     /// Elapsed cycles. The only notion of time the core has, and it advances
     /// solely through instruction execution.
@@ -69,6 +73,7 @@ impl Memory {
             ppu: Ppu::default(),
             dma: [DmaChannel::default(); 4],
             timers: [Timer::default(); 4],
+            link: Link::default(),
             cycles: 0,
             bios_latch: 0,
             in_bios: false,
@@ -76,6 +81,10 @@ impl Memory {
         };
         // KEYINPUT is active-low: with nothing pressed every bit reads high.
         memory.write_io16_raw(0x130, 0x03FF);
+        // An empty cable reads as four absent units.
+        for slot in 0..4 {
+            memory.write_io16_raw(link::SIOMULTI0 + slot * 2, link::DISCONNECTED);
+        }
         memory
     }
 
@@ -98,6 +107,11 @@ impl Memory {
     }
 
     fn read_io8(&self, offset: u32) -> u8 {
+        // SIOCNT reports the cable's shape, not what the game last wrote.
+        if offset == link::SIOCNT || offset == link::SIOCNT + 1 {
+            let value = self.siocnt();
+            return (value >> (8 * (offset - link::SIOCNT))) as u8;
+        }
         // A timer's counter and its reload value share an address: reads see
         // the live count, writes set the reload.
         if (0x100..0x110).contains(&offset) && offset % 4 < 2 {
@@ -128,6 +142,23 @@ impl Memory {
                 self.io[4] = (self.io[4] & 0x07) | (value & !0x07);
                 return;
             }
+            // A write to SIOCNT can start a transfer, and the read-only status
+            // bits must survive it.
+            link::SIOCNT | 0x129 => {
+                self.io[offset as usize] = value;
+                let control = self.read_raw16(link::SIOCNT);
+                let rcnt = self.read_raw16(link::RCNT);
+                if link::multiplayer_mode(control, rcnt)
+                    && self.link.is_parent()
+                    && control & 0x0080 != 0
+                    && self.link.phase == link::Phase::Idle
+                {
+                    self.link.phase = link::Phase::Requested;
+                }
+                return;
+            }
+            // The received-word registers are filled by the cable.
+            0x120..=0x127 => return,
             0x100..=0x10F => {
                 let index = ((offset - 0x100) / 4) as usize;
                 self.io[offset as usize] = value;
@@ -195,6 +226,56 @@ impl Memory {
         }
         if let Some(slot) = self.io.get_mut(offset as usize + 1) {
             *slot = (value >> 8) as u8;
+        }
+    }
+
+    /// SIOCNT as the hardware presents it: the game's own bits, overlaid with
+    /// the multiplayer id, the parent/child terminal, and whether every unit
+    /// is ready.
+    pub fn siocnt(&self) -> u16 {
+        let mut value = self.read_raw16(link::SIOCNT) & !0x007C;
+        value |= (self.link.id as u16) << 4;
+        if !self.link.is_parent() {
+            value |= 1 << 2; // SI: this unit is a child
+        }
+        if self.link.connected() {
+            value |= 1 << 3; // SD: all units present
+        }
+        if self.link.phase != link::Phase::Idle {
+            value |= 0x0080;
+        } else {
+            value &= !0x0080;
+        }
+        value
+    }
+
+    /// The word this unit will contribute to the next transfer.
+    pub fn link_outgoing(&self) -> u16 {
+        self.read_raw16(link::SIOMLT_SEND)
+    }
+
+    /// Deliver the four exchanged words and finish the transfer.
+    /// The duration comes from the parent, because the parent drives the
+    /// clock; a child's own baud setting does not change how long the transfer
+    /// takes.
+    pub fn link_deliver(&mut self, words: [u16; 4], duration: u64) {
+        for (slot, word) in words.iter().enumerate() {
+            self.write_io16_raw(link::SIOMULTI0 + slot as u32 * 2, *word);
+        }
+        self.link.phase = link::Phase::Active;
+        self.link.finish_at = self.cycles + duration;
+    }
+
+    /// Called each quantum: completes an active transfer once its cycles have
+    /// elapsed, raising the serial interrupt if the game asked for it.
+    pub fn link_tick(&mut self) {
+        if self.link.phase == link::Phase::Active && self.cycles >= self.link.finish_at {
+            self.link.phase = link::Phase::Idle;
+            let control = self.read_raw16(link::SIOCNT);
+            self.write_io16_raw(link::SIOCNT, control & !0x0080);
+            if control & 0x4000 != 0 {
+                self.raise_irq(crate::irq::SERIAL);
+            }
         }
     }
 

@@ -14,9 +14,11 @@
 
 pub mod bios;
 pub mod bus;
+pub mod cable;
 pub mod cpu;
 pub mod dma;
 pub mod irq;
+pub mod link;
 pub mod mem;
 pub mod ppu;
 pub mod state;
@@ -93,11 +95,17 @@ impl Emulator {
         }
     }
 
+    /// Latch the buttons for the coming frame. Input is sampled once, at a
+    /// frame boundary, and never polled from inside the core.
+    pub fn set_input(&mut self, input: KeyState) {
+        // KEYINPUT lives at 0x0400_0130 and is active-low.
+        self.mem.write_io16_raw(0x130, input.to_keyinput());
+    }
+
     /// Run exactly one frame's worth of cycles with `input` sampled once, at
     /// the frame boundary. The core never polls the host for input.
     pub fn run_frame(&mut self, input: KeyState) {
-        // KEYINPUT lives at 0x0400_0130 and is active-low.
-        self.mem.write_io16_raw(0x130, input.to_keyinput());
+        self.set_input(input);
 
         let target = self.mem.cycles + CYCLES_PER_FRAME - self.cycle_debt;
         while self.mem.cycles < target {
