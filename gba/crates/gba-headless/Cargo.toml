@@ -1,0 +1,7 @@
+[package]
+name = "gba-headless"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gba-core = { path = "../gba-core" }
