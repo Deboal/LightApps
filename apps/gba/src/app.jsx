@@ -132,6 +132,12 @@ function gameCodeOf(core) {
   return code || "UNKNOWN";
 }
 
+/** Title and game code straight out of the cartridge header. */
+function headerOf(bytes) {
+  const text = (from, to) => new TextDecoder().decode(bytes.slice(from, to)).replace(/\0+$/, "").trim();
+  return { title: text(0xa0, 0xac), gameCode: text(0xac, 0xb0) };
+}
+
 function download(bytes, name) {
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
   const link = document.createElement("a");
@@ -343,7 +349,7 @@ function Library({ roms, onPlay, onForget, busy }) {
   );
 }
 
-function Picker({ onPick, error, busy, user, roms, onPlayCloud, onForgetCloud, onSignOut }) {
+function Picker({ onPick, error, busy, user, library, backupError, onPlayCloud, onForgetCloud, onSignOut }) {
   return (
     <div style={{ padding: 24, maxWidth: 560, margin: "0 auto" }}>
       <h1 style={{ fontSize: 24, margin: "8px 0 4px" }}>Game Boy Advance</h1>
@@ -369,9 +375,17 @@ function Picker({ onPick, error, busy, user, roms, onPlayCloud, onForgetCloud, o
       {error && <p style={{ color: "var(--accent2)", fontSize: 14 }}>{error}</p>}
 
       {cloud.configured && !user && <div style={{ marginTop: 14 }}><SignIn /></div>}
+      {backupError && <p style={{ color: "var(--accent2)", fontSize: 13, lineHeight: 1.5 }}>{backupError}</p>}
       {user && (
         <>
-          <Library roms={roms} onPlay={onPlayCloud} onForget={onForgetCloud} busy={busy} />
+          {!library.loaded && <p style={{ color: "var(--dim)", fontSize: 13 }}>Loading your cartridges…</p>}
+          {library.loaded && library.roms.length === 0 && (
+            <p style={{ color: "var(--dim)", fontSize: 13, lineHeight: 1.5 }}>
+              No cartridges on the server yet. Choose one above and it uploads
+              automatically — then it will be here on your other devices.
+            </p>
+          )}
+          <Library roms={library.roms} onPlay={onPlayCloud} onForget={onForgetCloud} busy={busy} />
           <div style={{ color: "var(--dim)", fontSize: 12, marginTop: 12 }}>
             Signed in as {user.email}{" "}
             <button onClick={onSignOut} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 12 }}>
@@ -470,7 +484,7 @@ function History({ versions, current, onRestore, onClose }) {
 // Player
 // ----------------------------------------------------------------------------
 
-function Player({ core, rom, romSha, user, onEject }) {
+function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEject }) {
   const canvasRef = useRef(null);
   const keysRef = useRef(0);
   const speedRef = useRef(1);
@@ -523,12 +537,15 @@ function Player({ core, rom, romSha, user, onEject }) {
       setSyncing(true);
       try {
         const result = await cloud.pushSave(key, save, meta.version);
-        if (result.conflict) {
+        if (result.conflict && result.meta) {
           setConflict({
             mine: { version: meta.version + 1, bytes: save.length, save },
             theirs: result.meta,
           });
           await setLocalMeta(key, { ...meta, dirty: true });
+        } else if (result.conflict) {
+          await setLocalMeta(key, { ...meta, dirty: true });
+          flash("Sync raced — try Sync now");
         } else {
           await setLocalMeta(key, { version: result.meta.version, dirty: false });
           flash(`Synced v${result.meta.version}`);
@@ -810,14 +827,24 @@ function Player({ core, rom, romSha, user, onEject }) {
     setSyncing(false);
   };
 
-  const syncing_label = syncing ? "syncing…" : user ? "synced" : "local only";
+  const status = syncing
+    ? "syncing…"
+    : !user
+      ? "local only"
+      : backup === "uploading"
+        ? "uploading cartridge…"
+        : backup === "saved"
+          ? "backed up"
+          : backup === "error"
+            ? "not backed up"
+            : "synced";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh", paddingTop: "env(safe-area-inset-top)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", fontSize: 13, color: "var(--dim)" }}>
         <strong style={{ color: "var(--text)" }}>{code || "…"}</strong>
         <span>{fps} fps</span>
-        <span>{syncing_label}</span>
+        <span style={{ color: backup === "error" ? "var(--accent2)" : undefined }}>{status}</span>
         {note && <span style={{ color: "var(--accent)" }}>{note}</span>}
         <span style={{ flex: 1 }} />
         <button onClick={onEject} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 13 }}>
@@ -853,6 +880,11 @@ function Player({ core, rom, romSha, user, onEject }) {
             <Button onClick={openHistory} disabled={syncing}>
               History
             </Button>
+            {backup !== "saved" && (
+              <Button onClick={onBackup} tone="accent" disabled={backup === "uploading"}>
+                {backup === "uploading" ? "Uploading…" : "Back up cartridge"}
+              </Button>
+            )}
           </>
         )}
         <Button onClick={exportSave}>Export .sav</Button>
@@ -872,6 +904,10 @@ function Player({ core, rom, romSha, user, onEject }) {
       </div>
 
       <Controls onDown={press} onUp={release} />
+
+      {backupError && (
+        <p style={{ color: "var(--accent2)", fontSize: 13, padding: "0 16px", lineHeight: 1.5 }}>{backupError}</p>
+      )}
 
       <p style={{ color: "var(--dim)", fontSize: 12, padding: "0 16px 20px", lineHeight: 1.5 }}>
         {user
@@ -908,7 +944,9 @@ function App() {
   const [core, setCore] = useState(null);
   const [rom, setRom] = useState(null);
   const [romSha, setRomSha] = useState("");
-  const [roms, setRoms] = useState([]);
+  const [library, setLibrary] = useState({ loaded: false, roms: [] });
+  const [backup, setBackup] = useState("unknown");
+  const [backupError, setBackupError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
 
@@ -933,9 +971,67 @@ function App() {
   // The cartridge library follows the account, so it appears on sign-in and
   // clears on sign-out.
   useEffect(() => {
-    if (!user || !cloud.configured) return setRoms([]);
-    cloud.listRoms().then(setRoms).catch(console.error);
+    if (!user || !cloud.configured) {
+      setLibrary({ loaded: false, roms: [] });
+      setBackup("unknown");
+      return;
+    }
+    let cancelled = false;
+    cloud
+      .listRoms()
+      .then((roms) => !cancelled && setLibrary({ loaded: true, roms }))
+      .catch((e) => {
+        if (cancelled) return;
+        setLibrary({ loaded: true, roms: [] });
+        setBackupError(e.message || String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
+
+  // Back-fill on sign-in. Uploading only at the moment a file is picked meant
+  // a cartridge loaded before signing in was never sent anywhere, and the
+  // second device found an empty library with nothing to explain why.
+  useEffect(() => {
+    if (!user || !cloud.configured || !rom || !romSha || !library.loaded) return;
+    if (library.roms.some((entry) => entry.id === romSha)) {
+      setBackup("saved");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setBackup("uploading");
+      setBackupError("");
+      try {
+        await cloud.putRom(rom, { sha: romSha, ...headerOf(rom) });
+        if (cancelled) return;
+        setLibrary({ loaded: true, roms: await cloud.listRoms() });
+        setBackup("saved");
+      } catch (e) {
+        if (cancelled) return;
+        setBackup("error");
+        setBackupError(e.message || String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, rom, romSha, library.loaded, library.roms]);
+
+  const backUpNow = async () => {
+    if (!rom || !romSha) return;
+    setBackup("uploading");
+    setBackupError("");
+    try {
+      await cloud.putRom(rom, { sha: romSha, force: true, ...headerOf(rom) });
+      setLibrary({ loaded: true, roms: await cloud.listRoms() });
+      setBackup("saved");
+    } catch (e) {
+      setBackup("error");
+      setBackupError(e.message || String(e));
+    }
+  };
 
   const load = async (bytes) => {
     const sha = await cloud.sha256Hex(bytes);
@@ -954,22 +1050,9 @@ function App() {
       setBusy(false);
       return setError("That file is too small to be a GBA ROM.");
     }
-    const sha = await load(bytes);
-
-    // Upload it once, keyed by content, so a second device never needs the
-    // file again. This is a deliberate departure from "the server stores
-    // saves, not ROMs": the bucket is private and scoped to one account, and
-    // the alternative is re-picking a 16 MB file every time a browser evicts.
-    if (user && cloud.configured) {
-      try {
-        const title = new TextDecoder().decode(bytes.slice(0xa0, 0xac)).replace(/\0+$/, "").trim();
-        const gameCode = new TextDecoder().decode(bytes.slice(0xac, 0xb0));
-        await cloud.putRom(bytes, { sha, title, gameCode });
-        setRoms(await cloud.listRoms());
-      } catch (e) {
-        setError("Loaded, but the upload failed: " + (e.message || e));
-      }
-    }
+    await load(bytes);
+    // Uploading is handled by the back-fill effect, which covers this path and
+    // the sign-in-afterwards path with one piece of logic.
     setBusy(false);
   };
 
@@ -986,7 +1069,8 @@ function App() {
 
   const forgetCloud = async (entry) => {
     await cloud.forgetRom(entry.id, entry.path);
-    setRoms(await cloud.listRoms());
+    setLibrary({ loaded: true, roms: await cloud.listRoms() });
+    if (entry.id === romSha) setBackup("unknown");
   };
 
   const eject = () => {
@@ -1010,14 +1094,26 @@ function App() {
         error={error}
         busy={busy}
         user={user || null}
-        roms={roms}
+        library={library}
+        backupError={backupError}
         onPlayCloud={playCloud}
         onForgetCloud={forgetCloud}
         onSignOut={signOut}
       />
     );
   }
-  return <Player core={core} rom={rom} romSha={romSha} user={user || null} onEject={eject} />;
+  return (
+    <Player
+      core={core}
+      rom={rom}
+      romSha={romSha}
+      user={user || null}
+      backup={backup}
+      backupError={backupError}
+      onBackup={backUpNow}
+      onEject={eject}
+    />
+  );
 }
 
 createRoot(document.getElementById("root")).render(<App />);

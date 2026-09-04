@@ -211,7 +211,9 @@ Signing in (optional, magic link, shared with the rest of the hub) adds a
 durable copy:
 
 - **Cartridges** are uploaded once, keyed by SHA-256, so a second device never
-  needs the file again. This is a deliberate departure from the plan's "the
+  needs the file again. A cartridge already loaded when you sign in is
+  back-filled, and the header shows whether the one you are playing is backed
+  up yet. This is a deliberate departure from the plan's "the
   server stores saves, not ROMs": the bucket is private and scoped to one
   account, and the alternative is re-picking a 16 MB file every time a browser
   evicts its storage.
