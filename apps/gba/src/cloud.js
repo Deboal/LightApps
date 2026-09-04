@@ -1,0 +1,235 @@
+// cloud.js — the account-backed half of the emulator's storage.
+//
+// The local IndexedDB copy stays the thing the emulator reads and writes.
+// This layer makes a copy durable and portable: ROMs are uploaded once and
+// keyed by content hash, saves are versioned and synced.
+//
+// Two rules shape the whole design.
+//
+// 1. Conflict resolution never uses timestamps. Device clocks disagree, and
+//    the semantics are wrong regardless: "later" is not "correct". Every save
+//    carries a monotonic version, and a push is a compare-and-swap against the
+//    version the client last saw. A losing push returns the remote copy and
+//    the user chooses; nothing is discarded silently.
+// 2. Nothing here is public. Blobs live in a private bucket under the user's
+//    own id, and the shared `hub-files` bucket is deliberately not used.
+
+import { sb, configured } from "../../../shared/client.js";
+import { store } from "../../../shared/store.js";
+
+const BUCKET = "gba";
+const APP = "gba";
+/** How many past versions of a save to keep. 128 KB each; storage is cheap
+ *  relative to losing a playthrough. */
+const HISTORY = 10;
+
+export { configured };
+
+const db = store(APP);
+
+function client() {
+  if (!sb) throw new Error("Backend not configured");
+  return sb;
+}
+
+async function userId() {
+  const { data } = await client().auth.getUser();
+  const id = data?.user?.id;
+  if (!id) throw new Error("Not signed in");
+  return id;
+}
+
+/** A stable per-browser identifier, so a conflict can say where the other
+ *  side came from. Not a security boundary — just a label. */
+export function deviceId() {
+  const key = "gba:device";
+  let id = null;
+  try {
+    id = localStorage.getItem(key);
+    if (!id) {
+      id = (crypto.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 8);
+      localStorage.setItem(key, id);
+    }
+  } catch {
+    id = "unknown";
+  }
+  return id;
+}
+
+export async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Key a save on the cartridge, not on a filename: the same game dumped
+ *  twice must land on the same slot, and two different games must not. */
+export function saveKey(gameCode, romSha) {
+  return `${gameCode}-${romSha.slice(0, 12)}`;
+}
+
+// -- ROMs ----------------------------------------------------------------
+
+export async function listRoms() {
+  return db.list("roms");
+}
+
+/** Upload a ROM unless its hash is already on the server. Returns metadata. */
+export async function putRom(bytes, meta) {
+  const uid = await userId();
+  const sha = meta.sha || (await sha256Hex(bytes));
+  const path = `${uid}/roms/${sha}.gba`;
+
+  const existing = await db.get("roms", sha);
+  if (!existing) {
+    const { error } = await client()
+      .storage.from(BUCKET)
+      .upload(path, new Blob([bytes], { type: "application/octet-stream" }), {
+        upsert: true,
+        contentType: "application/octet-stream",
+      });
+    if (error) throw error;
+  }
+
+  const record = {
+    title: meta.title || "",
+    gameCode: meta.gameCode || "",
+    bytes: bytes.length,
+    path,
+    addedAt: existing?.addedAt || new Date().toISOString(),
+  };
+  await db.set("roms", record, sha);
+  return { id: sha, ...record };
+}
+
+export async function getRom(path) {
+  const { data, error } = await client().storage.from(BUCKET).download(path);
+  if (error) throw error;
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+export async function forgetRom(sha, path) {
+  await db.remove("roms", sha);
+  if (path) await client().storage.from(BUCKET).remove([path]);
+}
+
+// -- saves ---------------------------------------------------------------
+
+/** The server's current view of one cartridge's save, or null if it has
+ *  never been pushed. */
+export async function saveMeta(key) {
+  return db.get("saves", key);
+}
+
+export async function pullSave(key) {
+  const meta = await saveMeta(key);
+  if (!meta) return null;
+  const { data, error } = await client().storage.from(BUCKET).download(meta.path);
+  if (error) throw error;
+  return { meta, bytes: new Uint8Array(await data.arrayBuffer()) };
+}
+
+/**
+ * Push a save, expecting the server to still be at `parentVersion`.
+ *
+ * Returns `{ ok: true, meta }` when the compare-and-swap succeeded, or
+ * `{ conflict: true, meta }` with the server's current metadata when someone
+ * else moved it on. The caller must not resolve a conflict on its own.
+ */
+export async function pushSave(key, bytes, parentVersion) {
+  const uid = await userId();
+  const version = parentVersion + 1;
+  const path = `${uid}/saves/${key}/v${version}.sav`;
+
+  const { error: uploadError } = await client()
+    .storage.from(BUCKET)
+    .upload(path, new Blob([bytes], { type: "application/octet-stream" }), {
+      upsert: true,
+      contentType: "application/octet-stream",
+    });
+  if (uploadError) throw uploadError;
+
+  const record = {
+    version,
+    path,
+    bytes: bytes.length,
+    device: deviceId(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const table = client().from("app_data");
+  const row = {
+    app: APP,
+    collection: "saves",
+    doc_id: key,
+    data: record,
+    visibility: "private",
+    updated_at: record.updatedAt,
+  };
+
+  if (parentVersion === 0) {
+    // First push for this cartridge. A plain insert races correctly: the
+    // (app, collection, doc_id) unique constraint rejects the loser.
+    const { error } = await table.insert(row);
+    if (error) {
+      if (error.code === "23505") return { conflict: true, meta: await saveMeta(key) };
+      throw error;
+    }
+  } else {
+    // The compare-and-swap. Matching on the stored version means a push built
+    // on a stale read updates zero rows instead of overwriting.
+    const { data, error } = await table
+      .update(row)
+      .eq("app", APP)
+      .eq("collection", "saves")
+      .eq("doc_id", key)
+      .eq("data->>version", String(parentVersion))
+      .select("doc_id");
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return { conflict: true, meta: await saveMeta(key) };
+    }
+  }
+
+  pruneHistory(uid, key, version).catch(() => {});
+  return { ok: true, meta: record };
+}
+
+/** Force the server to a given blob regardless of its current version: the
+ *  "keep mine" branch of a conflict, taken only when the user says so. */
+export async function overwriteSave(key, bytes, remoteVersion) {
+  return pushSave(key, bytes, remoteVersion);
+}
+
+/** Drop the version that just fell out of the retention window. Best effort:
+ *  losing this costs storage, never data. */
+async function pruneHistory(uid, key, version) {
+  const stale = version - HISTORY;
+  if (stale < 1) return;
+  await client().storage.from(BUCKET).remove([`${uid}/saves/${key}/v${stale}.sav`]);
+}
+
+/** Every retained version of a save, newest first. */
+export async function saveHistory(key) {
+  const uid = await userId();
+  const { data, error } = await client()
+    .storage.from(BUCKET)
+    .list(`${uid}/saves/${key}`, { limit: 100, sortBy: { column: "name", order: "desc" } });
+  if (error) throw error;
+  return (data || [])
+    .map((entry) => ({
+      version: Number(entry.name.replace(/^v|\.sav$/g, "")),
+      path: `${uid}/saves/${key}/${entry.name}`,
+      updatedAt: entry.updated_at || entry.created_at,
+      bytes: entry.metadata?.size ?? 0,
+    }))
+    .filter((entry) => Number.isFinite(entry.version))
+    .sort((a, b) => b.version - a.version);
+}
+
+export async function getBlob(path) {
+  const { data, error } = await client().storage.from(BUCKET).download(path);
+  if (error) throw error;
+  return new Uint8Array(await data.arrayBuffer());
+}

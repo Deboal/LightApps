@@ -13,6 +13,15 @@ never run a provisioning script per app again.
 - Settings > Data API: **Copy** the Project URL. Settings > API Keys: **Copy** the publishable key.
 - Paste both into `shared/config.js`. These are public values, safe to commit.
 
+### 1b. GBA cloud saves (only if you use the GBA app)
+
+- SQL Editor: paste and run `schema-gba.sql`. That creates a **private** `gba`
+  storage bucket scoped to each user's own folder, and a trigger that refuses a
+  save whose version does not advance.
+- This is separate from `hub-files` on purpose: that bucket is public-read and
+  shared across every signed-in hub user, which is fine for trip photos and
+  wrong for cartridges and save files.
+
 ### 2. The repo (once)
 - Create a GitHub repo and push this folder to it.
 
