@@ -157,6 +157,16 @@ pub unsafe extern "C" fn gba_write_state(ptr: *const u8, len: usize) -> i32 {
     emulator.deserialize_state(data).is_ok() as i32
 }
 
+/// The state format version this build reads and writes.
+///
+/// A save state encodes the emulator's internal layout, so it breaks whenever
+/// that layout changes. Exposing the version lets the shell mark an
+/// incompatible state as unloadable in the list rather than failing on click.
+#[no_mangle]
+pub extern "C" fn gba_state_version() -> u32 {
+    gba_core::state::STATE_VERSION
+}
+
 /// The cartridge's four-character game code, packed into a u32, so the shell
 /// can key a save on the game rather than on a filename.
 #[no_mangle]

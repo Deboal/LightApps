@@ -263,6 +263,63 @@ export async function saveHistory(key) {
     .sort((a, b) => b.version - a.version);
 }
 
+// -- save states --------------------------------------------------------
+//
+// States are a convenience, not the source of truth: they encode the
+// emulator's internal layout and break whenever it changes. Each one records
+// the core version that wrote it so an incompatible state can be shown as
+// unloadable instead of failing when it is clicked.
+
+export async function listStates() {
+  const uid = await userId();
+  const rows = await db.list("states");
+  return rows
+    .filter((row) => row.id.startsWith(`${uid}:`))
+    .map((row) => ({ ...row, id: stripOwner(row.id) }))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+export async function putState(id, record, state, thumbnail) {
+  const uid = await userId();
+  const statePath = `${uid}/states/${record.key}/${id}.bin`;
+  // Keep the existing screenshot when none is supplied, rather than orphaning
+  // it -- a rename must not cost a thumbnail.
+  const shotPath = thumbnail ? `${uid}/states/${record.key}/${id}.jpg` : record.shotPath || null;
+
+  const bucket = client().storage.from(BUCKET);
+  const { error } = await bucket.upload(
+    statePath,
+    new Blob([state], { type: "application/octet-stream" }),
+    { upsert: true, contentType: "application/octet-stream" }
+  );
+  if (error) throw explain(error);
+
+  if (thumbnail) {
+    const shot = await bucket.upload(shotPath, thumbnail, {
+      upsert: true,
+      contentType: "image/jpeg",
+    });
+    if (shot.error) throw explain(shot.error);
+  }
+
+  const full = { ...record, statePath, shotPath, bytes: state.length };
+  await db.set("states", full, docId(uid, id));
+  return { id, ...full };
+}
+
+/** Change a state's metadata without touching its blobs. */
+export async function renameState(id, record, name) {
+  const uid = await userId();
+  await db.set("states", { ...record, name }, docId(uid, id));
+}
+
+export async function removeState(id, record) {
+  const uid = await userId();
+  await db.remove("states", docId(uid, id));
+  const paths = [record.statePath, record.shotPath].filter(Boolean);
+  if (paths.length) await client().storage.from(BUCKET).remove(paths);
+}
+
 export async function getBlob(path) {
   const { data, error } = await client().storage.from(BUCKET).download(path);
   if (error) throw explain(error);

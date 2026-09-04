@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { useAuth, signInWithEmail, signOut } from "../../../shared/auth.js";
 import * as cloud from "./cloud.js";
+import { makeStates } from "./states.js";
 
 // GBA — a Game Boy Advance emulator. The core is Rust compiled to WebAssembly
 // (see gba/ in this repo); this file is only the shell.
@@ -90,6 +91,10 @@ async function dbPut(key, value) {
     return false;
   }
 }
+
+// One place opens the database, so the state store borrows these rather than
+// duplicating them.
+const states = makeStates({ dbGet: (k) => dbGet(k), dbPut: (k, v) => dbPut(k, v) });
 
 // What this browser believes about a cartridge's save: the server version it
 // was last in step with, and whether it has moved on since.
@@ -349,14 +354,55 @@ function Library({ roms, onPlay, onForget, busy }) {
   );
 }
 
-function Picker({ onPick, error, busy, user, library, backupError, onPlayCloud, onForgetCloud, onSignOut }) {
+function Home({
+  onPick,
+  error,
+  busy,
+  user,
+  library,
+  backupError,
+  onPlayCloud,
+  onForgetCloud,
+  onSignOut,
+  loaded,
+  onResume,
+  stateEntries,
+  coreVersion,
+  onResumeState,
+  onRemoveState,
+}) {
   return (
-    <div style={{ padding: 24, maxWidth: 560, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 620, margin: "0 auto" }}>
       <h1 style={{ fontSize: 24, margin: "8px 0 4px" }}>Game Boy Advance</h1>
       <p style={{ color: "var(--dim)", fontSize: 14, lineHeight: 1.5, marginTop: 0 }}>
-        A Rust emulator core compiled to WebAssembly. Pick a <code>.gba</code> file
-        from this device — it stays on this device unless you sign in.
+        A Rust emulator core compiled to WebAssembly. Cartridges and saves stay
+        on this device unless you sign in.
       </p>
+
+      {loaded && (
+        <Button tone="accent" onClick={onResume} style={{ width: "100%", padding: "16px", fontSize: 16, marginBottom: 14 }}>
+          Resume {loaded}
+        </Button>
+      )}
+
+      {stateEntries.length > 0 && (
+        <div style={{ ...panel, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>Pick up where you left off</div>
+          <div style={{ color: "var(--dim)", fontSize: 12, marginBottom: 4 }}>
+            Every state carries the frame that was on screen when it was taken.
+          </div>
+          {stateEntries.map((entry) => (
+            <StateRow
+              key={entry.id}
+              entry={entry}
+              coreVersion={coreVersion}
+              showGame
+              onLoad={onResumeState}
+              onRemove={onRemoveState}
+            />
+          ))}
+        </div>
+      )}
 
       <label style={{ ...panel, display: "block", padding: 20, textAlign: "center", cursor: "pointer", borderStyle: "dashed" }}>
         <input
@@ -373,9 +419,9 @@ function Picker({ onPick, error, busy, user, library, backupError, onPlayCloud, 
       </label>
 
       {error && <p style={{ color: "var(--accent2)", fontSize: 14 }}>{error}</p>}
+      {backupError && <p style={{ color: "var(--accent2)", fontSize: 13, lineHeight: 1.5 }}>{backupError}</p>}
 
       {cloud.configured && !user && <div style={{ marginTop: 14 }}><SignIn /></div>}
-      {backupError && <p style={{ color: "var(--accent2)", fontSize: 13, lineHeight: 1.5 }}>{backupError}</p>}
       {user && (
         <>
           {!library.loaded && <p style={{ color: "var(--dim)", fontSize: 13 }}>Loading your cartridges…</p>}
@@ -448,6 +494,163 @@ function Conflict({ mine, theirs, onKeepMine, onKeepTheirs, onKeepBoth }) {
   );
 }
 
+/** A state's screenshot, fetched from this browser or the account. */
+function Thumb({ entry, width = 120 }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    let made = null;
+    states.thumbnail(entry).then((u) => {
+      if (dead) return URL.revokeObjectURL(u);
+      made = u;
+      setUrl(u);
+    });
+    return () => {
+      dead = true;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [entry.id]);
+
+  return (
+    <div
+      style={{
+        width,
+        aspectRatio: `${WIDTH} / ${HEIGHT}`,
+        background: "#000",
+        borderRadius: 6,
+        overflow: "hidden",
+        flexShrink: 0,
+      }}
+    >
+      {url && <img src={url} alt="" style={{ width: "100%", height: "100%", imageRendering: "pixelated" }} />}
+    </div>
+  );
+}
+
+function stamp(iso) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** One row in a state list: screenshot, name, where and when it came from. */
+function StateRow({ entry, coreVersion, onLoad, onRemove, onRename, showGame }) {
+  const stale = entry.coreVersion !== undefined && entry.coreVersion !== coreVersion;
+  const here = entry.device && entry.device === cloud.deviceId();
+  const where = entry.device ? (here ? "this device" : entry.device) : null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "flex-start",
+        flexWrap: "wrap",
+        padding: "10px 0",
+        borderTop: "1px solid var(--line)",
+      }}
+    >
+      <Thumb entry={entry} width={96} />
+      <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+        {/* Wraps rather than truncating: the name is how you tell two states
+            apart, so hiding it defeats the list. */}
+        <div style={{ fontSize: 14, lineHeight: 1.35, overflowWrap: "anywhere" }}>{entry.name}</div>
+        <div style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.5 }}>
+          {[showGame && entry.gameCode, stamp(entry.createdAt), where, !entry.local && entry.remote ? "cloud" : null]
+            .filter(Boolean)
+            .join(" · ")}
+        </div>
+        {stale && (
+          <div style={{ color: "var(--accent2)", fontSize: 12 }}>
+            From an older build of the emulator — cannot be loaded.
+          </div>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+        <Button onClick={() => onLoad(entry)} disabled={stale} style={{ padding: "7px 12px" }}>
+          Load
+        </Button>
+        {onRename && (
+          <button
+            onClick={() => onRename(entry)}
+            style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 13 }}
+          >
+            Rename
+          </button>
+        )}
+        <button
+          onClick={() => {
+            // A state is someone's afternoon; a mistap should not take it.
+            if (window.confirm(`Delete "${entry.name}"?`)) onRemove(entry);
+          }}
+          style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 13 }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Save states for one cartridge: take a new one, or go back to an old one. */
+function StatePanel({ entries, coreVersion, busy, onSave, onLoad, onRemove, onRename, onClose }) {
+  const [name, setName] = useState("");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
+      <div style={{ ...panel, padding: 20, maxWidth: 560, width: "100%", maxHeight: "86dvh", overflowY: "auto" }}>
+        <h2 style={{ margin: "0 0 10px", fontSize: 18 }}>Save states</h2>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            placeholder="Name this state (optional)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (onSave(name), setName(""))}
+            style={{
+              flex: 1,
+              background: "var(--bg)",
+              border: "1px solid var(--line)",
+              color: "var(--text)",
+              borderRadius: 9,
+              padding: "10px 12px",
+              fontSize: 15,
+              outline: "none",
+            }}
+          />
+          <Button
+            tone="accent"
+            disabled={busy}
+            onClick={() => {
+              onSave(name);
+              setName("");
+            }}
+          >
+            {busy ? "Saving…" : "Save state"}
+          </Button>
+        </div>
+        {entries.length === 0 && (
+          <p style={{ color: "var(--dim)", fontSize: 13, lineHeight: 1.5 }}>
+            None yet. A state captures the exact moment you are at, screenshot
+            and all — useful before a boss, or to hand a run to your other
+            device mid-battle.
+          </p>
+        )}
+        {entries.map((entry) => (
+          <StateRow
+            key={entry.id}
+            entry={entry}
+            coreVersion={coreVersion}
+            onLoad={onLoad}
+            onRemove={onRemove}
+            onRename={onRename}
+          />
+        ))}
+        <div style={{ marginTop: 14 }}>
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // The point of keeping ten versions is being able to go back to one. Without
 // this the retention is invisible and might as well not exist.
 function History({ versions, current, onRestore, onClose }) {
@@ -484,7 +687,7 @@ function History({ versions, current, onRestore, onClose }) {
 // Player
 // ----------------------------------------------------------------------------
 
-function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEject }) {
+function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEject, pendingState, onStateConsumed }) {
   const canvasRef = useRef(null);
   const keysRef = useRef(0);
   const speedRef = useRef(1);
@@ -495,6 +698,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [syncing, setSyncing] = useState(false);
   const [conflict, setConflict] = useState(null);
   const [history, setHistory] = useState(null);
+  const [stateList, setStateList] = useState(null);
+  const [savingState, setSavingState] = useState(false);
   const saveTimer = useRef(null);
   const keyRef = useRef("");
 
@@ -608,11 +813,26 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       // The core keeps its own copy, so the staging buffer is dead weight --
       // 16 MB of it, which matters on a phone.
       core.gba_free(romPtr, rom.length);
+
+      // Resuming from a state chosen on the library screen. It goes on last
+      // because it supersedes everything, cartridge save included.
+      if (!cancelled && pendingState) {
+        try {
+          const bytes = await states.load(pendingState);
+          const ptr = intoWasm(core, bytes);
+          core.gba_write_state(ptr, bytes.length);
+          core.gba_free(ptr, bytes.length);
+        } catch (e) {
+          console.error(e);
+        }
+        onStateConsumed?.();
+      }
       if (!cancelled) setCode(gameCode);
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [core, rom, romSha, user]);
 
   // The frame loop. Time is accumulated rather than assuming one animation
@@ -722,18 +942,77 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     setSpeed(next);
   };
 
-  const saveState = async () => {
-    const state = readTransfer(core, core.gba_read_state());
-    if (state && (await dbPut(`state:${keyRef.current}`, state))) flash("State saved");
+  // A state is only useful if you can tell which one it is, so every save
+  // carries the frame that was on screen when it was taken.
+  const screenshot = () =>
+    new Promise((resolve) => {
+      const canvas = canvasRef.current;
+      if (!canvas?.toBlob) return resolve(null);
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.7);
+    });
+
+  const refreshStates = useCallback(async () => {
+    const all = await states.list(user);
+    setStateList(all.filter((entry) => entry.key === keyRef.current));
+  }, [user]);
+
+  const openStates = async () => {
+    setStateList([]);
+    await refreshStates();
   };
 
-  const loadState = async () => {
-    const state = await dbGet(`state:${keyRef.current}`);
-    if (!state) return flash("No saved state");
-    const ptr = intoWasm(core, state);
-    const ok = core.gba_write_state(ptr, state.length);
-    core.gba_free(ptr, state.length);
-    flash(ok ? "State loaded" : "State is from a different build");
+  const saveState = async (name) => {
+    setSavingState(true);
+    try {
+      const state = readTransfer(core, core.gba_read_state());
+      if (!state) return flash("Nothing to save yet");
+      const result = await states.save(user, {
+        key: keyRef.current,
+        romSha,
+        gameCode: code,
+        name: name?.trim(),
+        device: cloud.deviceId(),
+        coreVersion: core.gba_state_version(),
+        state,
+        thumbnail: await screenshot(),
+      });
+      await refreshStates();
+      flash(result.error ? "Saved on this device only" : "State saved");
+    } catch (e) {
+      flash("Could not save the state");
+      console.error(e);
+    }
+    setSavingState(false);
+  };
+
+  const loadState = async (entry) => {
+    try {
+      const bytes = await states.load(entry);
+      const ptr = intoWasm(core, bytes);
+      const ok = core.gba_write_state(ptr, bytes.length);
+      core.gba_free(ptr, bytes.length);
+      if (ok) {
+        setStateList(null);
+        flash(`Loaded "${entry.name}"`);
+      } else {
+        flash("That state is from a different build");
+      }
+    } catch (e) {
+      flash("Could not load that state");
+      console.error(e);
+    }
+  };
+
+  const removeState = async (entry) => {
+    await states.remove(user, entry);
+    await refreshStates();
+  };
+
+  const renameState = async (entry) => {
+    const name = window.prompt("Name this state", entry.name);
+    if (name === null) return;
+    await states.rename(user, entry, name.trim() || entry.name);
+    await refreshStates();
   };
 
   const exportSave = () => {
@@ -848,7 +1127,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         {note && <span style={{ color: "var(--accent)" }}>{note}</span>}
         <span style={{ flex: 1 }} />
         <button onClick={onEject} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 13 }}>
-          Eject
+          Library
         </button>
       </div>
 
@@ -870,8 +1149,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         <Button onClick={cycleSpeed} tone={speed > 1 ? "accent" : undefined}>
           {speed}× speed
         </Button>
-        <Button onClick={saveState}>Save state</Button>
-        <Button onClick={loadState}>Load state</Button>
+        <Button onClick={openStates}>States</Button>
         {user && (
           <>
             <Button onClick={() => persist({ manual: true })} disabled={syncing}>
@@ -915,6 +1193,19 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           : "The cartridge save is written to this browser a few seconds after the game finishes saving, and again whenever you leave the page. Sign in to keep a copy that survives a cleared browser."}
       </p>
 
+      {stateList && (
+        <StatePanel
+          entries={stateList}
+          coreVersion={core.gba_state_version()}
+          busy={savingState}
+          onSave={saveState}
+          onLoad={loadState}
+          onRemove={removeState}
+          onRename={renameState}
+          onClose={() => setStateList(null)}
+        />
+      )}
+
       {history && (
         <History
           versions={history}
@@ -949,6 +1240,11 @@ function App() {
   const [backupError, setBackupError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  // The app opens to the library rather than dropping straight into the game,
+  // so the save states are the first thing you see. Resuming is one tap.
+  const [playing, setPlaying] = useState(false);
+  const [stateEntries, setStateEntries] = useState([]);
+  const [pendingState, setPendingState] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -1033,12 +1329,27 @@ function App() {
     }
   };
 
+  // The library screen lists every state, so it refreshes whenever the
+  // account changes or the player hands control back.
+  const refreshStates = useCallback(async () => {
+    try {
+      setStateEntries(await states.list(user || null));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!playing) refreshStates();
+  }, [playing, refreshStates]);
+
   const load = async (bytes) => {
     const sha = await cloud.sha256Hex(bytes);
     await dbPut("rom", bytes);
     await dbPut("romSha", sha);
     setRom(bytes);
     setRomSha(sha);
+    setPlaying(true);
     return sha;
   };
 
@@ -1073,10 +1384,37 @@ function App() {
     if (entry.id === romSha) setBackup("unknown");
   };
 
-  const eject = () => {
-    setRom(null);
-    setRomSha("");
-    dbPut("rom", null);
+  // "Library" leaves the game running in memory and goes back to the shelf;
+  // the cartridge is only unloaded by choosing a different one.
+  const toLibrary = () => setPlaying(false);
+
+  /** Resume a state from the library, fetching its cartridge if this device
+   *  does not already have it loaded. */
+  const resumeState = async (entry) => {
+    setError("");
+    if (entry.romSha && entry.romSha !== romSha) {
+      const match = library.roms.find((r) => r.id === entry.romSha);
+      if (!match) {
+        return setError(
+          "That state belongs to a cartridge this device does not have. Load its ROM first."
+        );
+      }
+      setBusy(true);
+      try {
+        await load(await cloud.getRom(match.path));
+      } catch (e) {
+        setBusy(false);
+        return setError("Could not fetch that cartridge: " + (e.message || e));
+      }
+      setBusy(false);
+    }
+    setPendingState(entry);
+    setPlaying(true);
+  };
+
+  const removeStateEntry = async (entry) => {
+    await states.remove(user || null, entry);
+    refreshStates();
   };
 
   if (error && !core) {
@@ -1087,9 +1425,9 @@ function App() {
       </div>
     );
   }
-  if (!core || !rom) {
+  if (!core || !rom || !playing) {
     return (
-      <Picker
+      <Home
         onPick={pick}
         error={error}
         busy={busy}
@@ -1099,6 +1437,12 @@ function App() {
         onPlayCloud={playCloud}
         onForgetCloud={forgetCloud}
         onSignOut={signOut}
+        loaded={rom ? headerOf(rom).title || headerOf(rom).gameCode || "cartridge" : null}
+        onResume={() => setPlaying(true)}
+        stateEntries={stateEntries}
+        coreVersion={core?.gba_state_version?.() ?? 0}
+        onResumeState={resumeState}
+        onRemoveState={removeStateEntry}
       />
     );
   }
@@ -1111,7 +1455,9 @@ function App() {
       backup={backup}
       backupError={backupError}
       onBackup={backUpNow}
-      onEject={eject}
+      onEject={toLibrary}
+      pendingState={pendingState}
+      onStateConsumed={() => setPendingState(null)}
     />
   );
 }
