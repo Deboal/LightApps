@@ -265,7 +265,7 @@ like any other app.
 2. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
    weak instruction-level oracle; it exercises the paths Pokémon happens to
    use and nothing else.
-3. **Exercise the sync against the live backend.** The conflict path is
-   written and reviewed but has never run against a real Supabase project:
-   this container cannot reach one, and magic-link sign-in needs an inbox.
-   Two devices editing the same save is the case to try first.
+3. **Exercise the sync against the live backend.** Cloud saves are built, but
+   the conflict path has never run against a real Supabase project: this
+   container cannot reach one, and magic-link sign-in needs an inbox. Two
+   devices editing the same save is the case to try first.
