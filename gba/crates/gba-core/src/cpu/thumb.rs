@@ -51,7 +51,7 @@ pub fn execute(cpu: &mut Cpu, bus: &mut impl Bus, raw: u16) {
         }
         0b1100 => block_transfer(cpu, bus, op),
         0b1101 => match (op >> 8) & 0xF {
-            0xF => cpu.software_interrupt(),
+            0xF => cpu.software_interrupt(op & 0xFF, bus),
             0xE => cpu.undefined_instruction(),
             cond => conditional_branch(cpu, cond, op),
         },

@@ -8,7 +8,7 @@
 pub const STATE_MAGIC: u32 = 0x5342_4147; // "GABS" little-endian
 /// Bump on every change to the state layout. A state from a different version
 /// is refused, never coerced.
-pub const STATE_VERSION: u32 = 1;
+pub const STATE_VERSION: u32 = 2;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum StateError {

@@ -337,7 +337,7 @@ fn long_branch_with_link_assembles_from_two_halves() {
 
 #[test]
 fn swi_from_thumb_returns_to_arm_at_the_vector() {
-    let emu = exec_thumb(&[0xDF00], |_| {});
+    let emu = exec_thumb(&[0xDF00], |e| e.cpu.hle_bios = false);
     assert!(!emu.cpu.cpsr.thumb());
     assert_eq!(emu.cpu.r[15], 0x0000_0008);
     assert_eq!(emu.cpu.r[14], ROM_BASE + 2);

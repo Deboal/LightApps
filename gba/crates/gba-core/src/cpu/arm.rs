@@ -50,7 +50,7 @@ pub fn execute(cpu: &mut Cpu, bus: &mut impl Bus, op: u32) {
         0b010 | 0b011 => single_transfer(cpu, bus, op),
         0b100 => block_transfer(cpu, bus, op),
         0b101 => branch(cpu, op),
-        0b111 if op & 0x0F00_0000 == 0x0F00_0000 => cpu.software_interrupt(),
+        0b111 if op & 0x0F00_0000 == 0x0F00_0000 => cpu.software_interrupt((op >> 16) & 0xFF, bus),
         // Coprocessor space: the GBA has no coprocessor.
         _ => cpu.undefined_instruction(),
     }

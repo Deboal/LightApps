@@ -437,7 +437,9 @@ fn mrs_reads_cpsr_and_spsr() {
 
 #[test]
 fn swi_enters_supervisor_mode_at_the_vector() {
-    let emu = exec_arm(&[swi(0x06)], |_| {});
+    // With HLE off, a SWI takes the real exception rather than being serviced
+    // in software.
+    let emu = exec_arm(&[swi(0x06)], |e| e.cpu.hle_bios = false);
     assert_eq!(mode(&emu), Mode::Svc);
     assert_eq!(emu.cpu.r[15], 0x0000_0008);
     assert_eq!(emu.cpu.r[14], ROM_BASE + 4);
@@ -454,7 +456,7 @@ fn subs_pc_lr_returns_from_an_exception() {
             // At the vector the emulator would run BIOS; drive the return by
             // hand instead so the test stays independent of a BIOS image.
         ],
-        |_| {},
+        |e| e.cpu.hle_bios = false,
     );
     let mut emu = emu;
     emu.cpu.r[15] = ROM_BASE + 0x40;

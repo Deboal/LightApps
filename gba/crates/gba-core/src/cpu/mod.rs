@@ -41,6 +41,9 @@ pub struct Cpu {
     /// HALTCNT: the CPU idles until an interrupt arrives. Tracked here rather
     /// than by a host sleep, because the core never touches the clock.
     pub halted: bool,
+    /// Intercept SWI and service it in software instead of taking the
+    /// exception. Set when no real BIOS image was supplied.
+    pub hle_bios: bool,
 }
 
 impl Default for Cpu {
@@ -61,6 +64,7 @@ impl Cpu {
             branched: false,
             irq_line: false,
             halted: false,
+            hle_bios: false,
         };
         cpu.r[15] = VECTOR_RESET;
         cpu
@@ -198,7 +202,11 @@ impl Cpu {
 
     /// Software interrupt. Called from the instruction handlers, where r15 is
     /// still pipeline-biased, so the return address is derived from it.
-    pub fn software_interrupt(&mut self) {
+    pub fn software_interrupt(&mut self, comment: u32, bus: &mut impl Bus) {
+        if self.hle_bios {
+            crate::bios::dispatch(self, bus, comment);
+            return;
+        }
         let ret = if self.cpsr.thumb() {
             self.r[15].wrapping_sub(2)
         } else {
@@ -232,9 +240,11 @@ impl Cpu {
             self.halted = false;
             self.interrupt();
         } else if self.halted {
-            // Nothing retires while halted; the caller still advances time so
-            // timers and the PPU can eventually raise the interrupt.
-            bus.tick(1);
+            // Nothing retires while halted; time still advances so timers and
+            // the PPU can eventually raise the interrupt that wakes us. One
+            // dot at a time keeps the granularity fine enough for the PPU
+            // without burning a step call per cycle.
+            bus.tick(4);
             return;
         }
 
@@ -242,6 +252,7 @@ impl Cpu {
         if self.cpsr.thumb() {
             let addr = self.r[15] & !1;
             self.r[15] = addr;
+            bus.on_fetch(addr);
             let op = bus.read16(addr);
             self.r[15] = addr.wrapping_add(4);
             thumb::execute(self, bus, op);
@@ -251,6 +262,7 @@ impl Cpu {
         } else {
             let addr = self.r[15] & !3;
             self.r[15] = addr;
+            bus.on_fetch(addr);
             let op = bus.read32(addr);
             self.r[15] = addr.wrapping_add(8);
             arm::execute(self, bus, op);

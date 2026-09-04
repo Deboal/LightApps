@@ -8,6 +8,9 @@ pub mod cart;
 pub mod flash;
 
 use crate::bus::Bus;
+use crate::dma::{self, DmaChannel};
+use crate::ppu::{self, Ppu};
+use crate::timers::{self, Timer};
 use cart::Cartridge;
 
 pub const EWRAM_SIZE: usize = 0x40000;
@@ -34,6 +37,9 @@ pub struct Memory {
     pub oam: Box<[u8; OAM_SIZE]>,
     pub io: Box<[u8; IO_SIZE]>,
     pub cart: Cartridge,
+    pub ppu: Ppu,
+    pub dma: [DmaChannel; 4],
+    pub timers: [Timer; 4],
 
     /// Elapsed cycles. The only notion of time the core has, and it advances
     /// solely through instruction execution.
@@ -51,7 +57,7 @@ impl Memory {
     pub fn new(rom: Vec<u8>, bios: Option<Vec<u8>>) -> Memory {
         let mut bios = bios.unwrap_or_default();
         bios.resize(BIOS_SIZE, 0);
-        Memory {
+        let mut memory = Memory {
             bios,
             ewram: Box::new([0; EWRAM_SIZE]),
             iwram: Box::new([0; IWRAM_SIZE]),
@@ -60,11 +66,17 @@ impl Memory {
             oam: Box::new([0; OAM_SIZE]),
             io: Box::new([0; IO_SIZE]),
             cart: Cartridge::new(rom),
+            ppu: Ppu::default(),
+            dma: [DmaChannel::default(); 4],
+            timers: [Timer::default(); 4],
             cycles: 0,
             bios_latch: 0,
             in_bios: false,
             halt_requested: false,
-        }
+        };
+        // KEYINPUT is active-low: with nothing pressed every bit reads high.
+        memory.write_io16_raw(0x130, 0x03FF);
+        memory
     }
 
     /// VRAM is 96 KB in a 128 KB window: the upper 32 KB of each 128 KB block
@@ -86,6 +98,12 @@ impl Memory {
     }
 
     fn read_io8(&self, offset: u32) -> u8 {
+        // A timer's counter and its reload value share an address: reads see
+        // the live count, writes set the reload.
+        if (0x100..0x110).contains(&offset) && offset % 4 < 2 {
+            let timer = &self.timers[((offset - 0x100) / 4) as usize];
+            return (timer.counter >> (8 * (offset % 4))) as u8;
+        }
         self.io.get(offset as usize).copied().unwrap_or(0)
     }
 
@@ -94,29 +112,104 @@ impl Memory {
             // IF is write-one-to-clear: a game acknowledges an interrupt by
             // writing the bit back, not by clearing it.
             REG_IF | 0x203 => {
-                let index = offset as usize;
-                self.io[index] &= !value;
+                self.io[offset as usize] &= !value;
+                return;
             }
             REG_HALTCNT => {
                 if value & 0x80 == 0 {
                     self.halt_requested = true;
                 }
+                return;
             }
-            _ => {
-                if let Some(byte) = self.io.get_mut(offset as usize) {
-                    *byte = value;
+            // VCOUNT and KEYINPUT are driven by the hardware, not the game.
+            0x006 | 0x007 | 0x130 | 0x131 => return,
+            // DISPSTAT's low three bits are status, not settings.
+            0x004 => {
+                self.io[4] = (self.io[4] & 0x07) | (value & !0x07);
+                return;
+            }
+            0x100..=0x10F => {
+                let index = ((offset - 0x100) / 4) as usize;
+                self.io[offset as usize] = value;
+                if offset % 4 < 2 {
+                    self.timers[index].reload = self.read_raw16(0x100 + 4 * index as u32);
+                } else {
+                    let control = self.read_raw16(0x102 + 4 * index as u32);
+                    timers::write_control(self, index, control);
                 }
+                return;
             }
+            _ => {}
         }
+
+        if let Some(byte) = self.io.get_mut(offset as usize) {
+            *byte = value;
+        }
+        self.io_side_effect(offset);
+    }
+
+    /// Registers whose write does more than store a value.
+    fn io_side_effect(&mut self, offset: u32) {
+        match offset {
+            // Writing a DMA control register can start a transfer.
+            0xBA | 0xBB | 0xC6 | 0xC7 | 0xD2 | 0xD3 | 0xDE | 0xDF => {
+                let index = ((offset - 0xBA) / dma::STRIDE) as usize;
+                let control = self.read_raw16(0xBA + dma::STRIDE * index as u32);
+                dma::write_control(self, index, control);
+            }
+            // Writing an affine reference point re-latches it immediately
+            // rather than waiting for the next frame.
+            0x28..=0x2F => ppu::write_affine_reference(self, 0, offset >= 0x2C),
+            0x38..=0x3F => ppu::write_affine_reference(self, 1, offset >= 0x3C),
+            _ => {}
+        }
+    }
+
+    /// Read a register straight out of the backing array, bypassing the
+    /// timer-counter aliasing.
+    fn read_raw16(&self, offset: u32) -> u16 {
+        u16::from_le_bytes([
+            self.io.get(offset as usize).copied().unwrap_or(0),
+            self.io.get(offset as usize + 1).copied().unwrap_or(0),
+        ])
     }
 
     pub fn read_io16(&self, offset: u32) -> u16 {
         u16::from_le_bytes([self.read_io8(offset), self.read_io8(offset + 1)])
     }
 
+    pub fn read_io32(&self, offset: u32) -> u32 {
+        self.read_io16(offset) as u32 | ((self.read_io16(offset + 2) as u32) << 16)
+    }
+
     pub fn write_io16(&mut self, offset: u32, value: u16) {
         self.write_io8(offset, value as u8);
         self.write_io8(offset + 1, (value >> 8) as u8);
+    }
+
+    /// Write a register as the hardware would, ignoring the read-only masks
+    /// the game is subject to. Used by the PPU, DMA and the input latch.
+    pub fn write_io16_raw(&mut self, offset: u32, value: u16) {
+        if let Some(slot) = self.io.get_mut(offset as usize) {
+            *slot = value as u8;
+        }
+        if let Some(slot) = self.io.get_mut(offset as usize + 1) {
+            *slot = (value >> 8) as u8;
+        }
+    }
+
+    /// A side-effect-free halfword read, for debuggers and tracing. Does not
+    /// tick the clock, so it cannot perturb a run.
+    pub fn peek16(&self, addr: u32) -> u16 {
+        let addr = addr & !1;
+        match addr >> 24 {
+            0x00 | 0x01 => read_le16(&self.bios[..], (addr as usize).min(BIOS_SIZE - 2)),
+            0x02 => read_le16(&self.ewram[..], addr as usize & (EWRAM_SIZE - 1)),
+            0x03 => read_le16(&self.iwram[..], addr as usize & (IWRAM_SIZE - 1)),
+            0x04 => self.read_io16(addr & 0x3FF),
+            0x08..=0x0D => self.cart.read_rom16(addr & 0x01FF_FFFF),
+            _ => 0,
+        }
     }
 
     /// True when an enabled interrupt is pending and the master enable is set.
@@ -166,6 +259,10 @@ impl Memory {
 impl Bus for Memory {
     fn tick(&mut self, cycles: u32) {
         self.cycles += cycles as u64;
+    }
+
+    fn on_fetch(&mut self, addr: u32) {
+        self.in_bios = (addr as usize) < BIOS_SIZE;
     }
 
     fn read8(&mut self, addr: u32) -> u8 {
