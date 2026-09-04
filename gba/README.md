@@ -21,6 +21,7 @@ gba/
       src/state.rs  # explicit ordered serialization
       tests/        # arm, thumb, memory, system, determinism, roms
     gba-headless/   # runs a ROM without a screen and dumps the machine
+    gba-wasm/       # C-ABI shim; the web shell lives in ../apps/gba
 ```
 
 `gba-core` has **zero dependencies**, by rule rather than by accident: every
@@ -178,19 +179,45 @@ costs another 1.5–2.5×, which leaves roughly 3–5× realtime on a comparable
 phone — enough for 60 fps with headroom for 2× and 4× fast-forward, and not
 enough to be complacent about the renderer.
 
+## Playing it
+
+The web shell is a LightApps app at `apps/gba/`. Open `/gba/` on the deployed
+site, pick a `.gba` file, and it runs: canvas, touch controls on a phone,
+keyboard on a desktop (arrows, Z/X for A/B, Enter for Start, Shift for
+Select, A/S for the shoulders), tiered fast-forward and save states.
+
+The ROM and the save live in that browser's IndexedDB and are never uploaded.
+The cartridge save is written a few seconds after the game stops touching
+flash, and again on `visibilitychange` — the last reliable moment before iOS
+kills a backgrounded tab.
+
+Netlify does not build Rust, so the `.wasm` is a committed artifact. Rebuild
+it whenever the core changes:
+
+```sh
+cd gba
+cargo build --release --target wasm32-unknown-unknown -p gba-wasm
+cp target/wasm32-unknown-unknown/release/gba_wasm.wasm \
+   ../apps/gba/assets/gba-core.wasm
+```
+
+85 KB, no dependencies, no bindings generator: the interface is a dozen
+exported functions plus the module's linear memory.
+
 ## How this reaches a phone
 
 The core is deliberately I/O-free so the same crate serves a native shell, a
-WASM shell, and a server. Note one consequence for this repository: LightApps
-deploys by having Netlify run `build.sh`, which bundles JavaScript with
-esbuild and has no Rust toolchain. So the eventual `apps/gba/` front-end will
-load a **pre-built** `.wasm` committed under `apps/gba/assets/` (that
-directory is copied verbatim by `build.sh`), with the wasm rebuilt by hand or
-by CI rather than by Netlify. The Supabase store and magic-link auth already
-in `shared/` cover the save-sync design in section 4 of the handoff without a
-separate `gba-server`.
+WASM shell, and a server. That is now real: `gba-wasm` and `apps/gba` share
+the identical core with `gba-headless`, no fork.
 
-`build.sh` ignores this directory entirely; the LightApps deploy is unaffected.
+Saves are still per-device. The next step is cloud sync, and the Supabase
+store and magic-link auth already in `shared/` cover section 4 of the handoff
+without a separate `gba-server` — what has to be added on top is the version
+counter and the compare-and-swap, because last-write-wins on timestamps will
+eat a playthrough the first time you play on the phone and then the Mac.
+
+`build.sh` ignores the `gba/` directory entirely and publishes `apps/gba/`
+like any other app.
 
 ## Next
 
@@ -203,5 +230,6 @@ separate `gba-server`.
 3. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
    weak instruction-level oracle; it exercises the paths Pokémon happens to
    use and nothing else.
-4. **The web shell**, once the picture is right: WASM, a canvas, touch
-   controls, and the Supabase-backed save sync.
+4. **Cloud save sync.** The web shell exists; saves are local to one browser.
+   Section 4 of the handoff is the design, and `shared/store.js` is most of
+   the implementation.
