@@ -27,7 +27,7 @@ fn main() -> ExitCode {
     let mut frames: Option<u64> = None;
     let mut steps: Option<u64> = None;
     let mut watch: Option<u32> = None;
-    let mut script: Vec<(u64, u16)> = Vec::new();
+    let mut script: Vec<(u64, u16, u64)> = Vec::new();
     let mut mash_from: Option<u64> = None;
     let mut mash_until: Option<u64> = None;
     let mut save_in: Option<String> = None;
@@ -217,7 +217,7 @@ struct Run {
     save: Option<Vec<u8>>,
     steps: Option<u64>,
     watch: Option<u32>,
-    script: Vec<(u64, u16)>,
+    script: Vec<(u64, u16, u64)>,
     mash_from: Option<u64>,
     mash_until: Option<u64>,
 }
@@ -294,11 +294,8 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
         if frame != current_frame {
             current_frame = frame;
             let mut keys = 0u16;
-            for (at, buttons) in script {
-                // Hold each scripted press for six frames: long enough for a
-                // game polling once per frame to see it, short enough not to
-                // read as a repeat.
-                if frame >= *at && frame < at + 6 {
+            for (at, buttons, hold) in script {
+                if frame >= *at && frame < at + hold {
                     keys |= buttons;
                 }
             }
@@ -459,11 +456,20 @@ fn run_cable(
     ExitCode::SUCCESS
 }
 
-/// Parse `frame:BUTTONS` entries, e.g. "1850:START,1900:A+B".
-fn parse_script(text: &str) -> Vec<(u64, u16)> {
+/// Parse `frame:BUTTONS[:frames]` entries, e.g. "1850:START,1900:A+B,2000:LEFT:60".
+///
+/// The optional duration is what makes walking scriptable: a press has to be
+/// held for the length of a step, not tapped.
+fn parse_script(text: &str) -> Vec<(u64, u16, u64)> {
     text.split(',')
         .filter_map(|entry| {
-            let (frame, buttons) = entry.split_once(':')?;
+            let mut parts = entry.split(':');
+            let frame = parts.next()?;
+            let buttons = parts.next()?;
+            let hold: u64 = parts
+                .next()
+                .and_then(|d| d.trim().parse().ok())
+                .unwrap_or(6);
             let mut mask = 0u16;
             for name in buttons.split('+') {
                 mask |= match name.trim().to_ascii_uppercase().as_str() {
@@ -483,7 +489,7 @@ fn parse_script(text: &str) -> Vec<(u64, u16)> {
                     }
                 };
             }
-            Some((frame.trim().parse().ok()?, mask))
+            Some((frame.trim().parse().ok()?, mask, hold))
         })
         .collect()
 }
