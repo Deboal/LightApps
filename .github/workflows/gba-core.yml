@@ -1,0 +1,27 @@
+name: gba-core
+
+on:
+  push:
+    paths: ["gba/**", ".github/workflows/gba-core.yml"]
+  pull_request:
+    paths: ["gba/**", ".github/workflows/gba-core.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gba
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gba
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # The determinism test runs two 600-frame passes and compares the whole
+      # machine state; release mode keeps it under a second.
+      - run: cargo test --release

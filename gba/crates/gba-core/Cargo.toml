@@ -1,0 +1,9 @@
+[package]
+name = "gba-core"
+version.workspace = true
+edition.workspace = true
+
+# Deliberately zero dependencies. The core must stay deterministic and
+# portable to wasm32; every dependency is a chance for someone else's
+# HashMap iteration order or clock to leak into emulator state.
+[dependencies]
