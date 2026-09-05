@@ -204,6 +204,17 @@ Select, A/S for the shoulders), tiered fast-forward and named save states.
 It opens to a library rather than dropping straight into the game, because
 the save states are the thing worth seeing first; resuming is one tap.
 
+The touch pad is a pad, not a row of buttons. The area owns the pointer rather
+than each button owning its own, so a thumb rolls from B to A and from up to
+up-left without lifting — which is the one thing a real controller always does
+and a grid of independent tap targets never can. The d-pad's corners carry no
+face of their own; they press both neighbouring directions, so both arms light
+and two bits go in. Each press sinks the cap onto its own side wall and
+returns with a little overshoot, and buzzes: `navigator.vibrate` where it
+exists, and on iOS — which has no vibrate at all — a hidden switch control,
+whose toggle is the only system haptic a web page can reach there. `Buzz on`
+in the header turns it off.
+
 Storage is local-first. The emulator always reads and writes this browser's
 IndexedDB, so the app works signed out and offline; the cartridge save is
 written a few seconds after the game stops touching flash, and again on
