@@ -183,5 +183,79 @@ async function newPage() {
   await page.close();
 }
 
+// 6. The pad area owns the pointer, so a thumb can roll from one button to
+// the next without lifting. The buttons no longer capture their own pointer,
+// which is the part of that rewrite most likely to break quietly: a press
+// that never releases looks fine on screen and ruins the game.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(8000);
+
+  // The emulator's key state is not exposed, so read the button's own pressed
+  // flag, which is set from the same state the core is fed. Reading the
+  // computed transform instead would race the release animation.
+  const down = async (label) =>
+    page.evaluate((text) => {
+      const pad = [...document.querySelectorAll("[data-mask]")].find(
+        (el) => el.textContent.trim() === text
+      );
+      return pad ? pad.dataset.held === "1" : null;
+    }, label);
+
+  const box = async (label) =>
+    page.evaluate((text) => {
+      const pad = [...document.querySelectorAll("[data-mask]")].find(
+        (el) => el.textContent.trim() === text
+      );
+      const r = pad.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, label);
+
+  const b = await box("B");
+  const a = await box("A");
+
+  await page.mouse.move(b.x, b.y);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  check("pressing B holds B", (await down("B")) === true);
+
+  // Roll onto A without lifting: A takes the press, B gives it up.
+  await page.mouse.move(a.x, a.y, { steps: 8 });
+  await page.waitForTimeout(120);
+  check("rolling onto A takes the press", (await down("A")) === true);
+  check("and B lets go", (await down("B")) === false);
+
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+  check("releasing clears A", (await down("A")) === false);
+
+  // Sliding off the pad area entirely must not leave a button stuck down.
+  const up = await box("▲");
+  await page.mouse.move(up.x, up.y);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  check("pressing up holds up", (await down("▲")) === true);
+  await page.mouse.move(up.x, up.y - 400, { steps: 8 });
+  await page.waitForTimeout(120);
+  check("sliding off releases it", (await down("▲")) === false);
+  await page.mouse.up();
+
+  // Diagonals. The corners carry no face of their own -- pressing one lights
+  // both arms, which is both the feedback and the proof that two bits went in.
+  const upBox = await box("▲");
+  const leftBox = await box("◀");
+  await page.mouse.move(leftBox.x, upBox.y);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  check("the corner presses up", (await down("▲")) === true);
+  check("and left, together", (await down("◀")) === true);
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+  check("and lets both go", (await down("▲")) === false && (await down("◀")) === false);
+
+  check("no page errors in the pad flow", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

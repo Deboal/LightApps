@@ -190,53 +190,188 @@ function Button({ children, onClick, tone, disabled, style }) {
   );
 }
 
-// A control that reports press and release rather than click, so holding a
-// direction actually holds it. It also tracks its own pressed state: on a
-// touchscreen with no cursor, the only feedback that a press registered is the
-// button visibly reacting.
-function Pad({ mask, label, onDown, onUp, fill, ink, style, round }) {
-  const [held, setHeld] = useState(false);
+// Mix a hex colour towards black or white. The buttons' sides and highlights
+// are derived from their face colour rather than hand-picked, so a new button
+// only needs one value.
+function shade(hex, amount) {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) =>
+    Math.round(amount < 0 ? c * (1 + amount) : c + (255 - c) * amount);
+  return `rgb(${mix((n >> 16) & 255)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
+}
 
-  const press = (event) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    setHeld(true);
-    onDown(mask);
-  };
-  const release = (event) => {
-    event.preventDefault();
-    setHeld(false);
-    onUp(mask);
-  };
+// A short buzz on press.
+//
+// navigator.vibrate covers Android. iOS Safari does not implement it at all,
+// and the only lever a web page has there is that toggling a switch control
+// produces a system haptic -- so a hidden one gets clicked instead. It has to
+// be a real click on the label; setting `checked` does nothing.
+let hapticLabel = null;
+let hapticsEnabled = true;
+try {
+  hapticsEnabled = localStorage.getItem("gba.haptics") !== "off";
+} catch {
+  // A browser that will not hand over storage still gets the default.
+}
+function setHaptics(on) {
+  hapticsEnabled = on;
+  try {
+    localStorage.setItem("gba.haptics", on ? "on" : "off");
+  } catch {
+    // Not worth failing a button press over.
+  }
+}
+function haptic() {
+  if (!hapticsEnabled) return;
+  try {
+    if (navigator.vibrate) {
+      navigator.vibrate(7);
+      return;
+    }
+    if (!hapticLabel) {
+      const hidden =
+        "position:absolute;left:-9999px;width:0;height:0;opacity:0;pointer-events:none";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.setAttribute("switch", "");
+      input.id = "gba-haptic";
+      input.style.cssText = hidden;
+      const label = document.createElement("label");
+      label.htmlFor = input.id;
+      label.style.cssText = hidden;
+      document.body.append(input, label);
+      hapticLabel = label;
+    }
+    hapticLabel.click();
+  } catch {
+    // A browser that refuses either mechanism is not a reason to drop input.
+  }
+}
 
+// A button face. It reports nothing itself: the pad area below owns the
+// pointer and tells it whether it is down, because a thumb that slides from
+// one button to the next has to take the press with it.
+function Pad({ mask, label, held, fill, ink, style, round }) {
   return (
     <div
-      onPointerDown={press}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onLostPointerCapture={release}
+      data-mask={mask}
+      data-held={held ? "1" : "0"}
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: fill,
+        // A face lit from above, so the cap reads as a solid thing with a top
+        // and a side rather than a coloured rectangle.
+        background: `linear-gradient(${shade(fill, 0.12)}, ${shade(fill, -0.1)})`,
         border: "1px solid rgba(255,255,255,.14)",
         borderRadius: round ? "50%" : 12,
         color: ink || "#fff",
         fontSize: 15,
         fontWeight: 700,
         userSelect: "none",
+        WebkitUserSelect: "none",
+        WebkitTouchCallout: "none",
+        WebkitTapHighlightColor: "transparent",
         touchAction: "none",
-        boxShadow: held ? "none" : "0 2px 0 rgba(0,0,0,.35)",
-        transform: held ? "translateY(2px)" : "none",
-        filter: held ? "brightness(1.25)" : "none",
-        transition: "filter .06s, transform .06s",
+        // Down: the cap sinks onto its own side wall and the highlight flips
+        // to a shadow cast by the rim it just dropped below.
+        boxShadow: held
+          ? `inset 0 2px 5px rgba(0,0,0,.45), 0 0 0 ${shade(fill, -0.45)}`
+          : `inset 0 1px 0 rgba(255,255,255,.22), 0 3px 0 ${shade(fill, -0.45)}, 0 5px 7px rgba(0,0,0,.4)`,
+        transform: held ? "translateY(3px)" : "none",
+        filter: held ? "brightness(1.1)" : "none",
+        // Instant down, cushioned up with a little overshoot. The asymmetry is
+        // most of what makes a flat button feel sprung.
+        transition: held
+          ? "transform .04s linear, box-shadow .04s linear, filter .04s linear"
+          : "transform .14s cubic-bezier(.34,1.56,.64,1), box-shadow .14s ease-out, filter .14s ease-out",
         ...style,
       }}
     >
       {label}
     </div>
   );
+}
+
+// The pad area owns the pointer, not the buttons.
+//
+// A gamepad whose button only answers a press that begins and ends on the same
+// spot is the one thing a real one never does: you roll from B to A, and from
+// up to up-left, without lifting a thumb. So every move is hit-tested against
+// whatever is under the finger now, and the difference between the buttons
+// held a moment ago and the ones held now is what gets pressed and released.
+// Tracking by pointer id means two thumbs work, and a button under both stays
+// down until the second one leaves.
+function usePads(press, release) {
+  const [held, setHeld] = useState(0);
+  const heldRef = useRef(0);
+  const pointers = useRef(new Map());
+
+  const maskAt = (x, y) => {
+    const under = document.elementFromPoint(x, y);
+    const pad = under && under.closest("[data-mask]");
+    return pad ? Number(pad.dataset.mask) || 0 : 0;
+  };
+
+  const settle = useCallback(() => {
+    let union = 0;
+    for (const mask of pointers.current.values()) union |= mask;
+    const was = heldRef.current;
+    if (union === was) return;
+    const pressed = union & ~was;
+    const released = was & ~union;
+    if (pressed) {
+      press(pressed);
+      haptic();
+    }
+    if (released) release(released);
+    heldRef.current = union;
+    setHeld(union);
+  }, [press, release]);
+
+  const track = useCallback(
+    (event) => {
+      pointers.current.set(event.pointerId, maskAt(event.clientX, event.clientY));
+      settle();
+    },
+    [settle]
+  );
+
+  const handlers = {
+    onPointerDown: (event) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      track(event);
+    },
+    onPointerMove: (event) => {
+      if (!pointers.current.has(event.pointerId)) return;
+      track(event);
+    },
+    onPointerUp: (event) => {
+      pointers.current.delete(event.pointerId);
+      settle();
+    },
+    onPointerCancel: (event) => {
+      pointers.current.delete(event.pointerId);
+      settle();
+    },
+  };
+
+  // Nothing may stay held across a hidden tab: the pointer-up never arrives.
+  useEffect(() => {
+    const drop = () => {
+      pointers.current.clear();
+      settle();
+    };
+    window.addEventListener("blur", drop);
+    document.addEventListener("visibilitychange", drop);
+    return () => {
+      window.removeEventListener("blur", drop);
+      document.removeEventListener("visibilitychange", drop);
+    };
+  }, [settle]);
+
+  return { held, handlers };
 }
 
 // Face-button colours. Filled rather than outlined: against a dark panel an
@@ -251,23 +386,36 @@ const PAD = {
 
 // L and R live above the screen. They are barely used in these games, and
 // putting them on the thumbs' path costs more than reaching for them does.
-function Shoulders({ onDown, onUp }) {
+function Shoulders({ held, handlers }) {
   const shape = { width: 74, height: 30, fontSize: 13 };
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 16px 8px" }}>
-      <Pad mask={BTN.L} label="L" onDown={onDown} onUp={onUp} fill={PAD.shoulder} ink="#c3cdf5" style={shape} />
-      <Pad mask={BTN.R} label="R" onDown={onDown} onUp={onUp} fill={PAD.shoulder} ink="#c3cdf5" style={shape} />
+    <div
+      {...handlers}
+      style={{ display: "flex", justifyContent: "space-between", padding: "2px 16px 8px", touchAction: "none" }}
+    >
+      <Pad mask={BTN.L} label="L" held={!!(held & BTN.L)} fill={PAD.shoulder} ink="#c3cdf5" style={shape} />
+      <Pad mask={BTN.R} label="R" held={!!(held & BTN.R)} fill={PAD.shoulder} ink="#c3cdf5" style={shape} />
     </div>
   );
 }
 
-function Controls({ onDown, onUp, run, onRun }) {
+function Controls({ held, handlers, run, onRun }) {
   // Sized to fit a 375px phone without clipping: the pad and the face buttons
   // have to share that width.
   const cell = { width: 52, height: 52 };
+  // The corners are hit targets with no face of their own. Drawn, they turn
+  // the cross into a grid of nine tiles; invisible, they still press both
+  // neighbouring directions -- and since each arm lights from its own bit,
+  // a thumb on the corner lights both arms, which is what a real cross does.
+  const nub = {
+    background: "transparent",
+    border: "none",
+    boxShadow: "none",
+    transform: "none",
+  };
   const system = { width: 78, height: 26, fontSize: 10 };
   return (
-    <div style={{ maxWidth: 520, margin: "0 auto", width: "100%" }}>
+    <div {...handlers} style={{ maxWidth: 520, margin: "0 auto", width: "100%", touchAction: "none" }}>
       <div
         style={{
           display: "flex",
@@ -284,20 +432,41 @@ function Controls({ onDown, onUp, run, onRun }) {
             gap: 3,
           }}
         >
-          <div />
-          <Pad mask={BTN.UP} label="▲" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-          <div />
-          <Pad mask={BTN.LEFT} label="◀" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-          <div style={{ ...cell, background: PAD.dpad, opacity: 0.5 }} />
-          <Pad mask={BTN.RIGHT} label="▶" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-          <div />
-          <Pad mask={BTN.DOWN} label="▼" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-          <div />
+          {/* The corners press both neighbours, the way the corner of a real
+              cross does. Unlabelled and dimmed so the plus shape still reads,
+              but a thumb rolling from up to left passes through a diagonal
+              instead of a hole. */}
+          <Pad mask={BTN.UP | BTN.LEFT} fill={PAD.dpad} style={{ ...cell, ...nub }} />
+          <Pad mask={BTN.UP} label="▲" held={!!(held & BTN.UP)} fill={PAD.dpad} style={cell} />
+          <Pad mask={BTN.UP | BTN.RIGHT} fill={PAD.dpad} style={{ ...cell, ...nub }} />
+          <Pad mask={BTN.LEFT} label="◀" held={!!(held & BTN.LEFT)} fill={PAD.dpad} style={cell} />
+          <div
+            style={{
+              ...cell,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <div
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                background: shade(PAD.dpad, -0.25),
+                boxShadow: "inset 0 1px 2px rgba(0,0,0,.5)",
+              }}
+            />
+          </div>
+          <Pad mask={BTN.RIGHT} label="▶" held={!!(held & BTN.RIGHT)} fill={PAD.dpad} style={cell} />
+          <Pad mask={BTN.DOWN | BTN.LEFT} fill={PAD.dpad} style={{ ...cell, ...nub }} />
+          <Pad mask={BTN.DOWN} label="▼" held={!!(held & BTN.DOWN)} fill={PAD.dpad} style={cell} />
+          <Pad mask={BTN.DOWN | BTN.RIGHT} fill={PAD.dpad} style={{ ...cell, ...nub }} />
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Pad mask={BTN.B} label="B" onDown={onDown} onUp={onUp} round fill={PAD.b} style={{ width: 60, height: 60, fontSize: 20 }} />
-          <Pad mask={BTN.A} label="A" onDown={onDown} onUp={onUp} round fill={PAD.a} style={{ width: 60, height: 60, fontSize: 20, marginBottom: 22 }} />
+          <Pad mask={BTN.B} label="B" held={!!(held & BTN.B)} round fill={PAD.b} style={{ width: 60, height: 60, fontSize: 20 }} />
+          <Pad mask={BTN.A} label="A" held={!!(held & BTN.A)} round fill={PAD.a} style={{ width: 60, height: 60, fontSize: 20, marginBottom: 22 }} />
         </div>
       </div>
 
@@ -308,6 +477,7 @@ function Controls({ onDown, onUp, run, onRun }) {
         <div
           onPointerDown={(event) => {
             event.preventDefault();
+            haptic();
             onRun();
           }}
           title="Hold B automatically while walking, so you run without pinning a thumb to B."
@@ -328,8 +498,8 @@ function Controls({ onDown, onUp, run, onRun }) {
         >
           RUN {run ? "ON" : "OFF"}
         </div>
-        <Pad mask={BTN.SELECT} label="SELECT" onDown={onDown} onUp={onUp} fill={PAD.system} ink="#c3cdf5" style={system} />
-        <Pad mask={BTN.START} label="START" onDown={onDown} onUp={onUp} fill={PAD.system} ink="#c3cdf5" style={system} />
+        <Pad mask={BTN.SELECT} label="SELECT" held={!!(held & BTN.SELECT)} fill={PAD.system} ink="#c3cdf5" style={system} />
+        <Pad mask={BTN.START} label="START" held={!!(held & BTN.START)} fill={PAD.system} ink="#c3cdf5" style={system} />
       </div>
     </div>
   );
@@ -1141,6 +1311,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const release = useCallback((mask) => {
     keysRef.current &= ~mask;
   }, []);
+  const { held: padHeld, handlers: padHandlers } = usePads(press, release);
+  const [buzz, setBuzz] = useState(hapticsEnabled);
 
 
   // A state is only useful if you can tell which one it is, so every save
@@ -1327,12 +1499,23 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         <span style={{ color: backup === "error" ? "var(--accent2)" : undefined }}>{status}</span>
         {note && <span style={{ color: "var(--accent)" }}>{note}</span>}
         <span style={{ flex: 1 }} />
+        <button
+          onClick={() => {
+            setHaptics(!buzz);
+            setBuzz(!buzz);
+            haptic();
+          }}
+          title="Vibrate on each button press"
+          style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 13, opacity: buzz ? 1 : 0.55 }}
+        >
+          {buzz ? "Buzz on" : "Buzz off"}
+        </button>
         <button onClick={onEject} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 13 }}>
           Library
         </button>
       </div>
 
-      <Shoulders onDown={press} onUp={release} />
+      <Shoulders held={padHeld} handlers={padHandlers} />
 
       <canvas
         ref={canvasRef}
@@ -1353,6 +1536,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture?.(e.pointerId);
+            haptic();
             speedPressStart();
           }}
           onPointerUp={(e) => {
@@ -1409,7 +1593,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         </label>
       </div>
 
-      <Controls onDown={press} onUp={release} run={run} onRun={toggleRun} />
+      <Controls held={padHeld} handlers={padHandlers} run={run} onRun={toggleRun} />
 
       {backupError && (
         <p style={{ color: "var(--accent2)", fontSize: 13, padding: "0 16px", lineHeight: 1.5 }}>{backupError}</p>
