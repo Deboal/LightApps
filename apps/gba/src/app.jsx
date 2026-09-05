@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { useAuth, signInWithEmail, signOut } from "../../../shared/auth.js";
+import * as netplay from "./netplay.js";
 import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 
@@ -904,6 +905,136 @@ function StatePanel({ entries, coreVersion, busy, onSave, onLoad, onRemove, onRe
 
 // The point of keeping ten versions is being able to go back to one. Without
 // this the retention is invisible and might as well not exist.
+// What a phase means to the person waiting through it. The wording matters
+// more than usual here: every one of these is a moment where nothing visible
+// is happening and the natural read is that it has broken.
+const LINK_PHASES = {
+  connecting: "Connecting…",
+  waiting: "Waiting for your friend to join",
+  greeting: "Saying hello…",
+  saves: "Swapping cartridge saves…",
+  live: "Linked",
+  over: "Session ended",
+};
+
+function LinkPanel({ link, onHost, onJoin, onLeave, onClose, error }) {
+  const [entry, setEntry] = useState("");
+  const [copied, setCopied] = useState(false);
+  const live = link && link.phase === "live";
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access is not worth an error message; the code is on screen.
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
+      <div style={{ ...panel, padding: 20, maxWidth: 420, width: "100%" }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>Link with a friend</h2>
+        <p style={{ color: "var(--dim)", fontSize: 13, margin: "0 0 16px", lineHeight: 1.5 }}>
+          Trade or battle over an emulated link cable. Both of you need the same
+          cartridge. Both consoles restart and load your saves — the same as
+          plugging a real cable between two Game Boys — so walk to the Cable
+          Club counter once you are in.
+        </p>
+
+        {error && (
+          <p style={{ color: "var(--accent2)", fontSize: 13, marginTop: 0 }}>{error}</p>
+        )}
+
+        {!link && (
+          <>
+            <Button onClick={onHost} tone="accent" style={{ width: "100%", padding: "12px" }}>
+              Start a session
+            </Button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 10px" }}>
+              <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+              <span style={{ color: "var(--dim)", fontSize: 12 }}>or join one</span>
+              <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (entry.trim().length >= 4) onJoin(entry.trim().toUpperCase());
+              }}
+              style={{ display: "flex", gap: 8 }}
+            >
+              <input
+                value={entry}
+                onChange={(event) => setEntry(event.target.value.toUpperCase())}
+                placeholder="CODE"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                style={{
+                  flex: 1,
+                  ...panel,
+                  padding: "11px 14px",
+                  fontSize: 18,
+                  letterSpacing: 3,
+                  fontFamily: "ui-monospace, monospace",
+                  color: "var(--text)",
+                  background: "#0d1220",
+                }}
+              />
+              <Button style={{ padding: "11px 16px" }}>Join</Button>
+            </form>
+          </>
+        )}
+
+        {link && (
+          <>
+            <div
+              onClick={copy}
+              style={{
+                ...panel,
+                padding: "14px 16px",
+                textAlign: "center",
+                cursor: "pointer",
+                background: "#0d1220",
+              }}
+            >
+              <div style={{ color: "var(--dim)", fontSize: 11, letterSpacing: 1 }}>
+                {copied ? "COPIED" : "SHARE THIS CODE"}
+              </div>
+              <div
+                style={{
+                  fontSize: 30,
+                  letterSpacing: 7,
+                  fontFamily: "ui-monospace, monospace",
+                  fontWeight: 700,
+                  marginTop: 2,
+                }}
+              >
+                {link.code}
+              </div>
+            </div>
+            <p style={{ fontSize: 13, color: live ? "var(--accent)" : "var(--dim)", marginBottom: 4 }}>
+              {LINK_PHASES[link.phase] || link.phase}
+              {link.phase === "live" && ` · you are player ${link.seat + 1}`}
+            </p>
+            {link.phase !== "live" && link.phase !== "over" && (
+              <p style={{ fontSize: 12, color: "var(--dim)", marginTop: 0 }}>
+                Keep this tab open. A phone that sleeps drops the connection.
+              </p>
+            )}
+          </>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          {link && <Button onClick={onLeave}>End session</Button>}
+          <Button onClick={onClose}>{live ? "Back to the game" : "Close"}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function History({ versions, current, onRestore, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
@@ -951,6 +1082,17 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [history, setHistory] = useState(null);
   const [stateList, setStateList] = useState(null);
   const [savingState, setSavingState] = useState(false);
+
+  // A link session. `sessionRef` is the transport; `liveRef` is the flag the
+  // frame loop reads, kept separate so the loop never depends on React state
+  // and so a re-render cannot restart a session.
+  const sessionRef = useRef(null);
+  const liveRef = useRef(null);
+  const partnerRef = useRef(null);
+  const [link, setLink] = useState(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkError, setLinkError] = useState("");
+  const [waiting, setWaiting] = useState(false);
 
   // Turbo walk: hold B for the player, but only while a direction is held.
   // In these games running is B plus a direction, and on a phone that means
@@ -1049,7 +1191,20 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     setTimeout(() => setNote(""), 2200);
   }, []);
 
-  const readSave = useCallback(() => readTransfer(core, core.gba_read_save()), [core]);
+  // While linked, the machine that matters is the one in the cable, not the
+  // single-player instance sitting idle beside it.
+  const readSave = useCallback(() => {
+    const live = liveRef.current;
+    return live
+      ? readTransfer(core, core.gba_link_read_save(live.seat))
+      : readTransfer(core, core.gba_read_save());
+  }, [core]);
+
+  const clearDirty = useCallback(() => {
+    const live = liveRef.current;
+    if (live) core.gba_link_clear_save_dirty(live.seat);
+    else core.gba_clear_save_dirty();
+  }, [core]);
 
   // Load a save into the running machine by rebooting with it.
   const adopt = useCallback(
@@ -1071,7 +1226,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       const save = readSave();
       if (!save) return;
       await dbPut(`sav:${key}`, save);
-      core.gba_clear_save_dirty();
+      clearDirty();
 
       const meta = await localMeta(key);
       const account = userRef.current;
@@ -1105,7 +1260,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       }
       setSyncing(false);
     },
-    [core, readSave, flash]
+    [core, readSave, clearDirty, flash]
   );
 
   // Boot, then reconcile with the server before the game gets far.
@@ -1196,6 +1351,127 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booted, pendingState?.id]);
 
+  // Leaving a session hands the machine back to the single-player path exactly
+  // where the cable left it -- otherwise a trade you just made would vanish
+  // when you closed the panel.
+  const endLink = useCallback(
+    (reason) => {
+      const live = liveRef.current;
+      if (live) {
+        const length = core.gba_link_read_state(live.seat);
+        if (length) {
+          const state = readTransfer(core, length);
+          const ptr = intoWasm(core, state);
+          core.gba_write_state(ptr, state.length);
+          core.gba_free(ptr, state.length);
+        }
+        liveRef.current = null;
+        core.gba_link_end();
+        persist();
+      }
+      sessionRef.current = null;
+      setLink(null);
+      if (reason) setLinkError(reason);
+    },
+    [core, persist]
+  );
+
+  const startLink = useCallback(
+    (code, host) => {
+      if (sessionRef.current) return;
+      setLinkError("");
+      // The linked machines boot from the cartridge save, so a cartridge whose
+      // flash has never been touched boots into a new game -- with none of the
+      // party you were hoping to trade. This only catches the never-played
+      // case: a game that has initialised its flash without the player ever
+      // saving looks the same from here, and telling those apart would mean
+      // knowing this particular game's save format.
+      if (readSave().length === 0) {
+        return setLinkError(
+          "This cartridge has no save yet. Save in the game first, or the linked session will start a new one."
+        );
+      }
+      let started;
+      try {
+        started = netplay.session({
+          code,
+          host,
+          romSha,
+          save: readSave(),
+          local: netplay.loopback,
+          onChange: (next) => {
+            setLink(next);
+            // The cable is wired the moment both saves are in hand. Unit 0 is
+            // the parent, and which player that is has to be the same on both
+            // devices or the two sides boot different machines.
+            if (next.phase === "live" && !liveRef.current && next.partnerSave) {
+              const mine = readSave();
+              const [a, b] = next.seat === 0 ? [mine, next.partnerSave] : [next.partnerSave, mine];
+              const romPtr = intoWasm(core, rom);
+              const aPtr = intoWasm(core, a);
+              const bPtr = intoWasm(core, b);
+              core.gba_link_init(romPtr, rom.length, aPtr, a.length, bPtr, b.length);
+              core.gba_free(bPtr, b.length);
+              core.gba_free(aPtr, a.length);
+              core.gba_free(romPtr, rom.length);
+              liveRef.current = { seat: next.seat };
+              // Fast-forward is meaningless in lockstep: you can only run as
+              // fast as the other side sends input.
+              baseSpeed.current = 1;
+              turbo.current = false;
+              applySpeed();
+              setLinkOpen(false);
+            }
+          },
+          onEnd: (reason) => endLink(reason || ""),
+        });
+      } catch (e) {
+        return setLinkError(e.message || String(e));
+      }
+      sessionRef.current = started;
+      setLink(started.state);
+    },
+    [core, rom, romSha, readSave, endLink, applySpeed]
+  );
+
+  // The transport announces phase changes, not every frame. The health
+  // readout moves constantly, so it is polled -- twice a second is enough to
+  // watch a connection degrade, and re-rendering the player sixty times a
+  // second to show a number would cost more than the number is worth.
+  useEffect(() => {
+    if (!link || link.phase !== "live") return;
+    let previous = -1;
+    let still = 0;
+    const tick = setInterval(() => {
+      if (!sessionRef.current) return;
+      const next = sessionRef.current.state;
+      // A session that stops advancing is almost always the other person's
+      // tab going to the background, where the browser cuts animation frames
+      // to about one a second. Lockstep means their pause is your pause, so
+      // say whose it is -- a frozen picture with no explanation reads as a
+      // crash.
+      still = next.frame === previous ? still + 1 : 0;
+      previous = next.frame;
+      setWaiting(still >= 2);
+      setLink(next);
+    }, 500);
+    return () => {
+      clearInterval(tick);
+      setWaiting(false);
+    };
+  }, [link?.phase]);
+
+  // A tab that closes mid-session should tell the other side rather than
+  // leaving them staring at a stall.
+  useEffect(() => {
+    const bail = () => sessionRef.current && sessionRef.current.leave();
+    window.addEventListener("pagehide", bail);
+    return () => {
+      window.removeEventListener("pagehide", bail);
+      if (sessionRef.current) sessionRef.current.leave();
+    };
+  }, []);
+
   // The frame loop. Time is accumulated rather than assuming one animation
   // frame equals one GBA frame, so a 120 Hz display does not run the game at
   // double speed.
@@ -1219,20 +1495,52 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       last = now;
 
       let ran = 0;
+      let stalled = false;
+      const live = liveRef.current;
       // Cap the catch-up so a backgrounded tab does not return and try to
       // simulate a minute of gameplay in one frame.
       while (owed >= period && ran < 16) {
         let keys = keysRef.current;
         if (runRef.current && keys & DPAD) keys |= BTN.B;
-        core.gba_run_frame(keys);
+        if (live) {
+          // A frame cannot run until both players' inputs for it are known.
+          // Waiting is the only correct answer: an invented input is a session
+          // where the two sides are playing different games and neither knows.
+          const pair = sessionRef.current && sessionRef.current.advance(keys);
+          if (!pair) {
+            stalled = true;
+            break;
+          }
+          core.gba_link_run_frame(pair[0], pair[1]);
+          if (sessionRef.current.needsHash()) {
+            sessionRef.current.report(core.gba_link_hash());
+          }
+        } else {
+          core.gba_run_frame(keys);
+        }
         owed -= period;
         ran += 1;
       }
+      // Stalling banks time so the session catches up once input arrives, but
+      // only so much: a ten-second hiccup should not become a ten-second
+      // fast-forward.
+      if (stalled) owed = Math.min(owed, period * 30);
       if (ran === 0) return;
 
-      const ptr = core.gba_pixels();
+      const ptr = live ? core.gba_link_pixels(live.seat) : core.gba_pixels();
       image.data.set(new Uint8Array(core.memory.buffer, ptr, WIDTH * HEIGHT * 4));
       ctx.putImageData(image, 0, 0);
+
+      // The partner's screen, which is free: this device is already simulating
+      // their machine. Seeing whether they have reached the counter yet is
+      // most of what the two of you would otherwise be typing to each other.
+      if (live && partnerRef.current) {
+        const other = core.gba_link_pixels_alt(live.seat ^ 1);
+        const view = partnerRef.current.getContext("2d");
+        const frame = view.createImageData(WIDTH, HEIGHT);
+        frame.data.set(new Uint8Array(core.memory.buffer, other, WIDTH * HEIGHT * 4));
+        view.putImageData(frame, 0, 0);
+      }
 
       drawn += ran;
       if (now - counted >= 500) {
@@ -1243,7 +1551,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
       // Persist a few seconds after the cartridge stops being written, which
       // is when the game has finished its save rather than mid-erase.
-      if (core.gba_save_dirty() && !saveTimer.current) {
+      const dirty = live ? core.gba_link_save_dirty(live.seat) : core.gba_save_dirty();
+      if (dirty && !saveTimer.current) {
         saveTimer.current = setTimeout(() => {
           saveTimer.current = null;
           persist();
@@ -1517,19 +1826,89 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
       <Shoulders held={padHeld} handlers={padHandlers} />
 
-      <canvas
-        ref={canvasRef}
-        width={WIDTH}
-        height={HEIGHT}
-        style={{
-          width: "100%",
-          maxWidth: 720,
-          margin: "0 auto",
-          aspectRatio: `${WIDTH} / ${HEIGHT}`,
-          display: "block",
-          background: "#000",
-        }}
-      />
+      <div style={{ position: "relative", maxWidth: 720, margin: "0 auto", width: "100%" }}>
+        <canvas
+          ref={canvasRef}
+          width={WIDTH}
+          height={HEIGHT}
+          style={{
+            width: "100%",
+            aspectRatio: `${WIDTH} / ${HEIGHT}`,
+            display: "block",
+            background: "#000",
+          }}
+        />
+        {waiting && link && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              background: "rgba(6,9,17,.72)",
+              color: "var(--text)",
+              textAlign: "center",
+              padding: 16,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600 }}>
+              Waiting for Player {(link.seat ^ 1) + 1}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--dim)", maxWidth: 280, lineHeight: 1.5 }}>
+              Both consoles run in step, so the game only moves as fast as the
+              slower side. If they have switched tabs or their phone has slept,
+              it will pick up the moment they come back.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {link && link.phase === "live" && (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            padding: "10px 14px 0",
+            maxWidth: 720,
+            margin: "0 auto",
+            width: "100%",
+          }}
+        >
+          <canvas
+            ref={partnerRef}
+            width={WIDTH}
+            height={HEIGHT}
+            style={{
+              width: 132,
+              aspectRatio: `${WIDTH} / ${HEIGHT}`,
+              background: "#000",
+              borderRadius: 6,
+              border: "1px solid var(--line)",
+              imageRendering: "pixelated",
+              flex: "0 0 auto",
+            }}
+          />
+          <div data-role="link-status" style={{ fontSize: 12, lineHeight: 1.5, minWidth: 0 }}>
+            <div style={{ color: "var(--accent)", fontWeight: 600 }}>
+              Player {(link.seat ^ 1) + 1}
+            </div>
+            <div style={{ color: "var(--dim)" }}>
+              {/* Lead is how many frames of their input are still in hand. It
+                  is the one number that predicts a stutter before it happens,
+                  so it is the one worth showing. */}
+              {link.lead > 0 ? `${link.lead} frames of slack` : "waiting for input…"}
+            </div>
+            <div style={{ color: link.stalls > 0 ? "var(--accent2)" : "var(--dim)" }}>
+              {link.stalls > 0 ? `${link.stalls} stalls` : "no stalls"}
+            </div>
+            <div style={{ color: "var(--dim)" }}>code {link.code}</div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, padding: "10px 14px", flexWrap: "wrap" }}>
         <button
@@ -1562,6 +1941,13 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           {speed}× {speed === 8 ? "turbo" : "speed"}
         </button>
         <Button onClick={openStates}>States</Button>
+        <Button
+          onClick={() => setLinkOpen(true)}
+          tone={link && link.phase === "live" ? "accent" : undefined}
+          disabled={!netplay.available}
+        >
+          {link && link.phase === "live" ? "Linked" : "Link"}
+        </Button>
         {user && (
           <>
             <Button onClick={() => persist({ manual: true })} disabled={syncing}>
@@ -1604,6 +1990,20 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           ? "The cartridge save is written locally a few seconds after the game finishes saving, then pushed to your account. Conflicts are always shown to you, never resolved silently."
           : "The cartridge save is written to this browser a few seconds after the game finishes saving, and again whenever you leave the page. Sign in to keep a copy that survives a cleared browser."}
       </p>
+
+      {linkOpen && (
+        <LinkPanel
+          link={link}
+          error={linkError}
+          onHost={() => startLink(netplay.newCode(), true)}
+          onJoin={(code) => startLink(code, false)}
+          onLeave={() => {
+            if (sessionRef.current) sessionRef.current.leave();
+            else endLink("");
+          }}
+          onClose={() => setLinkOpen(false)}
+        />
+      )}
 
       {stateList && (
         <StatePanel

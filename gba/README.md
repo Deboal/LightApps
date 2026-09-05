@@ -351,6 +351,62 @@ re-reading the code, and none of which the unit tests caught:
   does not, and `a_long_bios_call_is_interruptible` in `tests/system.rs`
   pins it.
 
+## Netplay
+
+`apps/gba/src/netplay.js` is the wire; the cable itself is the core's. One
+person starts a session and reads out a six-character code, the other types it
+in.
+
+What crosses the network is button presses. Nothing else. Each participant
+already emulates *both* machines, so the cable traffic is generated locally by
+hardware both sides compute identically — sending link bytes instead would put
+a 16 MHz serial protocol on a 100 ms wire. That only works because the core is
+deterministic, and it costs exactly one thing: a frame cannot run until both
+players' inputs for it are known.
+
+So inputs are scheduled eight frames ahead (~134 ms). You press A now, it lands
+on frame N+8, and the packet carrying it has that long to arrive. If it does
+not, both sides wait. Waiting is the only correct answer — an invented input is
+a session where the two participants are playing different games and neither
+knows it.
+
+Three things keep that honest:
+
+- **Fingerprints.** Every 120 frames the two sides exchange a hash of the whole
+  session. Disagreement stops the session rather than letting one side write a
+  save the other never saw. Taking one means serializing both machines, about a
+  megabyte, so it is only taken on the frames that ask — computing it every
+  frame instead cost nine tenths of the frame rate before that was noticed.
+- **Frame-advantage limiting.** Lockstep self-paces without it, but it paces by
+  spending the whole delay buffer on clock skew, leaving nothing for a late
+  packet. A side more than a few frames ahead idles instead. The subtlety: a
+  side that idles stops advancing, so it stops meeting the every-fourth-frame
+  send condition, so it stops telling its partner where it is — and both wait
+  for a number neither will send. Sending *while* waiting is what makes it work.
+- **Redundancy.** Each packet repeats the sixteen frames around it, so a
+  dropped one is covered by its neighbours instead of stalling the session.
+
+Both machines boot from their own cartridge save, the way two consoles do when
+you plug a real cable between them: 128 KB each, chunked over the channel, and
+a complete description of where to begin because `Emulator::new` is
+deterministic. Leaving a session serializes your unit back into the
+single-player machine, so a trade survives the session that made it.
+
+Add `?link=local` to the URL to run the whole thing between two tabs over a
+BroadcastChannel — same protocol, same lockstep, no backend. That is how it is
+tested, and how anyone can check the plumbing before asking a friend to sit
+down for it.
+
+**What is measured, and what is not.** The core runs a linked pair at 235 fps
+in wasm — about four times what 60 fps needs. The end-to-end two-tab check
+verifies the handshake, the save exchange, the lockstep, that one side's
+buttons reach the other's copy of their machine, and that the two sides never
+stop agreeing. It cannot measure frame rate honestly: a browser cuts a
+background tab to roughly one animation frame a second, and under lockstep one
+side's pause is the other's. That is also the first thing a real pair will hit,
+so a session that stops advancing says whose turn it is waiting on rather than
+showing a frozen picture.
+
 ## Next
 
 1. **A trade, end to end.** Both players stand at the machine; completing a

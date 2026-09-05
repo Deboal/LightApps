@@ -257,5 +257,119 @@ async function newPage() {
   await page.close();
 }
 
+// 7. A real linked session, between two tabs.
+//
+// The transport is swapped for a BroadcastChannel (`?link=local`), so this
+// exercises everything the wire does not: the handshake, the save exchange,
+// the lockstep, and the two machines actually agreeing. If the two sides ever
+// computed different sessions, the fingerprints they trade would disagree and
+// the session would stop with an error -- which is the assertion that matters.
+{
+  // One browser context, two tabs. `browser.newPage()` makes a fresh context
+  // each time, and a BroadcastChannel does not cross one -- so the two tabs
+  // would never hear each other, which looks exactly like a broken handshake.
+  const context = await browser.newContext({ viewport: { width: 900, height: 950 } });
+  const open = async () => {
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(URL + "?link=local", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("text=Choose a ROM");
+    await page.setInputFiles("input[type=file]", ROM);
+    await page.waitForTimeout(9000);
+    return { page, errors };
+  };
+
+  const a = await open();
+  const b = await open();
+
+  await a.page.getByRole("button", { name: "Link", exact: true }).click();
+  await a.page.getByRole("button", { name: "Start a session" }).click();
+  await a.page.waitForSelector("text=SHARE THIS CODE");
+  const code = (await a.page.textContent("text=SHARE THIS CODE >> xpath=following-sibling::div")).trim();
+  check("the host gets a code", /^[A-Z2-9]{6}$/.test(code), code);
+
+  await b.page.getByRole("button", { name: "Link", exact: true }).click();
+  await b.page.fill("input[placeholder=CODE]", code);
+  await b.page.getByRole("button", { name: "Join", exact: true }).click();
+
+  // Both sides have to reach "Linked" -- the host only does so once the
+  // partner's save has arrived, so this covers the chunked exchange too.
+  const linked = async ({ page }) => {
+    try {
+      await page.waitForSelector("text=/^Linked/", { timeout: 20000 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const both = (await linked(a)) && (await linked(b));
+  check("both sides reach a live session", both);
+
+  if (both) {
+    // Let it run well past the first fingerprint exchange (every 120 frames).
+    await a.page.waitForTimeout(9000);
+    const frames = async ({ page }) =>
+      page.evaluate(() => {
+        const strip = document.querySelector("[data-role=link-status]");
+        return strip ? strip.innerText.replace(/\n/g, " · ") : null;
+      });
+    const health = await frames(a);
+    check("the session is still live after nine seconds", health !== null, health);
+    // Slack is the partner's input still in hand. Zero means every frame is
+    // arriving just in time, which over a loopback would mean something is
+    // wrong with the scheduling rather than with the wire.
+    check("and input is arriving ahead of the frame that needs it", /frames of slack/.test(health || ""), health);
+
+    // A desync stops the session and replaces the strip with an error, so a
+    // still-running session is the fingerprints having matched throughout.
+    const stillLinked = (await linked(a)) && (await linked(b));
+    check("and the two sides never stopped agreeing", stillLinked);
+
+    // Input crossing the wire, proved by the thing that would break if it did
+    // not. If A's buttons never reached B, B would simulate A's machine with
+    // no input while A simulated it with input, the two sides' fingerprints
+    // would diverge within 120 frames, and the session would stop itself.
+    await a.page.keyboard.down("Enter");
+    await a.page.waitForTimeout(2500);
+    await a.page.keyboard.up("Enter");
+    await a.page.waitForTimeout(3000);
+    check(
+      "one side's buttons reach the other's copy of their machine",
+      (await linked(a)) && (await linked(b))
+    );
+
+    // The partner's screen is drawn from the other machine in this same
+    // process; if it were black, the second machine would not be running.
+    const partnerLit = await a.page.evaluate(() => {
+      const canvases = [...document.querySelectorAll("canvas")];
+      const small = canvases.find((c) => c.getBoundingClientRect().width < 200);
+      if (!small) return -1;
+      const data = small.getContext("2d").getImageData(0, 0, small.width, small.height).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += data[i];
+      return Math.round(sum / (data.length / 4));
+    });
+    check("the partner's screen is being drawn", partnerLit > 5, `luminance ${partnerLit}`);
+  }
+
+  // Leaving hands the machine back to the single-player path where the cable
+  // left it. Anything else and a trade you just made would vanish with the
+  // session that made it.
+  await a.page.getByRole("button", { name: "Linked" }).click();
+  await a.page.getByRole("button", { name: "End session" }).click();
+  await a.page.waitForTimeout(2500);
+  const alive = await brightness(a.page);
+  check("the game keeps running after leaving a session", alive > 5, `luminance ${alive}`);
+  check(
+    "and the link control goes back to offering one",
+    (await a.page.getByRole("button", { name: "Link", exact: true }).count()) === 1
+  );
+
+  check("no page errors on the host", a.errors.length === 0, a.errors.join("; "));
+  check("no page errors on the joiner", b.errors.length === 0, b.errors.join("; "));
+  await context.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);
