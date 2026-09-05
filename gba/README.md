@@ -290,11 +290,28 @@ cargo run --release -p gba-headless -- rom.gba --link --frames 600 --screenshot 
 Two machines cost almost exactly twice one: 4.7x realtime for the pair against
 8.2x for a single machine.
 
-**Unproven:** the register plumbing is tested, but no game has yet agreed to
-talk over it. Pokemon's link protocol is timing-sensitive, and this core's
-timing is scanline-approximate with no wait-state accuracy. `transfer_cycles`
-is derived rather than measured and is the first thing to tune if a game
-decides the cable has timed out.
+**Two copies of FireRed now find each other.** Driven to the Cable Club
+counter, both units configure multiplayer at 115200 baud, exchange the AGB
+link library's 0xB9A0 handshake word, see each other in the receive registers,
+and the game advances from "Please wait" to "When all players are ready".
+
+**Not yet a trade.** Confirming at that prompt ends in "Communication error",
+so the handshake succeeds and the data phase that follows does not. The
+leading suspect is `transfer_cycles`, which is derived from the baud rate
+rather than measured, and the fact that this core's timing is
+scanline-approximate with no wait-state accuracy.
+
+Three bugs on the way here, each found by running the real game rather than by
+re-reading the code, and none of which the unit tests caught:
+
+- Multiplayer is SIOCNT mode 2, not 1. The hand-assembled test ROM encoded the
+  same wrong value, so the test agreed with the code that shared its
+  misunderstanding.
+- SIOMULTI0-3 are writable. The games clear them between transfers; treating
+  them as read-only left a stale word where the game expected a blank slate.
+- Received words must appear when a transfer *completes*, not when it starts.
+  Delivering early let the game read the answer before it had asked the
+  question, and its own clear then wiped the real result.
 
 ## Next
 

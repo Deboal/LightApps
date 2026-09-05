@@ -55,6 +55,8 @@ pub struct Memory {
     pub in_bios: bool,
     /// Set when the game writes HALTCNT; the emulator loop parks the CPU.
     pub halt_requested: bool,
+    /// Words latched by a transfer in flight, delivered when it completes.
+    link_incoming: [u16; 4],
 }
 
 impl Memory {
@@ -78,6 +80,7 @@ impl Memory {
             bios_latch: 0,
             in_bios: false,
             halt_requested: false,
+            link_incoming: [link::DISCONNECTED; 4],
         };
         // KEYINPUT is active-low: with nothing pressed every bit reads high.
         memory.write_io16_raw(0x130, 0x03FF);
@@ -157,8 +160,6 @@ impl Memory {
                 }
                 return;
             }
-            // The received-word registers are filled by the cable.
-            0x120..=0x127 => return,
             0x100..=0x10F => {
                 let index = ((offset - 0x100) / 4) as usize;
                 self.io[offset as usize] = value;
@@ -255,13 +256,19 @@ impl Memory {
     }
 
     /// Deliver the four exchanged words and finish the transfer.
+    /// Latch the exchanged words and start the clock on the transfer.
+    ///
+    /// The words are held rather than delivered: on hardware the received data
+    /// appears when the transfer *completes*. Writing it immediately let the
+    /// game read the answer before it had asked the question, and the games
+    /// clear these registers between transfers -- so an early write was
+    /// promptly wiped and the real result never arrived.
+    ///
     /// The duration comes from the parent, because the parent drives the
     /// clock; a child's own baud setting does not change how long the transfer
     /// takes.
     pub fn link_deliver(&mut self, words: [u16; 4], duration: u64) {
-        for (slot, word) in words.iter().enumerate() {
-            self.write_io16_raw(link::SIOMULTI0 + slot as u32 * 2, *word);
-        }
+        self.link_incoming = words;
         self.link.phase = link::Phase::Active;
         self.link.finish_at = self.cycles + duration;
     }
@@ -271,6 +278,10 @@ impl Memory {
     pub fn link_tick(&mut self) {
         if self.link.phase == link::Phase::Active && self.cycles >= self.link.finish_at {
             self.link.phase = link::Phase::Idle;
+            let words = self.link_incoming;
+            for (slot, word) in words.iter().enumerate() {
+                self.write_io16_raw(link::SIOMULTI0 + slot as u32 * 2, *word);
+            }
             let control = self.read_raw16(link::SIOCNT);
             self.write_io16_raw(link::SIOCNT, control & !0x0080);
             if control & 0x4000 != 0 {

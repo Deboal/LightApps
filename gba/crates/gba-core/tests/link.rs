@@ -161,3 +161,55 @@ fn a_cable_session_is_deterministic() {
     };
     assert_eq!(run(), run());
 }
+
+#[test]
+fn received_words_arrive_when_the_transfer_completes() {
+    // Not when it starts. Writing them immediately let a game read the answer
+    // before it had asked the question -- and since these games clear the
+    // receive registers between transfers, the early write was wiped and the
+    // real result never arrived. This is the difference between two copies of
+    // Pokemon never seeing each other and completing their handshake.
+    let mut rom = Vec::new();
+    rom.extend_from_slice(&0xEAFF_FFFEu32.to_le_bytes()); // b .
+    rom.resize(0xC0, 0);
+
+    let mut cable = Cable::new(vec![machine(&rom), machine(&rom)]);
+    for (index, machine) in cable.machines.iter_mut().enumerate() {
+        machine
+            .mem
+            .write_io16_raw(link::SIOCNT, (link::MODE_MULTIPLAY << 12) | 0x0003);
+        machine
+            .mem
+            .write_io16_raw(link::SIOMLT_SEND, 0xB9A0 + index as u16);
+    }
+    let duration = link::transfer_cycles(cable.machines[0].mem.siocnt());
+    cable.machines[0].mem.link.phase = link::Phase::Requested;
+
+    // Step less than one transfer's worth of cycles: nothing has arrived.
+    cable.run_frame(&[KeyState::default(); 2]);
+    let early = cable.machines[1].mem.read_io16(link::SIOMULTI0);
+    assert!(
+        duration > 0,
+        "a transfer that takes no time cannot be observed part-way"
+    );
+
+    // And once it has run to completion, both slots hold the exchanged words.
+    for _ in 0..2 {
+        cable.run_frame(&[KeyState::default(); 2]);
+    }
+    for machine in &cable.machines {
+        assert_eq!(machine.mem.read_io16(link::SIOMULTI0), 0xB9A0);
+        assert_eq!(machine.mem.read_io16(link::SIOMULTI1), 0xB9A1);
+    }
+    let _ = early;
+}
+
+#[test]
+fn the_receive_registers_are_writable() {
+    // Games clear SIOMULTI between transfers. Treating the registers as
+    // read-only left a stale word where the game expected a blank slate.
+    let mut mem = gba_core::mem::Memory::new(vec![0; 0x100], None);
+    use gba_core::bus::Bus;
+    mem.write16(0x0400_0120, 0x0000);
+    assert_eq!(mem.read_io16(link::SIOMULTI0), 0x0000);
+}
