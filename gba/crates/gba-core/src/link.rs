@@ -90,8 +90,14 @@ pub fn transfer_cycles(control: u16) -> u64 {
     (per_bit as u64) * 16 * 4
 }
 
-/// True when SIOCNT selects multiplayer mode (bits 13-12 = 01) and RCNT is not
-/// holding the port in general-purpose or JOY mode.
+/// SIOCNT bits 13-12 select the serial mode: 0 normal 8-bit, 1 normal 32-bit,
+/// 2 multiplayer, 3 UART. Naming it stops the off-by-one that cost a day:
+/// the value is 2, and a unit test written against the wrong number simply
+/// agrees with the wrong code.
+pub const MODE_MULTIPLAY: u16 = 2;
+
+/// True when SIOCNT selects multiplayer mode and RCNT is not holding the port
+/// in general-purpose or JOY mode.
 pub fn multiplayer_mode(control: u16, rcnt: u16) -> bool {
-    rcnt & 0x8000 == 0 && (control >> 12) & 3 == 1
+    rcnt & 0x8000 == 0 && (control >> 12) & 3 == MODE_MULTIPLAY
 }

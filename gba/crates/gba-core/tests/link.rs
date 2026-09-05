@@ -25,8 +25,9 @@ fn link_program() -> Vec<u8> {
         dp_reg(MOV, false, 0, 2, 2, LSR, 4),                // r2 = id
         dp_imm(ADD, false, 2, 3, 1, 10),                    // r3 = id + 0x1000
         ldrh_strh(false, true, true, false, 1, 3, 0x2A, 1), // SIOMLT_SEND = r3
-        dp_imm(MOV, false, 0, 4, 1, 10),                    // r4 = 0x1000 (multiplayer)
-        dp_imm(CMP, true, 2, 0, 0, 0),                      // is this the parent?
+        // r4 = 0x2000: SIOCNT bits 13-12 = 2 selects multiplayer.
+        dp_imm(MOV, false, 0, 4, 2, 10),
+        dp_imm(CMP, true, 2, 0, 0, 0), // is this the parent?
         // ORREQ r4, r4, #0x80 -- only the parent starts the transfer. Written
         // out because the helpers all encode the AL condition.
         (1 << 25) | (ORR << 21) | (4 << 16) | (4 << 12) | 0x80,
@@ -119,7 +120,7 @@ fn a_transfer_raises_the_serial_interrupt_when_asked() {
         // Multiplayer mode, 115200 baud, interrupt on completion.
         machine
             .mem
-            .write_io16_raw(link::SIOCNT, 0x1000 | 0x4000 | 0x0003);
+            .write_io16_raw(link::SIOCNT, (link::MODE_MULTIPLAY << 12) | 0x4000 | 0x0003);
         machine
             .mem
             .write_io16_raw(link::SIOMLT_SEND, 0xBEE0 + index as u16);
