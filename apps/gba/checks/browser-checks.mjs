@@ -114,5 +114,74 @@ async function newPage() {
   await page.close();
 }
 
+// 4. Fast-forward keys. Each gesture has its own key and one meaning, after a
+// tap/hold timing heuristic guessed wrong: a deliberate keypress outlasts any
+// reasonable threshold, so an intended tap read as a hold.
+{
+  const { page } = await newPage();
+  await page.waitForTimeout(8000);
+  const speed = async () => {
+    const text = await page.textContent("body");
+    return (text.match(/(\d)× (speed|turbo)/) || ["?"])[0];
+  };
+  // Held deliberately long, which is what used to break it.
+  const latch = async () => {
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("Space");
+    await page.waitForTimeout(500);
+    await page.keyboard.up("Space");
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(250);
+  };
+
+  check("starts at normal speed", (await speed()) === "1× speed");
+  await latch();
+  check("shift+space latches 4×", (await speed()) === "4× speed", await speed());
+  await latch();
+  check("shift+space latches back to 1×", (await speed()) === "1× speed", await speed());
+  await latch();
+
+  await page.keyboard.down("Space");
+  await page.waitForTimeout(600);
+  check("space held gives 8×", (await speed()) === "8× turbo", await speed());
+  await page.keyboard.up("Space");
+  await page.waitForTimeout(250);
+  // The important one: turbo returns to the latched speed, not to normal.
+  check("releasing space returns to the latched 4×", (await speed()) === "4× speed", await speed());
+  await page.close();
+}
+
+// 5. Turbo walk. The interesting property is the gate, not the latch: with no
+// direction held the latch must be invisible, so it can stay on through menus
+// and battles without pressing B behind the player's back. This checks the
+// control and that the game keeps running either way; the gate itself is one
+// line and reads directly.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(8000);
+  const pill = page.locator("text=/^RUN (ON|OFF)$/");
+
+  check("run latch starts off", (await pill.textContent()) === "RUN OFF");
+  await pill.click();
+  await page.waitForTimeout(200);
+  check("tapping it latches on", (await pill.textContent()) === "RUN ON");
+
+  // Idle with the latch on: the game must be unaffected and still advancing.
+  const before = await brightness(page);
+  await page.waitForTimeout(1500);
+  const after = await brightness(page);
+  check("the game keeps running with the latch on", before > 0 || after > 0, `${before} then ${after}`);
+
+  // And with a direction held, which is when it actually presses B.
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(1200);
+  await page.keyboard.up("ArrowRight");
+  await pill.click();
+  await page.waitForTimeout(200);
+  check("tapping it latches off", (await pill.textContent()) === "RUN OFF");
+  check("no page errors in the run flow", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

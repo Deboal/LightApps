@@ -34,12 +34,18 @@ const BTN = {
   L: 1 << 9,
 };
 
+// Any direction. The run latch keys off this: B is only held while the
+// character is actually moving, so a latched run never leaks into a menu,
+// where a held B would back straight out of it.
+const DPAD = BTN.UP | BTN.DOWN | BTN.LEFT | BTN.RIGHT;
+
 const KEYBOARD = {
   KeyZ: BTN.A,
   KeyX: BTN.B,
   Enter: BTN.START,
-  ShiftRight: BTN.SELECT,
-  ShiftLeft: BTN.SELECT,
+  // Shift is deliberately not a game button: it is the modifier that latches
+  // fast-forward, and having it also press Select would open a menu every time
+  // you changed speed.
   Backspace: BTN.SELECT,
   ArrowUp: BTN.UP,
   ArrowDown: BTN.DOWN,
@@ -255,7 +261,7 @@ function Shoulders({ onDown, onUp }) {
   );
 }
 
-function Controls({ onDown, onUp }) {
+function Controls({ onDown, onUp, run, onRun }) {
   // Sized to fit a 375px phone without clipping: the pad and the face buttons
   // have to share that width.
   const cell = { width: 52, height: 52 };
@@ -299,6 +305,29 @@ function Controls({ onDown, onUp }) {
           of times an hour; a thumb travelling between the pad and the face
           buttons should never cross them. */}
       <div style={{ display: "flex", justifyContent: "center", gap: 18, padding: "14px 0 6px" }}>
+        <div
+          onPointerDown={(event) => {
+            event.preventDefault();
+            onRun();
+          }}
+          title="Hold B automatically while walking, so you run without pinning a thumb to B."
+          style={{
+            ...system,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 8,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            cursor: "pointer",
+            userSelect: "none",
+            touchAction: "none",
+            background: run ? PAD.b : PAD.system,
+            color: run ? "#1a0d15" : "#c3cdf5",
+          }}
+        >
+          RUN {run ? "ON" : "OFF"}
+        </div>
         <Pad mask={BTN.SELECT} label="SELECT" onDown={onDown} onUp={onUp} fill={PAD.system} ink="#c3cdf5" style={system} />
         <Pad mask={BTN.START} label="START" onDown={onDown} onUp={onUp} fill={PAD.system} ink="#c3cdf5" style={system} />
       </div>
@@ -494,8 +523,9 @@ function Home({
 
       <p style={{ color: "var(--dim)", fontSize: 13, lineHeight: 1.6, marginTop: 20 }}>
         No audio — that is deliberate, not missing. Keyboard: arrows to move,
-        Z and X for A and B, Enter for Start, Shift for Select, A and S for the
-        shoulders.
+        Z and X for A and B, Enter for Start, Backspace for Select, A and S for
+        the shoulders. Hold space for 8× while you hold it; shift+space latches
+        4×.
       </p>
     </div>
   );
@@ -752,46 +782,73 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [stateList, setStateList] = useState(null);
   const [savingState, setSavingState] = useState(false);
 
-  // Fast-forward has two gestures rather than a four-way cycle.
-  //
-  // A tap toggles between normal and 4x, because those are the two speeds
-  // worth having and stepping through 2x on the way to 8x was pure tax.
-  // Holding gives 8x for as long as you hold it and then returns to whichever
-  // of the two you were on -- so a long stretch of text is a held key, not a
-  // mode you have to remember to leave.
-  const HOLD_MS = 220;
-  const baseSpeed = useRef(1);
-  const holdTimer = useRef(null);
-  const holding = useRef(false);
+  // Turbo walk: hold B for the player, but only while a direction is held.
+  // In these games running is B plus a direction, and on a phone that means
+  // pinning one thumb to B and steering with the other -- which is exactly the
+  // thumb you also want on A. Latching it here costs nothing and, gated on the
+  // d-pad, is invisible everywhere else: menus and battles never see the held
+  // button, so RUN can stay on for a whole session.
+  const runRef = useRef(false);
+  const [run, setRun] = useState(false);
+  const toggleRun = useCallback(() => {
+    runRef.current = !runRef.current;
+    setRun(runRef.current);
+  }, []);
 
-  const applySpeed = useCallback((value) => {
+  // Fast-forward, with no timing heuristic on the keyboard.
+  //
+  // It used to guess tap from hold by how long the key was down, and guessed
+  // wrong: a deliberate keypress easily outlasts the threshold, so an intended
+  // tap read as a hold and dropped straight back to normal speed on release.
+  // Each gesture now has its own key and exactly one meaning.
+  //
+  //   space         8x for as long as it is held, then back
+  //   shift + space latch between normal and 4x
+  //
+  // The on-screen control has no modifier key available, so it keeps a
+  // press-and-hold, with a threshold long enough to be deliberate.
+  const HOLD_MS = 320;
+  const baseSpeed = useRef(1);
+  const turbo = useRef(false);
+  const holdTimer = useRef(null);
+
+  const applySpeed = useCallback(() => {
+    const value = turbo.current ? 8 : baseSpeed.current;
     speedRef.current = value;
     setSpeed(value);
   }, []);
 
+  const setTurbo = useCallback(
+    (on) => {
+      if (turbo.current === on) return;
+      turbo.current = on;
+      applySpeed();
+    },
+    [applySpeed]
+  );
+
+  const toggleBase = useCallback(() => {
+    baseSpeed.current = baseSpeed.current === 1 ? 4 : 1;
+    applySpeed();
+  }, [applySpeed]);
+
+  // Pointer input keeps the press-and-hold, since a touchscreen has no shift.
   const speedPressStart = useCallback(() => {
-    // Ignore key auto-repeat: only the first press starts the hold timer.
-    if (holdTimer.current !== null || holding.current) return;
+    if (holdTimer.current !== null || turbo.current) return;
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;
-      holding.current = true;
-      applySpeed(8);
+      setTurbo(true);
     }, HOLD_MS);
-  }, [applySpeed]);
+  }, [setTurbo]);
 
   const speedPressEnd = useCallback(() => {
     if (holdTimer.current !== null) {
       clearTimeout(holdTimer.current);
       holdTimer.current = null;
     }
-    if (holding.current) {
-      holding.current = false;
-      applySpeed(baseSpeed.current);
-    } else {
-      baseSpeed.current = baseSpeed.current === 1 ? 4 : 1;
-      applySpeed(baseSpeed.current);
-    }
-  }, [applySpeed]);
+    if (turbo.current) setTurbo(false);
+    else toggleBase();
+  }, [setTurbo, toggleBase]);
 
   useEffect(() => () => clearTimeout(holdTimer.current), []);
   const saveTimer = useRef(null);
@@ -995,7 +1052,9 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       // Cap the catch-up so a backgrounded tab does not return and try to
       // simulate a minute of gameplay in one frame.
       while (owed >= period && ran < 16) {
-        core.gba_run_frame(keysRef.current);
+        let keys = keysRef.current;
+        if (runRef.current && keys & DPAD) keys |= BTN.B;
+        core.gba_run_frame(keys);
         owed -= period;
         ran += 1;
       }
@@ -1044,7 +1103,10 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     const down = (event) => {
       if (event.code === "Space") {
         event.preventDefault();
-        if (!event.repeat) speedPressStart();
+        if (event.repeat) return;
+        // Shift latches the speed; space alone is momentary turbo.
+        if (event.shiftKey) toggleBase();
+        else setTurbo(true);
         return;
       }
       const mask = KEYBOARD[event.code];
@@ -1056,7 +1118,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     const up = (event) => {
       if (event.code === "Space") {
         event.preventDefault();
-        speedPressEnd();
+        setTurbo(false);
         return;
       }
       const mask = KEYBOARD[event.code];
@@ -1071,7 +1133,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [speedPressStart, speedPressEnd]);
+  }, [setTurbo, toggleBase]);
 
   const press = useCallback((mask) => {
     keysRef.current |= mask;
@@ -1299,7 +1361,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           }}
           onPointerCancel={speedPressEnd}
           onLostPointerCapture={speedPressEnd}
-          title="Tap for 4×, hold for 8× (space bar)"
+          title="Tap for 4×, hold for 8×. Keyboard: shift+space to latch 4×, space held for 8×."
           style={{
             ...panel,
             background: speed > 1 ? "var(--accent)" : "var(--panel)",
@@ -1347,7 +1409,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         </label>
       </div>
 
-      <Controls onDown={press} onUp={release} />
+      <Controls onDown={press} onUp={release} run={run} onRun={toggleRun} />
 
       {backupError && (
         <p style={{ color: "var(--accent2)", fontSize: 13, padding: "0 16px", lineHeight: 1.5 }}>{backupError}</p>
