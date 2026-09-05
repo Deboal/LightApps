@@ -24,7 +24,9 @@ fn run_until_settled(rom: &[u8], frames: u64) -> Option<Emulator> {
     while emu.mem.cycles < budget {
         emu.step();
         let pc = emu.cpu.r[15];
-        if pc == last_pc {
+        // Paying off a long BIOS call parks the PC without the machine being
+        // stuck; only a repeated address with nothing owed means finished.
+        if pc == last_pc && emu.cpu.stall == 0 {
             stuck += 1;
             if stuck > 64 {
                 return Some(emu);

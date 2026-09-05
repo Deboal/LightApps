@@ -44,7 +44,23 @@ pub struct Cpu {
     /// Intercept SWI and service it in software instead of taking the
     /// exception. Set when no real BIOS image was supplied.
     pub hle_bios: bool,
+    /// Cycles owed by an instruction that cost far more than one instruction's
+    /// worth -- a BIOS decompression, which this core performs in one go but
+    /// which on hardware is a long stretch of ordinary BIOS code running with
+    /// interrupts enabled. Serving the debt a slice at a time is what lets an
+    /// interrupt land in the middle of the call, where the hardware puts it.
+    pub stall: u32,
+    /// Where the CPU stood when the debt was incurred. The debt is only paid
+    /// there: an interrupt moves the PC away, so the handler runs at full
+    /// speed, and the debt resumes when the handler returns.
+    pub stall_pc: u32,
 }
+
+/// How much of an owed stall is served per step. Matched to the link cable's
+/// own 256-cycle grid: fine enough that a timer interrupt lands well inside a
+/// transfer's tolerance, coarse enough that a hundred thousand owed cycles do
+/// not cost a hundred thousand step calls.
+const STALL_SLICE: u32 = 256;
 
 impl Default for Cpu {
     fn default() -> Self {
@@ -65,6 +81,8 @@ impl Cpu {
             irq_line: false,
             halted: false,
             hle_bios: false,
+            stall: 0,
+            stall_pc: 0,
         };
         cpu.r[15] = VECTOR_RESET;
         cpu
@@ -239,6 +257,15 @@ impl Cpu {
         if self.irq_line && !self.cpsr.irq_disabled() {
             self.halted = false;
             self.interrupt();
+        } else if self.stall > 0 && self.r[15] == self.stall_pc {
+            // Owed time from a long BIOS call. Paying it only at the
+            // instruction that owes it is what makes the call interruptible:
+            // an interrupt moves the PC, the handler runs at full speed, and
+            // the debt picks up again when the handler returns here.
+            let slice = self.stall.min(STALL_SLICE);
+            self.stall -= slice;
+            bus.tick(slice);
+            return;
         } else if self.halted {
             // Nothing retires while halted; time still advances so timers and
             // the PPU can eventually raise the interrupt that wakes us. One

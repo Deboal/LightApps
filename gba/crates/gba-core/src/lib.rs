@@ -31,9 +31,15 @@ use state::{Reader, StateError, Writer, STATE_MAGIC, STATE_VERSION};
 
 /// One frame is a fixed budget, never "run until the frame looks done".
 pub const CYCLES_PER_FRAME: u64 = 280_896;
+
 pub const SCREEN_WIDTH: usize = 240;
 pub const SCREEN_HEIGHT: usize = 160;
 pub const FRAMEBUFFER_LEN: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
+
+/// The most an instruction may bill in one go before the rest becomes an
+/// interruptible stall. Comfortably above the slowest real instruction (an
+/// LDM of sixteen registers from ROM) and far below a decompression.
+const STALL_THRESHOLD: u32 = 512;
 
 /// The ten GBA buttons, as the bit layout KEYINPUT uses. Note that the
 /// hardware register is active-low; the conversion happens at the boundary so
@@ -136,7 +142,22 @@ impl Emulator {
             self.cpu.halted = true;
         }
 
-        let elapsed = (self.mem.cycles - before) as u32;
+        // A single instruction should not cost thousands of cycles. When one
+        // does it is a BIOS call this core performs instantly and then bills
+        // for -- and billing for it all at once holds off every interrupt
+        // until the call returns. On hardware those calls are plain BIOS code
+        // with interrupts enabled, so a link session's timer interrupt fires
+        // part-way through and the cable keeps its schedule. Hand the excess
+        // back as a stall the CPU serves in slices, and the interrupts land
+        // where the hardware puts them.
+        let mut elapsed = (self.mem.cycles - before) as u32;
+        if elapsed > STALL_THRESHOLD {
+            let owed = elapsed - STALL_THRESHOLD;
+            self.mem.cycles -= owed as u64;
+            self.cpu.stall = owed;
+            self.cpu.stall_pc = self.cpu.r[15];
+            elapsed = STALL_THRESHOLD;
+        }
         if elapsed > 0 {
             timers::step(&mut self.mem, elapsed);
             ppu::step(&mut self.mem, elapsed);
@@ -212,6 +233,10 @@ impl Emulator {
         }
 
         self.mem.cart.serialize(&mut w);
+        // Appended after the cartridge, and read back with a default, so that
+        // states written before the stall existed still load.
+        w.u32(self.cpu.stall);
+        w.u32(self.cpu.stall_pc);
         w.buf
     }
 
@@ -274,6 +299,8 @@ impl Emulator {
         }
 
         self.mem.cart.deserialize(&mut r)?;
+        self.cpu.stall = r.u32().unwrap_or(0);
+        self.cpu.stall_pc = r.u32().unwrap_or(0);
         Ok(())
     }
 }

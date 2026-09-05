@@ -401,3 +401,77 @@ fn a_bare_memory_bus_needs_no_ppu() {
     mem.write32(IWRAM, 0x1234_5678);
     assert_eq!(mem.read32(IWRAM), 0x1234_5678);
 }
+
+#[test]
+fn a_long_bios_call_is_interruptible() {
+    // The bug this pins down: a BIOS decompression is performed here in one
+    // go, and the cycles it costs were billed inside the single instruction
+    // that called it. Nothing could interrupt a hundred thousand cycles of
+    // it, so a linked game -- whose master must complete nine cable
+    // transfers every frame, paced by a timer interrupt -- lost four of them
+    // whenever the map loader decompressed a tileset, declared the master
+    // lagging, and put up "Communication error". On hardware the call is
+    // ordinary BIOS code running with interrupts enabled.
+    let mut rom = vec![0u8; 0x1000];
+    // In ARM the SWI number is the top byte of the comment field.
+    rom[0..4].copy_from_slice(&0xEF11_0000u32.to_le_bytes()); // swi 0x11
+    rom[4..8].copy_from_slice(&0xEAFF_FFFEu32.to_le_bytes()); // b .
+    rom[8..12].copy_from_slice(&0xE1A0_0000u32.to_le_bytes()); // mov r0, r0
+    let mut emu = Emulator::new(&rom, None, None);
+
+    // An LZ77 stream of nothing but literals: a zero flag byte, then eight
+    // bytes copied straight through. Big enough that decompressing it costs
+    // far more than any single instruction ever should.
+    let src = 0x0200_0000u32;
+    let dst = 0x0201_0000u32;
+    let size = 0x4000u32;
+    emu.mem.write32(src, 0x10 | (size << 8));
+    let mut at = src + 4;
+    for _ in 0..size / 8 {
+        emu.mem.write8(at, 0);
+        for i in 1..9 {
+            emu.mem.write8(at + i, 0x5A);
+        }
+        at += 9;
+    }
+    emu.cpu.r[0] = src;
+    emu.cpu.r[1] = dst;
+
+    let before = emu.mem.cycles;
+    emu.step();
+    let billed = emu.mem.cycles - before;
+    assert!(
+        emu.cpu.stall > 10_000,
+        "the call should leave a debt to serve, not bill it all at once"
+    );
+    assert!(
+        billed < 1_000,
+        "one step billed {billed} cycles; nothing can interrupt that"
+    );
+    assert_eq!(emu.mem.read8(dst), 0x5A, "and it still decompressed");
+
+    // The debt is only served where it was incurred. An interrupt moves the
+    // PC away, and the handler must then run at full speed -- serving the
+    // debt inside the handler would hold it at its first instruction until
+    // the debt ran out, which was the first attempt at this fix.
+    let owed = emu.cpu.stall;
+    let elsewhere = 0x0800_0008;
+    emu.cpu.set(15, elsewhere);
+    let before = emu.mem.cycles;
+    emu.step();
+    assert_eq!(emu.cpu.stall, owed, "the debt waited");
+    assert!(
+        emu.mem.cycles - before < 100,
+        "and the instruction there ran at full speed"
+    );
+
+    // Back at the owing instruction, the debt is paid off a slice at a time.
+    emu.cpu.set(15, emu.cpu.stall_pc);
+    let mut steps = 0;
+    while emu.cpu.stall > 0 && steps < 100_000 {
+        emu.step();
+        steps += 1;
+    }
+    assert_eq!(emu.cpu.stall, 0, "the debt is eventually paid in full");
+    assert!(steps > 100, "and paid gradually, not in one jump");
+}
