@@ -131,14 +131,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        return run_cable(
-            &rom,
-            &other,
-            bios.as_deref(),
-            options.frames,
-            screenshot,
-            scale,
-        );
+        return run_cable(&rom, &other, bios.as_deref(), &options, screenshot, scale);
     }
 
     let outcome = run(&rom, bios.as_deref(), &options);
@@ -412,16 +405,33 @@ fn run_cable(
     first: &[u8],
     second: &[u8],
     bios: Option<&[u8]>,
-    frames: u64,
+    options: &Run,
     screenshot: Option<String>,
     scale: usize,
 ) -> ExitCode {
+    let save = options.save.as_deref();
     let mut cable = Cable::new(vec![
-        Emulator::new(first, bios, None),
-        Emulator::new(second, bios, None),
+        Emulator::new(first, bios, save),
+        Emulator::new(second, bios, save),
     ]);
-    for _ in 0..frames {
-        cable.run_frame(&[KeyState::default(), KeyState::default()]);
+    // Both units get the same buttons: they are two people doing the same
+    // thing, walking to the same counter. Netplay will feed each machine its
+    // own player's input instead.
+    for frame in 0..options.frames {
+        let mut keys = 0u16;
+        for (at, buttons, hold) in &options.script {
+            if frame >= *at && frame < at + hold {
+                keys |= buttons;
+            }
+        }
+        if let Some(start) = options.mash_from {
+            let stop = options.mash_until.unwrap_or(u64::MAX);
+            if frame >= start && frame < stop && (frame - start) % 24 < 6 {
+                keys |= KeyState::A;
+            }
+        }
+        let input = KeyState(keys);
+        cable.run_frame(&[input, input]);
     }
 
     for (index, machine) in cable.machines.iter().enumerate() {

@@ -185,17 +185,24 @@ function Button({ children, onClick, tone, disabled, style }) {
 }
 
 // A control that reports press and release rather than click, so holding a
-// direction actually holds it.
-function Pad({ mask, label, onDown, onUp, style, round }) {
+// direction actually holds it. It also tracks its own pressed state: on a
+// touchscreen with no cursor, the only feedback that a press registered is the
+// button visibly reacting.
+function Pad({ mask, label, onDown, onUp, fill, ink, style, round }) {
+  const [held, setHeld] = useState(false);
+
   const press = (event) => {
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    setHeld(true);
     onDown(mask);
   };
   const release = (event) => {
     event.preventDefault();
+    setHeld(false);
     onUp(mask);
   };
+
   return (
     <div
       onPointerDown={press}
@@ -206,14 +213,18 @@ function Pad({ mask, label, onDown, onUp, style, round }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "var(--panel)",
-        border: "1px solid var(--line)",
-        borderRadius: round ? "50%" : 10,
-        color: "var(--dim)",
+        background: fill,
+        border: "1px solid rgba(255,255,255,.14)",
+        borderRadius: round ? "50%" : 12,
+        color: ink || "#fff",
         fontSize: 15,
         fontWeight: 700,
         userSelect: "none",
         touchAction: "none",
+        boxShadow: held ? "none" : "0 2px 0 rgba(0,0,0,.35)",
+        transform: held ? "translateY(2px)" : "none",
+        filter: held ? "brightness(1.25)" : "none",
+        transition: "filter .06s, transform .06s",
         ...style,
       }}
     >
@@ -222,34 +233,80 @@ function Pad({ mask, label, onDown, onUp, style, round }) {
   );
 }
 
-function Controls({ onDown, onUp }) {
-  const cell = { width: 52, height: 52 };
+// Face-button colours. Filled rather than outlined: against a dark panel an
+// outlined control reads as decoration, not as something to press.
+const PAD = {
+  dpad: "#3b4a7a",
+  a: "#7c5cff",
+  b: "#ff5db1",
+  system: "#4a5580",
+  shoulder: "#2b3355",
+};
+
+// L and R live above the screen. They are barely used in these games, and
+// putting them on the thumbs' path costs more than reaching for them does.
+function Shoulders({ onDown, onUp }) {
+  const shape = { width: 74, height: 30, fontSize: 13 };
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "8px 16px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 52px)", gridTemplateRows: "repeat(3, 52px)", gap: 4 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 16px 8px" }}>
+      <Pad mask={BTN.L} label="L" onDown={onDown} onUp={onUp} fill={PAD.shoulder} ink="#c3cdf5" style={shape} />
+      <Pad mask={BTN.R} label="R" onDown={onDown} onUp={onUp} fill={PAD.shoulder} ink="#c3cdf5" style={shape} />
+    </div>
+  );
+}
+
+function Controls({ onDown, onUp }) {
+  // Sized to fit a 375px phone without clipping: three columns of pad, the
+  // system pair, and the face buttons have to share that width.
+  const cell = { width: 48, height: 48 };
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 4,
+        padding: "8px 8px",
+        maxWidth: 520,
+        margin: "0 auto",
+        width: "100%",
+      }}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 48px)", gridTemplateRows: "repeat(3, 48px)", gap: 3 }}>
         <div />
-        <Pad mask={BTN.UP} label="▲" onDown={onDown} onUp={onUp} style={cell} />
+        <Pad mask={BTN.UP} label="▲" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
         <div />
-        <Pad mask={BTN.LEFT} label="◀" onDown={onDown} onUp={onUp} style={cell} />
+        <Pad mask={BTN.LEFT} label="◀" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
+        <div style={{ ...cell, background: PAD.dpad, opacity: 0.5 }} />
+        <Pad mask={BTN.RIGHT} label="▶" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
         <div />
-        <Pad mask={BTN.RIGHT} label="▶" onDown={onDown} onUp={onUp} style={cell} />
-        <div />
-        <Pad mask={BTN.DOWN} label="▼" onDown={onDown} onUp={onUp} style={cell} />
+        <Pad mask={BTN.DOWN} label="▼" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
         <div />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Pad mask={BTN.L} label="L" onDown={onDown} onUp={onUp} style={{ width: 56, height: 34 }} />
-          <Pad mask={BTN.R} label="R" onDown={onDown} onUp={onUp} style={{ width: 56, height: 34 }} />
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Pad mask={BTN.B} label="B" onDown={onDown} onUp={onUp} round style={{ width: 58, height: 58, color: "var(--accent2)" }} />
-          <Pad mask={BTN.A} label="A" onDown={onDown} onUp={onUp} round style={{ width: 58, height: 58, color: "var(--accent)", marginBottom: 18 }} />
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Pad mask={BTN.SELECT} label="SELECT" onDown={onDown} onUp={onUp} style={{ width: 74, height: 30, fontSize: 11 }} />
-          <Pad mask={BTN.START} label="START" onDown={onDown} onUp={onUp} style={{ width: 74, height: 30, fontSize: 11 }} />
-        </div>
+
+      {/* Select and Start in the middle, where a Game Boy puts them. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+        <Pad
+          mask={BTN.SELECT}
+          label="SELECT"
+          onDown={onDown}
+          onUp={onUp}
+          fill={PAD.system}
+          style={{ width: 72, height: 26, fontSize: 10, transform: "rotate(-20deg)" }}
+        />
+        <Pad
+          mask={BTN.START}
+          label="START"
+          onDown={onDown}
+          onUp={onUp}
+          fill={PAD.system}
+          style={{ width: 72, height: 26, fontSize: 10, transform: "rotate(-20deg)" }}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Pad mask={BTN.B} label="B" onDown={onDown} onUp={onUp} round fill={PAD.b} style={{ width: 56, height: 56, fontSize: 19 }} />
+        <Pad mask={BTN.A} label="A" onDown={onDown} onUp={onUp} round fill={PAD.a} style={{ width: 56, height: 56, fontSize: 19, marginBottom: 20 }} />
       </div>
     </div>
   );
@@ -700,6 +757,49 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [history, setHistory] = useState(null);
   const [stateList, setStateList] = useState(null);
   const [savingState, setSavingState] = useState(false);
+
+  // Fast-forward has two gestures rather than a four-way cycle.
+  //
+  // A tap toggles between normal and 4x, because those are the two speeds
+  // worth having and stepping through 2x on the way to 8x was pure tax.
+  // Holding gives 8x for as long as you hold it and then returns to whichever
+  // of the two you were on -- so a long stretch of text is a held key, not a
+  // mode you have to remember to leave.
+  const HOLD_MS = 220;
+  const baseSpeed = useRef(1);
+  const holdTimer = useRef(null);
+  const holding = useRef(false);
+
+  const applySpeed = useCallback((value) => {
+    speedRef.current = value;
+    setSpeed(value);
+  }, []);
+
+  const speedPressStart = useCallback(() => {
+    // Ignore key auto-repeat: only the first press starts the hold timer.
+    if (holdTimer.current !== null || holding.current) return;
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      holding.current = true;
+      applySpeed(8);
+    }, HOLD_MS);
+  }, [applySpeed]);
+
+  const speedPressEnd = useCallback(() => {
+    if (holdTimer.current !== null) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (holding.current) {
+      holding.current = false;
+      applySpeed(baseSpeed.current);
+    } else {
+      baseSpeed.current = baseSpeed.current === 1 ? 4 : 1;
+      applySpeed(baseSpeed.current);
+    }
+  }, [applySpeed]);
+
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
   const saveTimer = useRef(null);
   const keyRef = useRef("");
 
@@ -948,6 +1048,11 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
   useEffect(() => {
     const down = (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (!event.repeat) speedPressStart();
+        return;
+      }
       const mask = KEYBOARD[event.code];
       if (mask) {
         event.preventDefault();
@@ -955,6 +1060,11 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       }
     };
     const up = (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        speedPressEnd();
+        return;
+      }
       const mask = KEYBOARD[event.code];
       if (mask) {
         event.preventDefault();
@@ -967,7 +1077,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, []);
+  }, [speedPressStart, speedPressEnd]);
 
   const press = useCallback((mask) => {
     keysRef.current |= mask;
@@ -976,11 +1086,6 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     keysRef.current &= ~mask;
   }, []);
 
-  const cycleSpeed = () => {
-    const next = speedRef.current >= 8 ? 1 : speedRef.current * 2;
-    speedRef.current = next;
-    setSpeed(next);
-  };
 
   // A state is only useful if you can tell which one it is, so every save
   // carries the frame that was on screen when it was taken.
@@ -1171,6 +1276,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         </button>
       </div>
 
+      <Shoulders onDown={press} onUp={release} />
+
       <canvas
         ref={canvasRef}
         width={WIDTH}
@@ -1186,9 +1293,34 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       />
 
       <div style={{ display: "flex", gap: 8, padding: "10px 14px", flexWrap: "wrap" }}>
-        <Button onClick={cycleSpeed} tone={speed > 1 ? "accent" : undefined}>
-          {speed}× speed
-        </Button>
+        <button
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            speedPressStart();
+          }}
+          onPointerUp={(e) => {
+            e.preventDefault();
+            speedPressEnd();
+          }}
+          onPointerCancel={speedPressEnd}
+          onLostPointerCapture={speedPressEnd}
+          title="Tap for 4×, hold for 8× (space bar)"
+          style={{
+            ...panel,
+            background: speed > 1 ? "var(--accent)" : "var(--panel)",
+            borderColor: speed > 1 ? "var(--accent)" : "var(--line)",
+            color: speed > 1 ? "#fff" : "var(--text)",
+            padding: "10px 14px",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+            touchAction: "none",
+            userSelect: "none",
+          }}
+        >
+          {speed}× {speed === 8 ? "turbo" : "speed"}
+        </button>
         <Button onClick={openStates}>States</Button>
         {user && (
           <>
