@@ -295,13 +295,36 @@ counter, both units configure multiplayer at 115200 baud, exchange the AGB
 link library's 0xB9A0 handshake word, see each other in the receive registers,
 and the game advances from "Please wait" to "When all players are ready".
 
-**Not yet a trade.** Confirming at that prompt ends in "Communication error",
-so the handshake succeeds and the data phase that follows does not. The
-leading suspect is `transfer_cycles`, which is derived from the baud rate
-rather than measured, and the fact that this core's timing is
-scanline-approximate with no wait-state accuracy.
+**Both players now reach the Trade Center and stay linked.** Confirming at
+that prompt used to end in "Communication error"; the two units now walk into
+the trade room together and hold the link open indefinitely — 3,400 frames and
+counting in the scripted run, against 244 before.
 
-Three bugs on the way here, each found by running the real game rather than by
+The last bug there was not in the link at all. The game's AGB link library
+paces the master with timer 3 and requires nine cable transfers in every
+single frame; one frame with eight and it declares the master lagging
+(`LINK_STAT_ERROR_LAG_MASTER`) and puts up the error. Loading the trade room
+calls `LZ77UnCompWram`, which this core performs in one go and then billed for
+in one go — 107,513 cycles inside a single instruction, during which no
+interrupt could be taken. Four transfers went missing and the game was right
+to complain. On hardware that call is ordinary BIOS code running with
+interrupts enabled, so the fix is to hand back everything past one
+instruction's worth as a debt the CPU serves in slices, paid only at the
+instruction that owes it: an interrupt moves the PC away, the handler runs at
+full speed, and the debt resumes when it returns. Paying it *inside* the
+handler was the first attempt and was worse than the bug — it pinned the
+handler at its first instruction until the debt ran out.
+
+Worth noting what this was *not*, since both were plausible enough to cost
+time: `transfer_cycles` is derived from the baud rate rather than measured,
+and sweeping it from 1,024 to 18,560 cycles changed nothing (the failure
+screen was byte-identical at every value bar the extreme). Nor was the data
+wrong — the player blocks, the "GameFreak inc." magic and the trainer-card
+blocks all arrived intact. Reading `gLinkStatus` out of the emulated machine's
+IWRAM, against pret's `pokefirered` source for what the bits mean, is what
+turned guesswork into a single answer.
+
+Four bugs on the way here, each found by running the real game rather than by
 re-reading the code, and none of which the unit tests caught:
 
 - Multiplayer is SIOCNT mode 2, not 1. The hand-assembled test ROM encoded the
@@ -312,16 +335,25 @@ re-reading the code, and none of which the unit tests caught:
 - Received words must appear when a transfer *completes*, not when it starts.
   Delivering early let the game read the answer before it had asked the
   question, and its own clear then wiped the real result.
+- A BIOS call may not bill its cycles atomically. See above: it is the
+  difference between a link session that survives a map load and one that
+  does not, and `a_long_bios_call_is_interruptible` in `tests/system.rs`
+  pins it.
 
 ## Next
 
-1. **Windows and blending.** Deferred by the plan, and the plan was right to
+1. **A trade, end to end.** Both players stand at the machine; completing a
+   trade needs the two units driven with *different* buttons (they sit on
+   opposite sides), which the headless driver does not do yet — it feeds both
+   machines the same script. That, and a second save file with a different
+   trainer.
+2. **Windows and blending.** Deferred by the plan, and the plan was right to
    defer them, but FireRed's battle transitions and menus use both. This is
    the next thing that will look wrong.
-2. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
+3. **Get jsmolka's ROMs green.** A booting game is a strong smoke test and a
    weak instruction-level oracle; it exercises the paths Pokémon happens to
    use and nothing else.
-3. **Exercise the sync against the live backend.** Cloud saves are built, but
+4. **Exercise the sync against the live backend.** Cloud saves are built, but
    the conflict path has never run against a real Supabase project: this
    container cannot reach one, and magic-link sign-in needs an inbox. Two
    devices editing the same save is the case to try first.

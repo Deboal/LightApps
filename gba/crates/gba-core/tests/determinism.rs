@@ -134,3 +134,24 @@ fn a_frame_is_a_fixed_cycle_budget() {
         );
     }
 }
+
+#[test]
+fn a_state_written_before_the_stall_existed_still_loads() {
+    // The interruptible-BIOS-call fix added two words to the state. They go
+    // on the end and are read with a default so that the save states already
+    // sitting in someone's cloud storage keep working; dropping them would
+    // have been a version bump and a bad trade for two words of debt.
+    let rom = workload();
+    let mut emu = Emulator::new(&rom, None, None);
+    for frame in 0..8 {
+        emu.run_frame(scripted_input(frame));
+    }
+    let state = emu.serialize_state();
+    let older = &state[..state.len() - 8];
+
+    let mut restored = Emulator::new(&rom, None, None);
+    restored
+        .deserialize_state(older)
+        .expect("a state without the stall words must still load");
+    assert_eq!(restored.cpu.stall, 0);
+}

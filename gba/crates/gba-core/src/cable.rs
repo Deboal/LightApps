@@ -25,6 +25,14 @@ pub struct Cable {
     /// interleaving does not depend on how long any instruction happened to
     /// take.
     cycles: u64,
+    /// How many transfers the cable has carried. Diagnostic only: a link that
+    /// stalls and a link that carries wrong data look identical from the
+    /// screen, and this tells them apart.
+    pub transfers: u64,
+    /// Cycle stamps of every transfer start, when asked for. Diagnostic only:
+    /// the game paces transfers with a timer and demands nine per frame, so
+    /// the interesting quantity is where in the frame each one lands.
+    pub transfer_log: Option<Vec<u64>>,
 }
 
 impl Cable {
@@ -38,6 +46,8 @@ impl Cable {
         Cable {
             machines,
             cycles: 0,
+            transfers: 0,
+            transfer_log: None,
         }
     }
 
@@ -82,6 +92,10 @@ impl Cable {
                 words[slot] = machine.mem.link_outgoing();
             }
             let duration = link::transfer_cycles(self.machines[parent].mem.siocnt());
+            self.transfers += 1;
+            if let Some(log) = self.transfer_log.as_mut() {
+                log.push(self.cycles);
+            }
             for machine in self.machines.iter_mut() {
                 machine.mem.link_deliver(words, duration);
             }

@@ -15,7 +15,7 @@ use gba_core::{Emulator, KeyState};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: gba-headless <rom.gba> [--bios <bios.bin>] [--frames N] [--steps N]\n                            [--determinism] [--screenshot out.png] [--scale N]\n                            [--link | --link-rom <second.gba>]"
+        "usage: gba-headless <rom.gba> [--bios <bios.bin>] [--frames N] [--steps N]\n                            [--determinism] [--screenshot out.png] [--scale N]\n                            [--link | --link-rom <second.gba>]\n                            [--link-trace <frame>] [--dump-at <frame,...>]"
     );
     ExitCode::from(2)
 }
@@ -27,6 +27,8 @@ fn main() -> ExitCode {
     let mut frames: Option<u64> = None;
     let mut steps: Option<u64> = None;
     let mut watch: Option<u32> = None;
+    let mut link_trace: Option<u64> = None;
+    let mut dump_at: Vec<u64> = Vec::new();
     let mut script: Vec<(u64, u16, u64)> = Vec::new();
     let mut mash_from: Option<u64> = None;
     let mut mash_until: Option<u64> = None;
@@ -53,6 +55,12 @@ fn main() -> ExitCode {
             // the next flag.
             "--link" => link = Some(link.flatten()),
             "--link-rom" => link = Some(args.next()),
+            "--link-trace" => link_trace = args.next().and_then(|v| v.parse().ok()),
+            "--dump-at" => {
+                if let Some(v) = args.next() {
+                    dump_at.extend(v.split(',').filter_map(|f| f.parse::<u64>().ok()));
+                }
+            }
             "--watch" => {
                 watch = args
                     .next()
@@ -96,6 +104,8 @@ fn main() -> ExitCode {
         frames: frames.unwrap_or(600),
         steps,
         watch,
+        link_trace,
+        dump_at,
         script,
         mash_from,
         mash_until,
@@ -104,6 +114,8 @@ fn main() -> ExitCode {
     if determinism {
         let quiet = Run {
             watch: None,
+            link_trace: None,
+            dump_at: Vec::new(),
             ..options
         };
         let a = run(&rom, bios.as_deref(), &quiet);
@@ -210,6 +222,8 @@ struct Run {
     save: Option<Vec<u8>>,
     steps: Option<u64>,
     watch: Option<u32>,
+    link_trace: Option<u64>,
+    dump_at: Vec<u64>,
     script: Vec<(u64, u16, u64)>,
     mash_from: Option<u64>,
     mash_until: Option<u64>,
@@ -224,6 +238,8 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
         mash_from,
         mash_until,
         save,
+        link_trace: _,
+        dump_at: _,
     } = options;
     let (frames, steps, watch, mash_from, mash_until) =
         (*frames, *steps, *watch, *mash_from, *mash_until);
@@ -272,7 +288,9 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
             );
         }
 
-        if emu.cpu.r[15] == last_pc && !emu.cpu.halted {
+        // A stalled CPU sits at one address for as long as the BIOS call it
+        // is paying for, which is not the same thing as being stuck.
+        if emu.cpu.r[15] == last_pc && !emu.cpu.halted && emu.cpu.stall == 0 {
             stuck += 1;
             if stuck > 200 {
                 reached_terminal_loop = true;
@@ -414,6 +432,9 @@ fn run_cable(
         Emulator::new(first, bios, save),
         Emulator::new(second, bios, save),
     ]);
+    if options.link_trace.is_some() {
+        cable.transfer_log = Some(Vec::new());
+    }
     // Both units get the same buttons: they are two people doing the same
     // thing, walking to the same counter. Netplay will feed each machine its
     // own player's input instead.
@@ -430,8 +451,78 @@ fn run_cable(
                 keys |= KeyState::A;
             }
         }
+        // A PC census for one frame, to see where a stalled machine actually
+        // spends its time.
+        if options.dump_at.contains(&frame) {
+            for (index, machine) in cable.machines.iter().enumerate() {
+                let _ = std::fs::write(
+                    format!("dump-{frame}-{index}.ewram"),
+                    &machine.mem.ewram[..],
+                );
+                let _ = std::fs::write(
+                    format!("dump-{frame}-{index}.iwram"),
+                    &machine.mem.iwram[..],
+                );
+                let _ = std::fs::write(
+                    format!("dump-{frame}-{index}.png"),
+                    png::encode(
+                        machine.framebuffer(),
+                        gba_core::SCREEN_WIDTH,
+                        gba_core::SCREEN_HEIGHT,
+                        2,
+                    ),
+                );
+            }
+        }
         let input = KeyState(keys);
+        let before = cable.transfers;
         cable.run_frame(&[input, input]);
+        if let Some(from) = options.link_trace {
+            if frame >= from {
+                let mut line = format!("f{frame} x{}", cable.transfers - before);
+                for machine in &cable.machines {
+                    line.push_str(&format!(
+                        " | cnt {:04x} send {:04x} m {:04x} {:04x} {:04x} {:04x}",
+                        machine.mem.siocnt(),
+                        machine.mem.read_io16(gba_core::link::SIOMLT_SEND),
+                        machine.mem.read_io16(gba_core::link::SIOMULTI0),
+                        machine.mem.read_io16(gba_core::link::SIOMULTI0 + 2),
+                        machine.mem.read_io16(gba_core::link::SIOMULTI0 + 4),
+                        machine.mem.read_io16(gba_core::link::SIOMULTI0 + 6),
+                    ));
+                }
+                let fb = cable.machines[0].framebuffer();
+                let lum: u64 = fb.iter().map(|p| (p & 0xFF) as u64).sum();
+                line.push_str(&format!(" | lum {}", lum / fb.len() as u64));
+                println!("{line}");
+            }
+        }
+    }
+
+    if let Some(log) = cable.transfer_log.as_ref() {
+        // The game's link driver demands nine transfers in every frame and
+        // declares the cable dead if it gets eight, so the histogram is the
+        // health check and the spacing is where a missing one went.
+        const FRAME: u64 = gba_core::CYCLES_PER_FRAME;
+        let mut counts: std::collections::BTreeMap<u64, u32> = Default::default();
+        for stamp in log {
+            *counts.entry(stamp / FRAME).or_insert(0) += 1;
+        }
+        let from = options.link_trace.unwrap_or(0);
+        let mut hist: std::collections::BTreeMap<u32, u32> = Default::default();
+        for (_, count) in counts.iter().filter(|(frame, _)| **frame >= from) {
+            *hist.entry(*count).or_insert(0) += 1;
+        }
+        println!("transfer starts per frame: {hist:?}");
+        for pair in log[log.len().saturating_sub(60)..].windows(2) {
+            let gap = pair[1] - pair[0];
+            println!(
+                "start at frame {:>6} + {:>6}   gap {gap}{}",
+                pair[0] / FRAME,
+                pair[0] % FRAME,
+                if gap > 30_000 { "   <-- new burst" } else { "" }
+            );
+        }
     }
 
     for (index, machine) in cable.machines.iter().enumerate() {
