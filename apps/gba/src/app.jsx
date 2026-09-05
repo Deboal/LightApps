@@ -256,57 +256,51 @@ function Shoulders({ onDown, onUp }) {
 }
 
 function Controls({ onDown, onUp }) {
-  // Sized to fit a 375px phone without clipping: three columns of pad, the
-  // system pair, and the face buttons have to share that width.
-  const cell = { width: 48, height: 48 };
+  // Sized to fit a 375px phone without clipping: the pad and the face buttons
+  // have to share that width.
+  const cell = { width: 52, height: 52 };
+  const system = { width: 78, height: 26, fontSize: 10 };
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 4,
-        padding: "8px 8px",
-        maxWidth: 520,
-        margin: "0 auto",
-        width: "100%",
-      }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 48px)", gridTemplateRows: "repeat(3, 48px)", gap: 3 }}>
-        <div />
-        <Pad mask={BTN.UP} label="▲" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-        <div />
-        <Pad mask={BTN.LEFT} label="◀" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-        <div style={{ ...cell, background: PAD.dpad, opacity: 0.5 }} />
-        <Pad mask={BTN.RIGHT} label="▶" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-        <div />
-        <Pad mask={BTN.DOWN} label="▼" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
-        <div />
+    <div style={{ maxWidth: 520, margin: "0 auto", width: "100%" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "8px 10px 0",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 52px)",
+            gridTemplateRows: "repeat(3, 52px)",
+            gap: 3,
+          }}
+        >
+          <div />
+          <Pad mask={BTN.UP} label="▲" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
+          <div />
+          <Pad mask={BTN.LEFT} label="◀" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
+          <div style={{ ...cell, background: PAD.dpad, opacity: 0.5 }} />
+          <Pad mask={BTN.RIGHT} label="▶" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
+          <div />
+          <Pad mask={BTN.DOWN} label="▼" onDown={onDown} onUp={onUp} fill={PAD.dpad} style={cell} />
+          <div />
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Pad mask={BTN.B} label="B" onDown={onDown} onUp={onUp} round fill={PAD.b} style={{ width: 60, height: 60, fontSize: 20 }} />
+          <Pad mask={BTN.A} label="A" onDown={onDown} onUp={onUp} round fill={PAD.a} style={{ width: 60, height: 60, fontSize: 20, marginBottom: 22 }} />
+        </div>
       </div>
 
-      {/* Select and Start in the middle, where a Game Boy puts them. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
-        <Pad
-          mask={BTN.SELECT}
-          label="SELECT"
-          onDown={onDown}
-          onUp={onUp}
-          fill={PAD.system}
-          style={{ width: 72, height: 26, fontSize: 10, transform: "rotate(-20deg)" }}
-        />
-        <Pad
-          mask={BTN.START}
-          label="START"
-          onDown={onDown}
-          onUp={onUp}
-          fill={PAD.system}
-          style={{ width: 72, height: 26, fontSize: 10, transform: "rotate(-20deg)" }}
-        />
-      </div>
-
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <Pad mask={BTN.B} label="B" onDown={onDown} onUp={onUp} round fill={PAD.b} style={{ width: 56, height: 56, fontSize: 19 }} />
-        <Pad mask={BTN.A} label="A" onDown={onDown} onUp={onUp} round fill={PAD.a} style={{ width: 56, height: 56, fontSize: 19, marginBottom: 20 }} />
+      {/* Below everything, and small. Select and Start are pressed a handful
+          of times an hour; a thumb travelling between the pad and the face
+          buttons should never cross them. */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 18, padding: "14px 0 6px" }}>
+        <Pad mask={BTN.SELECT} label="SELECT" onDown={onDown} onUp={onUp} fill={PAD.system} ink="#c3cdf5" style={system} />
+        <Pad mask={BTN.START} label="START" onDown={onDown} onUp={onUp} fill={PAD.system} ink="#c3cdf5" style={system} />
       </div>
     </div>
   );
