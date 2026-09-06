@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e1220" />
+  <title>Who's That Pokémon?</title>
+  <style>
+    :root{--bg:#0e1220;--panel:#181e2e;--panel2:#212840;--line:#2e3855;--text:#eef2f8;
+          --dim:#93a0bd;--accent:#ffcb05;--accent2:#4d7cff;--good:#3ddc97;--bad:#ff6b5b;}
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html,body{margin:0;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      overscroll-behavior-y:contain;}
+    #root{min-height:100vh;min-height:100dvh;}
+    button{font-family:inherit;}
+    img{-webkit-user-drag:none;user-select:none;}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Two phones, one room code. The board and the questions are local; only the
+       code, the questions asked and the answers ever cross the wire. -->
+  <script src="bundle.js"></script>
+</body>
+</html>
