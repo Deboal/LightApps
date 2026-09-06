@@ -56,6 +56,24 @@ const KEYBOARD = {
   KeyS: BTN.R,
 };
 
+/** Whether a key event belongs to something being typed into.
+ *
+ *  The game listens on the window and swallows the keys it uses, which is
+ *  right while you are playing and wrong the instant a text field has focus:
+ *  A, S, X and Z are buttons, Backspace is Select, and Enter is Start -- so
+ *  typing a link code meant no letters, no deleting, and no submitting. This
+ *  guards every field in the app, not just that one. */
+function typing(event) {
+  const target = event.target;
+  if (!target) return false;
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable === true
+  );
+}
+
 // ----------------------------------------------------------------------------
 // Local storage
 // ----------------------------------------------------------------------------
@@ -966,8 +984,20 @@ function LinkPanel({ link, onHost, onJoin, onLeave, onClose, error }) {
             >
               <input
                 value={entry}
-                onChange={(event) => setEntry(event.target.value.toUpperCase())}
+                onChange={(event) => {
+                  // Codes are drawn from an alphabet with no O, I or L, so
+                  // anything else is a typo or a stray game key rather than
+                  // something worth keeping.
+                  const next = event.target.value
+                    .toUpperCase()
+                    .replace(/[^23456789ABCDEFGHJKMNPQRSTUVWXYZ]/g, "")
+                    .slice(0, 6);
+                  setEntry(next);
+                  if (next.length === 6) onJoin(next);
+                }}
                 placeholder="CODE"
+                inputMode="text"
+                maxLength={6}
                 autoCapitalize="characters"
                 autoCorrect="off"
                 spellCheck={false}
@@ -1580,6 +1610,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
   useEffect(() => {
     const down = (event) => {
+      if (typing(event)) return;
       if (event.code === "Space") {
         event.preventDefault();
         if (event.repeat) return;
@@ -1595,6 +1626,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       }
     };
     const up = (event) => {
+      if (typing(event)) return;
       if (event.code === "Space") {
         event.preventDefault();
         setTurbo(false);

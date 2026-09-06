@@ -213,3 +213,67 @@ fn the_receive_registers_are_writable() {
     mem.write16(0x0400_0120, 0x0000);
     assert_eq!(mem.read_io16(link::SIOMULTI0), 0x0000);
 }
+
+#[test]
+fn saving_does_not_look_like_a_desync() {
+    // The bug this pins down: a linked session compares a hash of each side's
+    // serialized state to catch the two participants computing different
+    // things. The cartridge's "needs writing to disk" flag was part of that
+    // serialization -- and each participant clears it on its *own* unit after
+    // persisting, never on the partner's. So the two sides disagreed the
+    // moment either game saved, and in these games a trade begins by saving.
+    // The session stopped itself, correctly following a signal that was wrong.
+    // The save type is detected from a marker string in the ROM, so a test
+    // about saving needs a cartridge that claims to have somewhere to save.
+    let mut rom = link_program();
+    rom.extend_from_slice(b"FLASH1M_V103\0");
+    rom.resize(0x200, 0);
+    let mut cable = Cable::new(vec![machine(&rom), machine(&rom)]);
+    let mut partner = Cable::new(vec![machine(&rom), machine(&rom)]);
+    for _ in 0..4 {
+        cable.run_frame(&[KeyState::default(); 2]);
+        partner.run_frame(&[KeyState::default(); 2]);
+    }
+    assert_eq!(
+        cable.state_hash(),
+        partner.state_hash(),
+        "same inputs, same state"
+    );
+
+    // Both sides run the same flash write on the same unit, the way the same
+    // emulated save happens on both participants' machines.
+    for session in [&mut cable, &mut partner] {
+        for machine in session.machines.iter_mut() {
+            save_a_byte(machine);
+        }
+    }
+    assert!(
+        cable.machines[0].save_dirty(),
+        "the write should have marked it"
+    );
+    assert_eq!(cable.state_hash(), partner.state_hash(), "and still agree");
+
+    // Now each side does what its own player's shell does: writes its own
+    // unit's save out to disk and marks it clean. A different unit on each
+    // side, because each participant only persists their own.
+    cable.machines[0].clear_save_dirty();
+    partner.machines[1].clear_save_dirty();
+
+    assert_eq!(
+        cable.state_hash(),
+        partner.state_hash(),
+        "housekeeping on one unit is not a divergence of the session"
+    );
+}
+
+/// The flash command sequence for programming one byte: unlock, unlock,
+/// "write", then the data. Anything less is ignored, which is the point --
+/// a stray store must not look like a save.
+fn save_a_byte(machine: &mut Emulator) {
+    use gba_core::bus::Bus;
+    const FLASH: u32 = 0x0E00_0000;
+    machine.mem.write8(FLASH + 0x5555, 0xAA);
+    machine.mem.write8(FLASH + 0x2AAA, 0x55);
+    machine.mem.write8(FLASH + 0x5555, 0xA0);
+    machine.mem.write8(FLASH, 0x00);
+}

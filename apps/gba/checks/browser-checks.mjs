@@ -257,7 +257,35 @@ async function newPage() {
   await page.close();
 }
 
-// 7. A real linked session, between two tabs.
+// 7. Typing into a text field must not press game buttons.
+//
+// The game listens on the window and swallows the keys it uses. A, S, X and Z
+// are buttons, Backspace is Select, Enter is Start -- so before this guard,
+// typing a link code meant no letters, no deleting and no submitting, and
+// every other text field in the app had the same problem.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(8000);
+  await page.getByRole("button", { name: "Link", exact: true }).click();
+  const field = page.locator("input[placeholder=CODE]");
+  await field.click();
+  // Every character here is also a game button.
+  await page.keyboard.type("AXZS2");
+  check("letters bound to buttons still type", (await field.inputValue()) === "AXZS2", await field.inputValue());
+
+  const anyHeld = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("[data-mask]")].some((el) => el.dataset.held === "1")
+    );
+  check("and no button was pressed by typing them", (await anyHeld()) === false);
+
+  await page.keyboard.press("Backspace");
+  check("backspace deletes instead of pressing Select", (await field.inputValue()) === "AXZS", await field.inputValue());
+  check("no page errors in the typing flow", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// 8. A real linked session, between two tabs.
 //
 // The transport is swapped for a BroadcastChannel (`?link=local`), so this
 // exercises everything the wire does not: the handshake, the save exchange,
@@ -290,8 +318,9 @@ async function newPage() {
   check("the host gets a code", /^[A-Z2-9]{6}$/.test(code), code);
 
   await b.page.getByRole("button", { name: "Link", exact: true }).click();
+  // Filling the sixth character joins on its own, so there is no button left
+  // to click by the time this returns.
   await b.page.fill("input[placeholder=CODE]", code);
-  await b.page.getByRole("button", { name: "Join", exact: true }).click();
 
   // Both sides have to reach "Linked" -- the host only does so once the
   // partner's save has arrived, so this covers the chunked exchange too.

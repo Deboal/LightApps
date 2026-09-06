@@ -18,7 +18,6 @@
 
 import { sb, configured } from "../../../shared/client.js";
 
-export const available = configured || loopback;
 export { configured };
 
 /** Two tabs of this origin can be linked without a backend at all, which is
@@ -26,6 +25,12 @@ export { configured };
  *  asking a friend to sit down for it: add `?link=local` to the URL. */
 export const loopback =
   typeof location !== "undefined" && new URLSearchParams(location.search).get("link") === "local";
+
+// Declared after `loopback`, not before it. The short-circuit in
+// `configured || loopback` hid this: with a backend configured the second
+// operand is never evaluated, so the dead-zone reference only became a
+// module-load crash on a deployment that had none.
+export const available = configured || loopback;
 
 /** How far ahead inputs are scheduled, in frames. Eight frames is ~134 ms:
  *  enough for a round trip over a websocket most of the time, short enough
@@ -162,7 +167,10 @@ export function session({ code, host, romSha, save, local = false, onChange, onE
   const fail = (message) => {
     if (stopped) return;
     state.error = message;
-    stop("error");
+    // Pass the message itself, not the word "error" -- the reason is what
+    // reaches the panel, and reporting the category instead of the cause is
+    // how a session ends up saying nothing more useful than "error".
+    stop(message);
   };
 
   const send = (event, payload) => wire.send(event, payload);
@@ -257,18 +265,41 @@ export function session({ code, host, romSha, save, local = false, onChange, onE
 
   wire.on("bye", () => stop("Your partner left."));
 
-  wire.subscribe((status) => {
+  // A subscription that never lands leaves the panel sitting on "Connecting…"
+  // forever, which is indistinguishable from a slow friend.
+  let connecting = null;
+  connecting = setTimeout(() => {
+    if (!stopped && state.phase === "connecting") {
+      fail(
+        "Timed out reaching the realtime service. If this keeps happening, " +
+          "check that Realtime is enabled for the Supabase project and that it " +
+          "allows anonymous broadcast."
+      );
+    }
+  }, 12000);
+
+  wire.subscribe((status, error) => {
     if (stopped) return;
     if (status === "SUBSCRIBED") {
+      clearTimeout(connecting);
       greet();
-    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      fail("Could not reach the realtime service.");
+    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      clearTimeout(connecting);
+      // Whatever the service said, verbatim. A generic message here is the
+      // difference between a fix and a guess.
+      const detail = error && (error.message || String(error));
+      fail(
+        `The realtime service refused the session (${status}${detail ? `: ${detail}` : ""}). ` +
+          "Check that Realtime is enabled for the Supabase project and that it allows " +
+          "anonymous broadcast."
+      );
     }
   });
 
   function stop(reason) {
     if (stopped) return;
     stopped = true;
+    clearTimeout(connecting);
     state.phase = "over";
     change();
     try {

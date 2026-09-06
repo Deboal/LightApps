@@ -196,7 +196,17 @@ impl Flash {
         w.u8(self.phase.to_u8());
         w.bool(self.id_mode);
         w.u8(self.bank as u8);
-        w.bool(self.dirty);
+        // Deliberately not `self.dirty`.
+        //
+        // Whether the host has written this flash to disk yet is the host's
+        // bookkeeping, not the machine's state -- and a linked session hashes
+        // the serialized state to check that both participants are computing
+        // the same thing. Each side clears the flag on its *own* unit after
+        // saving, so a real value here made the two sides disagree the moment
+        // either game saved, and a trade begins by saving. A constant keeps
+        // the format byte-for-byte compatible while taking the flag out of
+        // the comparison.
+        w.bool(false);
     }
 
     pub(crate) fn deserialize(
@@ -208,7 +218,12 @@ impl Flash {
             Phase::from_u8(r.u8()?).ok_or(crate::state::StateError::Corrupt("flash phase"))?;
         self.id_mode = r.bool()?;
         self.bank = (r.u8()? & 1) as usize;
-        self.dirty = r.bool()?;
+        // Read and discarded, to keep the layout. Restored flash may well
+        // differ from whatever `.sav` is on disk, so the safe assumption is
+        // that it needs writing; the cost of being wrong is one redundant
+        // save, and the cost the other way is a lost one.
+        let _ = r.bool()?;
+        self.dirty = true;
         Ok(())
     }
 }
