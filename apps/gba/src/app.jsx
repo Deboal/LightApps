@@ -1787,10 +1787,15 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         if (drive) {
           const seen = game.partyOf(game.ewram(core), drive.code);
           if (seen && seen[drive.slot]) drive.mon = seen[drive.slot];
+          const iwram = game.iwram(core);
           const out = drive.run.step({
             frame: drive.frame++,
             party: seen,
-            inBattle: game.inBattleOf(game.iwram(core), drive.code) === true,
+            inBattle: game.inBattleOf(iwram, drive.code) === true,
+            // Where the player is standing, which is how the runner tells
+            // being blocked by an item ball from walking. Null is fine: it
+            // falls back to turning on the clock alone.
+            position: game.positionOf(iwram, game.ewram(core), drive.code),
           });
           keys = out.keys;
           if (out.done) {

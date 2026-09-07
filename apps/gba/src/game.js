@@ -18,8 +18,8 @@
 /** Cartridges this knows how to read, by the four-character code in the ROM
  *  header. FireRed and LeafGreen share a layout. */
 const KNOWN = {
-  BPRE: { name: "FireRed", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0 },
-  BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0 },
+  BPRE: { name: "FireRed", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0, saveBlock: 0x03005008 },
+  BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0, saveBlock: 0x03005008 },
 };
 
 const EWRAM_BASE = 0x02000000;
@@ -108,6 +108,75 @@ export function partyOf(view, code) {
     });
   }
   return party;
+}
+
+/** Where the player is standing.
+ *
+ *  `gSaveBlock1Ptr` is a word in IWRAM holding the address of SaveBlock1,
+ *  which begins with the player's tile and the map they are on. It was found
+ *  by walking six tiles left and looking for the only word pair in EWRAM whose
+ *  x fell by six while y held -- and then confirmed twice over: the sole
+ *  pointer anywhere in the machine to that address, and a second structure
+ *  seven tiles away in both axes, which is the map border offset the games
+ *  add to object coordinates. Five more fields of the struct then read
+ *  correctly without being asked to (party count, the lead's level and HP).
+ *
+ *  Unlike the battle flag, this needs no faith: press LEFT and x falls by one.
+ *  That is what makes it worth building on -- a runner that knows whether it
+ *  actually moved can tell being blocked by an item ball from walking, which
+ *  is the difference between pacing in a grass patch and bumping into a wall
+ *  for ninety seconds. */
+const SB = { pos: 0x00, location: 0x04, lastHeal: 0x1c, partyCount: 0x34 };
+
+/** WarpData is eight bytes, not seven: an alignment pad sits after `warpId`,
+ *  so the coordinates start at +4. Reading them at +3 gives plausible-looking
+ *  nonsense, which is how this was found. */
+const warpAt = (view, at) => ({
+  mapGroup: view[at],
+  mapNum: view[at + 1],
+  x: (view[at + 4] | (view[at + 5] << 8)) << 16 >> 16,
+  y: (view[at + 6] | (view[at + 7] << 8)) << 16 >> 16,
+});
+
+export function positionOf(iwram, ewram, code) {
+  const map = KNOWN[code];
+  if (!map || !map.saveBlock || !iwram || !ewram) return null;
+
+  const at = map.saveBlock - IWRAM_BASE;
+  if (at < 0 || at + 4 > iwram.length) return null;
+  const block =
+    (iwram[at] | (iwram[at + 1] << 8) | (iwram[at + 2] << 16) | (iwram[at + 3] << 24)) >>> 0;
+
+  // The pointer is the whole verification. SaveBlock1 lives in EWRAM, so an
+  // address outside it means the game has not built the block yet, or this
+  // cartridge does not keep it here -- either way there is nothing to read.
+  const base = block - EWRAM_BASE;
+  if (!(base >= 0 && base + 0x40 <= ewram.length)) return null;
+
+  const read16 = (o) => (ewram[o] | (ewram[o + 1] << 8)) << 16 >> 16;
+  const x = read16(base + SB.pos);
+  const y = read16(base + SB.pos + 2);
+  // A map is at most a few hundred tiles across, and the party count is right
+  // there to cross-check against. Memory that fails either is not SaveBlock1.
+  if (!(x >= 0 && x < 1000 && y >= 0 && y < 1000)) return null;
+  const count = ewram[base + SB.partyCount];
+  if (!(count >= 1 && count <= 6)) return null;
+
+  return {
+    x,
+    y,
+    map: warpAt(ewram, base + SB.location),
+    lastHeal: warpAt(ewram, base + SB.lastHeal),
+  };
+}
+
+/** Whether two readings are the same tile of the same map. Being blocked and
+ *  walking look identical from the buttons; they differ only here. */
+export function sameTile(a, b) {
+  return (
+    !!a && !!b && a.x === b.x && a.y === b.y &&
+    a.map.mapGroup === b.map.mapGroup && a.map.mapNum === b.map.mapNum
+  );
 }
 
 /**

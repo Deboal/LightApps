@@ -10,7 +10,7 @@
 //
 // Run: node apps/gba/checks/game-checks.mjs
 
-import { partyOf, supports, gameName, inBattleOf } from "../src/game.js";
+import { partyOf, supports, gameName, inBattleOf, positionOf, sameTile } from "../src/game.js";
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -134,6 +134,61 @@ const REAL = [
   check("an unknown cartridge yields nothing, not false", inBattleOf(iwram, "AXVE") === null);
   check("no view at all yields nothing", inBattleOf(null, "BPRE") === null);
   check("a view too short to hold gMain yields nothing", inBattleOf(new Uint8Array(16), "BPRE") === null);
+}
+
+// Where the player is standing. This one is read through a pointer, so the
+// pointer is the verification: SaveBlock1 lives in EWRAM, and an address
+// outside it means there is nothing to read rather than something to guess at.
+{
+  const IWRAM = 0x03000000, PTR = 0x03005008, BLOCK = 0x020255a4;
+  const machine = (block = BLOCK, fill = (ew, base) => {
+    ew[base] = 6; ew[base + 2] = 4;          // pos (6, 4)
+    ew[base + 4] = 7; ew[base + 5] = 4;      // location: map 7/4
+    ew[base + 0x1c] = 3; ew[base + 0x1d] = 3;
+    ew[base + 0x20] = 22; ew[base + 0x22] = 20; // lastHeal (22, 20) -- +4, not +3
+    ew[base + 0x34] = 6;                     // playerPartyCount
+  }) => {
+    const iwram = new Uint8Array(0x8000), ewram = new Uint8Array(0x40000);
+    const at = PTR - IWRAM;
+    for (let i = 0; i < 4; i++) iwram[at + i] = (block >>> (i * 8)) & 0xff;
+    if (block >= EWRAM_BASE && block - EWRAM_BASE < ewram.length) fill(ewram, block - EWRAM_BASE);
+    return { iwram, ewram };
+  };
+
+  const { iwram, ewram } = machine();
+  const here = positionOf(iwram, ewram, "BPRE");
+  check("the player's tile is read through the pointer", here && here.x === 6 && here.y === 4);
+  check("so is the map they are on", here && here.map.mapGroup === 7 && here.map.mapNum === 4);
+  check(
+    "and where the game will heal them",
+    here && here.lastHeal.mapGroup === 3 && here.lastHeal.x === 22 && here.lastHeal.y === 20,
+    "WarpData pads to eight bytes -- coordinates start at +4, not +3"
+  );
+
+  // Being blocked and walking look identical from the buttons. This is the
+  // only thing that tells them apart, so it is the whole fix for an item ball.
+  const moved = machine(BLOCK, (ew, base) => {
+    ew[base] = 5; ew[base + 2] = 4;
+    ew[base + 4] = 7; ew[base + 5] = 4;
+    ew[base + 0x34] = 6;
+  });
+  const there = positionOf(moved.iwram, moved.ewram, "BPRE");
+  check("a step away is not the same tile", sameTile(here, there) === false);
+  check("the same reading is", sameTile(here, here) === true);
+  check("nothing is never the same tile as anything", sameTile(here, null) === false);
+
+  const stray = machine(0x08000000); // a ROM address: not where SaveBlock1 lives
+  check("a pointer outside EWRAM is refused", positionOf(stray.iwram, stray.ewram, "BPRE") === null);
+  const zero = machine(0);
+  check("a null pointer is refused", positionOf(zero.iwram, zero.ewram, "BPRE") === null);
+
+  const noParty = machine(BLOCK, (ew, base) => { ew[base] = 6; ew[base + 2] = 4; ew[base + 0x34] = 0; });
+  check(
+    "a block with no party in it is not SaveBlock1",
+    positionOf(noParty.iwram, noParty.ewram, "BPRE") === null
+  );
+  check("an unknown cartridge yields nothing", positionOf(iwram, ewram, "AXVE") === null);
+  check("no views at all yield nothing", positionOf(null, null, "BPRE") === null);
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");

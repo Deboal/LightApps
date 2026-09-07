@@ -12,6 +12,9 @@
 import { runner } from "../src/policy.js";
 import { BTN } from "../src/buttons.js";
 
+const LEG_FRAMES = 48;
+const STUCK_FRAMES = 28;
+
 let failures = 0;
 function check(name, ok, detail) {
   console.log(`${ok ? "pass" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`);
@@ -49,8 +52,8 @@ const fighting = (over) => (frame) => ({ frame, inBattle: true, party: [mon(over
   const run = runner({ slot: 0, stopAtLevel: 30 });
   const { keys, end } = drive(run, 120, walking());
   check("walking does not stop on its own", end === null);
-  check("a leg is walked one way", keys.slice(0, 40).every((k) => k & BTN.LEFT));
-  check("then the other", keys.slice(40, 80).every((k) => k & BTN.RIGHT));
+  check("a leg is walked one way", keys.slice(0, LEG_FRAMES).every((k) => k & BTN.LEFT));
+  check("then it turns", keys.slice(LEG_FRAMES, LEG_FRAMES * 2).every((k) => k & BTN.DOWN));
   check(
     "and it runs rather than walks",
     keys.every((k) => k & BTN.B),
@@ -231,6 +234,88 @@ const fighting = (over) => (frame) => ({ frame, inBattle: true, party: [mon(over
     return { frame, inBattle, party: [mon({ hp })] };
   });
   check("a drop as each battle ends never adds up to a stop", end === null, end && end.reason);
+}
+
+// -- knowing whether it actually moved -------------------------------------
+//
+// This is the whole item-ball fix. Holding LEFT into a Poke Ball on the ground
+// and walking left are the same buttons and the same screen; the only thing
+// that tells them apart is the tile not changing. Nothing here knows what an
+// item ball is -- it knows it is not moving, and turns.
+const tile = (x, y, mapNum = 1) => ({ x, y, map: { mapGroup: 3, mapNum } });
+
+{
+  // Blocked from the first frame. It must not spend a whole forty-frame leg
+  // walking into it.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys } = drive(run, 120, (frame) => ({
+    frame,
+    inBattle: false,
+    party: [mon()],
+    position: tile(9, 9),
+  }));
+  const turnedAt = keys.findIndex((k) => !(k & BTN.LEFT));
+  check(
+    "a wall it cannot pass makes it turn early",
+    turnedAt === STUCK_FRAMES,
+    `turned after ${turnedAt} frames rather than serving out all ${LEG_FRAMES}`
+  );
+  check(
+    "and the stuck threshold is under a leg, or it would never fire",
+    STUCK_FRAMES < LEG_FRAMES,
+    "both were forty at first, which made it dead code that read as a feature"
+  );
+  check("and it tries a different direction", (keys[turnedAt] & BTN.DOWN) !== 0);
+}
+
+{
+  // Walking normally: the tile changes, so nothing should turn early.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: false,
+    party: [mon()],
+    position: tile(9 - Math.floor(frame / 8), 9),
+  }));
+  check("moving freely, it walks the whole leg", keys.every((k) => k & BTN.LEFT));
+}
+
+{
+  // Boxed in on every side. Turning forever gets nowhere, and saying so beats
+  // the generic "no encounters" message an hour later.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end } = drive(run, 6000, (frame) => ({
+    frame,
+    inBattle: false,
+    party: [mon()],
+    position: tile(9, 9),
+  }));
+  check(
+    "boxed in, it says so rather than blaming the grass",
+    end !== null && /never moved a single tile/.test(end.reason),
+    end && end.reason
+  );
+}
+
+{
+  // The same tile on a different map is not the same tile. A door is a warp:
+  // the coordinates can repeat while the player has plainly moved.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: false,
+    party: [mon()],
+    position: tile(9, 9, frame < 20 ? 1 : 2),
+  }));
+  check("walking through a door is not being stuck", keys.every((k) => k & BTN.LEFT));
+}
+
+{
+  // No position read at all: it must still walk, on the clock alone.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys, end } = drive(run, 120, walking());
+  check("with no position read it falls back to turning on the clock", end === null);
+  check("and still holds a direction", keys.every((k) => k & (BTN.LEFT | BTN.DOWN | BTN.RIGHT | BTN.UP)));
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");
