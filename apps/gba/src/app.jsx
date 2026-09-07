@@ -1051,10 +1051,15 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
           <div style={{ ...panel, padding: 14, marginBottom: 16 }}>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Recording the way</div>
             <p style={{ color: "var(--dim)", fontSize: 13, lineHeight: 1.6, margin: "6px 0 0" }}>
-              Play normally: walk from the grass to a Pokémon Center, <strong>let the
-              nurse heal you</strong>, and walk back to the same patch of grass. Then
-              press Done. It has to see the heal happen — that is how it learns
-              where the counter is.
+              Play normally: <strong>start in the grass</strong>, walk to a Pokémon
+              Center, <strong>let the nurse heal you</strong>, and walk back to the
+              same patch. Then press Done. It has to see the heal happen — that
+              is how it learns where the counter is.
+            </p>
+            <p style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.6, margin: "8px 0 0" }}>
+              It does not have to be the same tile you began on; anywhere in the
+              same grass will do. Where you <em>begin</em> matters more — that
+              tile is where every trip to the Centre sets off from.
             </p>
             <div style={{ fontSize: 13, marginTop: 10 }}>
               {recording.tiles} tiles ·{" "}

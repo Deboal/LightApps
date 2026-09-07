@@ -61,6 +61,13 @@ const towards = (key) =>
 
 const everyoneWhole = (party) => party.every((mon) => mon.hp === mon.maxHp);
 
+/** A recorded waypoint, shaped like a position read. */
+const asPlace = (tile) => ({
+  x: tile.x,
+  y: tile.y,
+  map: { mapGroup: tile.mapGroup, mapNum: tile.mapNum },
+});
+
 /** The move this will actually use.
  *
  *  It mashes A, and A picks the first move -- so the first move is the whole
@@ -344,8 +351,12 @@ export function runner(policy, route = null) {
           stuckFor = 0;
         }
         lastTile = here;
-        // Where this was set going. Everything below is measured from here.
-        if (!home) home = here;
+        // Where this is anchored. With a route, that is the route's first
+        // tile rather than wherever Start happened to be pressed: the leash
+        // then guarantees the walk to the Centre never begins more than a few
+        // tiles off the recorded path, which is the only path known to be
+        // walkable. Without one it is simply where it was set going.
+        if (!home) home = canHeal ? asPlace(route.tiles[0]) : here;
       }
 
       // Off the map it started on. It cannot find its way back -- it has no
@@ -441,8 +452,9 @@ export function runner(policy, route = null) {
         }
         if (out.arrived) {
           mode = "grind";
-          // The grass is wherever the route ended, which is where it began.
-          home = here;
+          // Back to the anchor, not to wherever the recording happened to
+          // stop -- so the next trip starts from the same place this one did.
+          home = asPlace(route.tiles[0]);
         } else {
           return { keys: towards(out.key) | BTN.B };
         }

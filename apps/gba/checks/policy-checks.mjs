@@ -594,6 +594,11 @@ function centreRoute() {
     run.mode === "grind" && at.map.mapNum === 24,
     `mode ${run.mode}, at map ${at.map.mapNum} (${at.x},${at.y})`
   );
+  check(
+    "within the leash of the route's first tile, so the next trip is short",
+    Math.abs(at.x - 20) <= 5 && Math.abs(at.y - 22) <= 5,
+    `route starts at (20,22), ended at (${at.x},${at.y})`
+  );
   check("without stopping the run", out !== null && !out.done, out && out.reason);
 }
 
@@ -634,6 +639,27 @@ function centreRoute() {
     "stuck on the way, it says where",
     end !== null && /Stuck on the way to the Pokémon Center/.test(end.reason),
     end && end.reason
+  );
+}
+
+{
+  // Started well away from the route. The anchor is the route's first tile,
+  // not where Start was pressed, so the leash walks it back onto the path
+  // rather than letting the heal trip straight-line across the scenery.
+  const route = centreRoute();
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0.4, stopBelowHp: 0.02 }, route);
+  const out = run.step({
+    frame: 0,
+    inBattle: false,
+    party: [{ ...mon(), hp: 30, maxHp: 34, record: { moves: [{ id: 84, pp: 20 }] } }],
+    position: place(28, 22),
+  });
+  // Healthy, so it is grinding -- and eight tiles east of the route's start,
+  // which is outside the leash, so it should be heading west.
+  check(
+    "pressed Start away from the route, it drifts back towards it",
+    (out.keys & BTN.LEFT) !== 0,
+    "the anchor is the route's first tile, not wherever Start was pressed"
   );
 }
 
