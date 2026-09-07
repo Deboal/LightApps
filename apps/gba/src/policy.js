@@ -13,6 +13,7 @@
 import { BTN } from "./buttons.js";
 import { sameTile } from "./game.js";
 import { MOVES, moveName } from "./moves.js";
+import { follower, usable, ROUTE_STUCK } from "./route.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
  *  held A advances one message and then nothing. Four frames down, eight up. */
@@ -37,6 +38,35 @@ const DIRS = [BTN.LEFT, BTN.DOWN, BTN.RIGHT, BTN.UP];
  *  than a pattern: wander freely inside this radius, and head back the moment
  *  it is exceeded. */
 const LEASH = 4;
+
+/** Frames spent at the counter before giving up on being healed. The nurse
+ *  takes a few seconds of text and animation; a minute means the route ended
+ *  somewhere that is not a nurse. */
+const HEAL_PATIENCE = 60 * 60;
+
+/** A direction from a difference in tiles. Routes are recorded on every tile
+ *  change, so consecutive waypoints are adjacent and this is arithmetic
+ *  rather than pathfinding -- but it still works for a target several tiles
+ *  off, which is what walking back to a route's start needs. */
+const towards = (key) =>
+  // A warp answers with the direction that worked when it was walked; a step
+  // on the same map answers with the difference between two tiles.
+  key.dir
+    ? key.dir
+    : key.dx > 0 ? BTN.RIGHT
+    : key.dx < 0 ? BTN.LEFT
+    : key.dy > 0 ? BTN.DOWN
+    : key.dy < 0 ? BTN.UP
+    : 0;
+
+const everyoneWhole = (party) => party.every((mon) => mon.hp === mon.maxHp);
+
+/** A recorded waypoint, shaped like a position read. */
+const asPlace = (tile) => ({
+  x: tile.x,
+  y: tile.y,
+  map: { mapGroup: tile.mapGroup, mapNum: tile.mapNum },
+});
 
 /** The move this will actually use.
  *
@@ -124,8 +154,13 @@ export function previewOf(policy, party) {
   return { name: mon.name, move: moveName(want.id), power: want.power, pp: want.pp };
 }
 
-export function runner(policy) {
+export function runner(policy, route = null) {
   const { slot = 0, stopAtLevel = 100, fleeBelowHp = 0.34, stopBelowHp = 0.15 } = policy || {};
+  // Healing is only on the table with a route that was walked and whose heal
+  // was actually watched happening. Without one this behaves exactly as it
+  // did before: it stops when HP runs low.
+  const canHeal = usable(route);
+  const healBelowHp = canHeal ? (policy && policy.healBelowHp) || 0.4 : 0;
 
   let phase = "seek";
   let inPhase = 0;
@@ -155,12 +190,25 @@ export function runner(policy) {
   let everMoved = false;
   let home = null;
 
+  // The trip to the Pokemon Center. `mode` is what the walking is *for*;
+  // `phase` above stays the question of whether a battle is happening.
+  let mode = "grind";
+  let walk = null;
+  let healTicks = 0;
+  let walkStuck = 0;
+
   return {
     get phase() {
       return phase;
     },
     get battles() {
       return battles;
+    },
+    /** What the walking is for right now: grinding, or somewhere in the trip
+     *  to be healed. The panel says this out loud so a run that has wandered
+     *  off to a Centre does not look like one that has wandered off. */
+    get mode() {
+      return mode;
     },
     get ticks() {
       return ticks;
@@ -209,7 +257,7 @@ export function runner(policy) {
       if (mon.level >= stopAtLevel) {
         return { keys: 0, done: true, reason: `${mon.name} reached level ${mon.level}.` };
       }
-      if (share < stopBelowHp) {
+      if (share < stopBelowHp && !(canHeal && mode !== "grind")) {
         return {
           keys: 0,
           done: true,
@@ -252,7 +300,8 @@ export function runner(policy) {
         // Hurt enough to leave. Backing out with B first is what makes this
         // work from either menu: from the move list B returns to the main one,
         // and on the main menu it does nothing. Then down-right is RUN.
-        if (share < fleeBelowHp) fleeing = 1;
+        // On the way to be healed, every fight is one to leave.
+        if (share < fleeBelowHp || mode !== "grind") fleeing = 1;
         if (fleeing) {
           // One whole tap cycle per step, and that is not cosmetic: a window
           // shorter than the cycle can fall entirely between two taps, and the
@@ -302,14 +351,22 @@ export function runner(policy) {
           stuckFor = 0;
         }
         lastTile = here;
-        // Where this was set going. Everything below is measured from here.
-        if (!home) home = here;
+        // Where this is anchored. With a route, that is the route's first
+        // tile rather than wherever Start happened to be pressed: the leash
+        // then guarantees the walk to the Centre never begins more than a few
+        // tiles off the recorded path, which is the only path known to be
+        // walkable. Without one it is simply where it was set going.
+        if (!home) home = canHeal ? asPlace(route.tiles[0]) : here;
       }
 
       // Off the map it started on. It cannot find its way back -- it has no
       // route and no map -- so stopping is the honest end rather than
       // wandering further into a town.
-      if (here && home && (here.map.mapGroup !== home.map.mapGroup || here.map.mapNum !== home.map.mapNum)) {
+      if (
+        mode === "grind" &&
+        here && home &&
+        (here.map.mapGroup !== home.map.mapGroup || here.map.mapNum !== home.map.mapNum)
+      ) {
         return {
           keys: 0,
           done: true,
@@ -327,6 +384,88 @@ export function runner(policy) {
             : "Walked for a minute and a half without a single encounter. " +
               "This wants to be standing in tall grass.",
         };
+      }
+
+      // -- the trip to the Centre -----------------------------------------
+      //
+      // A recorded route, walked with the tile read as feedback rather than
+      // replayed blind: a wild encounter on the way is fought and the walk
+      // resumes, because the next press is derived from where the player
+      // actually is and not from a script.
+      // Standing at the counter is not being stuck, so the walking modes are
+      // the only ones this applies to.
+      if (mode === "toNurse" || mode === "back") {
+        if (!here) return { keys: 0 };
+        walkStuck = stuckFor;
+        if (walkStuck > ROUTE_STUCK) {
+          return {
+            keys: 0,
+            done: true,
+            reason: `Stuck on the way to the Pokémon Center, at tile (${here.x}, ${here.y}). Something is in the way that was not there when the route was walked.`,
+          };
+        }
+      }
+
+      if (mode === "toNurse") {
+        const out = walk.step(here);
+        if (out.lost) {
+          return {
+            keys: 0,
+            done: true,
+            reason: "Lost the route to the Pokémon Center — this is not a map it was walked through.",
+          };
+        }
+        // Strictly past, not merely at: the follower advances the index off
+        // every tile it has stood on, so `> healAt` is "we were there" while
+        // `>= healAt` is "it is the next one along" -- which would stand at
+        // the counter from one tile short of it.
+        if (out.index > route.healAt) {
+          mode = "atNurse";
+          healTicks = 0;
+        } else {
+          return { keys: towards(out.key) | BTN.B };
+        }
+      }
+
+      if (mode === "atNurse") {
+        if (everyoneWhole(party)) {
+          // Healed, and watched being healed -- the same edge the recording
+          // used to find this tile in the first place.
+          mode = "back";
+          walk = follower(route, route.healAt);
+          healTicks = 0;
+        } else if (++healTicks > HEAL_PATIENCE) {
+          return {
+            keys: 0,
+            done: true,
+            reason: "Stood at the counter for a minute without being healed. The route ends somewhere that is not a nurse.",
+          };
+        } else {
+          return { keys: tapping(elapsed) ? BTN.A : 0 };
+        }
+      }
+
+      if (mode === "back") {
+        const out = walk.step(here);
+        if (out.lost) {
+          return { keys: 0, done: true, reason: "Lost the route back from the Pokémon Center." };
+        }
+        if (out.arrived) {
+          mode = "grind";
+          // Back to the anchor, not to wherever the recording happened to
+          // stop -- so the next trip starts from the same place this one did.
+          home = asPlace(route.tiles[0]);
+        } else {
+          return { keys: towards(out.key) | BTN.B };
+        }
+      }
+
+      // Hurt enough to be worth the trip, and there is a way to make it.
+      if (canHeal && here && share < healBelowHp && !everyoneWhole(party)) {
+        mode = "toNurse";
+        walk = follower(route, 0);
+        walkStuck = 0;
+        return { keys: 0 };
       }
 
       // Too far from where it started: head back instead of wandering on.

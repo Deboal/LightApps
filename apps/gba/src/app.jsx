@@ -7,6 +7,7 @@ import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 import { BTN, DPAD } from "./buttons.js";
 import { runner, previewOf } from "./policy.js";
+import * as route from "./route.js";
 import * as autopilot from "./autopilot.js";
 
 // GBA — a Game Boy Advance emulator. The core is Rust compiled to WebAssembly
@@ -1001,7 +1002,7 @@ function PartyPanel({ party, world, gameName, onClose }) {
 // model is not in the loop after that -- the emulator runs the plan locally,
 // so the only thing that can happen while nobody is watching is the thing on
 // screen here.
-function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
+function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecorded, onForget, onStart, onStop, onClose, blocked }) {
   const [prompt, setPrompt] = useState("");
   const [plan, setPlan] = useState(null);
   const [thinking, setThinking] = useState(false);
@@ -1040,6 +1041,73 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
           Touching the controls takes it straight back.
         </p>
 
+        {/* Recording the way to a Pokémon Center.
+            This is the alternative to modelling the world: rather than read
+            the map out of the ROM and pathfind, the player walks it once and
+            the trail is a path that is walkable by construction. The nurse is
+            not marked by hand -- the party is watched, and whoever heals it
+            is where the nurse is. */}
+        {recording && (
+          <div style={{ ...panel, padding: 14, marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Recording the way</div>
+            <p style={{ color: "var(--dim)", fontSize: 13, lineHeight: 1.6, margin: "6px 0 0" }}>
+              Play normally: <strong>start in the grass</strong>, walk to a Pokémon
+              Center, <strong>let the nurse heal you</strong>, and walk back to the
+              same patch. Then press Done. It has to see the heal happen — that
+              is how it learns where the counter is.
+            </p>
+            <p style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.6, margin: "8px 0 0" }}>
+              It does not have to be the same tile you began on; anywhere in the
+              same grass will do. Where you <em>begin</em> matters more — that
+              tile is where every trip to the Centre sets off from.
+            </p>
+            <div style={{ fontSize: 13, marginTop: 10 }}>
+              {recording.tiles} tiles ·{" "}
+              <span style={{ color: recording.healed ? "var(--accent)" : "var(--dim)" }}>
+                {recording.healed ? "heal seen" : "no heal yet"}
+              </span>
+            </div>
+            <Button
+              onClick={onRecorded}
+              tone={recording.healed ? "accent" : undefined}
+              style={{ width: "100%", padding: 12, marginTop: 12 }}
+            >
+              Done
+            </Button>
+          </div>
+        )}
+
+        {!recording && !blocked && !running && (
+          <div style={{ ...panel, padding: 14, marginBottom: 16 }}>
+            {healRoute ? (
+              <>
+                <div style={{ fontSize: 13 }}>
+                  It can heal — a {healRoute.tiles.length}-tile walk to a Pokémon
+                  Center is recorded.
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <Button onClick={onRecord} style={{ fontSize: 13, padding: "8px 12px" }}>
+                    Record again
+                  </Button>
+                  <Button onClick={onForget} style={{ fontSize: 13, padding: "8px 12px" }}>
+                    Forget it
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                  It cannot heal, so a run ends when HP runs low. Walk it to a
+                  Pokémon Center once and it can keep going.
+                </div>
+                <Button onClick={onRecord} style={{ width: "100%", padding: 10, marginTop: 10 }}>
+                  Record the way to a Pokémon Center
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* A panel that cannot start anything still has to be closable. This
             was a trapped modal until a check tried to leave it. */}
         {blocked && (
@@ -1060,7 +1128,15 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
             <div style={{ ...panel, padding: 12, fontSize: 13, lineHeight: 1.8 }}>
               <div>
                 <span style={{ color: "var(--dim)" }}>Doing</span>{" "}
-                {auto.phase === "battle" ? "fighting" : "looking for a fight"}
+                {auto.phase === "battle"
+                  ? "fighting"
+                  : auto.mode === "toNurse"
+                    ? "walking to the Pokémon Center"
+                    : auto.mode === "atNurse"
+                      ? "being healed"
+                      : auto.mode === "back"
+                        ? "walking back to the grass"
+                        : "looking for a fight"}
               </div>
               <div>
                 <span style={{ color: "var(--dim)" }}>Battles</span> {auto.battles}
@@ -1131,8 +1207,8 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
                   </p>
                 )}
                 <p style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.6, margin: "10px 0 0" }}>
-                  It uses the strongest move with PP left, and cannot heal, use
-                  items or switch Pokémon. It runs from a battle below{" "}
+                  It uses the strongest move with PP left. It cannot use items or
+                  switch Pokémon{healRoute ? ", but it can walk to a Pokémon Center and back" : ", and cannot heal"}. It runs from a battle below{" "}
                   {Math.round(plan.fleeBelowHp * 100)}% HP and stops altogether below{" "}
                   {Math.round(plan.stopBelowHp * 100)}%.
                 </p>
@@ -1316,6 +1392,36 @@ function History({ versions, current, onRestore, onClose }) {
   );
 }
 
+/** Where a recorded route lives.
+ *
+ *  Per cartridge and per copy of it, because a route is only meaningful for
+ *  the save that walked it -- the Pokémon Center it ends at is the one *that*
+ *  playthrough last healed in. localStorage rather than IndexedDB: a route is
+ *  a few kilobytes of tiles, and every access is wrapped because a private
+ *  window or a browser set to block site data throws on the accessor itself
+ *  rather than returning nothing. */
+const routeKey = (code, romSha) => `gba:route:${code}:${(romSha || "").slice(0, 12)}`;
+
+function loadRoute(code, romSha) {
+  if (!code) return null;
+  try {
+    const raw = localStorage.getItem(routeKey(code, romSha));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return route.usable(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveRoute(code, romSha, value) {
+  try {
+    if (value) localStorage.setItem(routeKey(code, romSha), JSON.stringify(value));
+    else localStorage.removeItem(routeKey(code, romSha));
+  } catch {
+    // A route that cannot be stored still works for this session.
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Player
 // ----------------------------------------------------------------------------
@@ -1354,6 +1460,12 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   // draws. A re-render must not be able to restart or disturb a run.
   const autoRef = useRef(null);
   const autoResume = useRef(1);
+  // The walk to a Pokémon Center, recorded once by the player. `recordRef` is
+  // what the frame loop feeds; `recording` is only what the panel draws.
+  const recordRef = useRef(null);
+  const routeRef = useRef(null);
+  const [recording, setRecording] = useState(null);
+  const [savedRoute, setSavedRoute] = useState(null);
   const [auto, setAuto] = useState(null);
   const [autoOpen, setAutoOpen] = useState(false);
 
@@ -1737,10 +1849,41 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   // loop will simulate per animation frame, and the speed controls keep
   // working while a run is going, so this is a starting point rather than a
   // limit.
+  // Bring back whatever route was recorded for this cartridge.
+  useEffect(() => {
+    const found = loadRoute(code, romSha);
+    routeRef.current = found;
+    setSavedRoute(found);
+  }, [code, romSha]);
+
+  const startRecording = useCallback(() => {
+    recordRef.current = route.recorder();
+    setRecording({ tiles: 0, healed: false });
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    const rec = recordRef.current;
+    recordRef.current = null;
+    setRecording(null);
+    if (!rec) return;
+    const walked = rec.stop();
+    if (route.usable(walked)) {
+      routeRef.current = walked;
+      setSavedRoute(walked);
+      saveRoute(code, romSha, walked);
+    }
+  }, [code, romSha]);
+
+  const forgetRoute = useCallback(() => {
+    routeRef.current = null;
+    setSavedRoute(null);
+    saveRoute(code, romSha, null);
+  }, [code, romSha]);
+
   const startAuto = useCallback(
     (policy) => {
-      autoRef.current = { run: runner(policy), frame: 0, code, slot: policy.slot || 0, mon: null };
-      setAuto({ policy, running: true, phase: "seek", battles: 0, mon: null, done: null });
+      autoRef.current = { run: runner(policy, routeRef.current), frame: 0, code, slot: policy.slot || 0, mon: null };
+      setAuto({ policy, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null });
       autoResume.current = baseSpeed.current;
       baseSpeed.current = 8;
       applySpeed();
@@ -1760,7 +1903,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       applySpeed();
       setAuto((prev) =>
         prev
-          ? { ...prev, running: false, phase: last.run.phase, battles: last.run.battles, mon: last.mon, done: reason || "Stopped." }
+          ? { ...prev, running: false, phase: last.run.phase, mode: last.run.mode, battles: last.run.battles, mon: last.mon, done: reason || "Stopped." }
           : prev
       );
     },
@@ -1836,6 +1979,19 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       while (owed >= period && ran < 16) {
         let keys = keysRef.current;
         if (runRef.current && keys & DPAD) keys |= BTN.B;
+
+        // Recording the way to a Pokémon Center. The player walks it; this
+        // keeps the tiles and the direction out of each one, and watches the
+        // party so the nurse marks itself the moment everyone reads full.
+        const taking = recordRef.current;
+        if (taking) {
+          const ewramNow = game.ewram(core);
+          taking.sample(
+            game.positionOf(game.iwram(core), ewramNow, code),
+            game.partyOf(ewramNow, code),
+            keys & DPAD
+          );
+        }
 
         // The AI player, if one is running. It is read out of the game every
         // frame rather than sampled: its stopping conditions are the only
@@ -1923,11 +2079,13 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         // The run's own readout, at the same twice-a-second cadence. Pushing
         // this per frame would re-render the app four hundred times a second
         // to change a battle count that moves once a minute.
+        const taken = recordRef.current;
+        if (taken) setRecording({ tiles: taken.length, healed: taken.healed });
         const running = autoRef.current;
         if (running) {
           setAuto((prev) =>
             prev && prev.running
-              ? { ...prev, phase: running.run.phase, battles: running.run.battles, mon: running.mon }
+              ? { ...prev, phase: running.run.phase, mode: running.run.mode, battles: running.run.battles, mon: running.mon }
               : prev
           );
         }
@@ -1946,7 +2104,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
     handle = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(handle);
-  }, [core, persist, stopAuto]);
+  }, [core, persist, stopAuto, code]);
 
   // Flush on the way out. iOS can kill a backgrounded tab without warning, so
   // hiding the page is the last reliable moment to write.
@@ -2388,6 +2546,11 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         <AutoPanel
           party={party}
           auto={auto}
+          route={savedRoute}
+          recording={recording}
+          onRecord={startRecording}
+          onRecorded={stopRecording}
+          onForget={forgetRoute}
           onStart={(plan) => startAuto(plan)}
           onStop={() => stopAuto("You stopped it.")}
           onClose={() => setAutoOpen(false)}
