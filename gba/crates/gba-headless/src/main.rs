@@ -32,6 +32,8 @@ fn main() -> ExitCode {
     let mut script: Vec<(u64, u16, u64)> = Vec::new();
     let mut script2: Vec<(u64, u16, u64)> = Vec::new();
     let mut watch_ram: Vec<u32> = Vec::new();
+    let mut watch_pos = false;
+    let mut explore: Option<u64> = None;
     let mut snapshot_in: Option<String> = None;
     let mut snapshot_out: Option<(u64, String)> = None;
     let mut mash_from: Option<u64> = None;
@@ -62,6 +64,10 @@ fn main() -> ExitCode {
                     );
                 }
             }
+            // Report the player's tile whenever it changes. Navigating by
+            // screenshot is guesswork; this is the same read the runner uses.
+            "--watch-pos" => watch_pos = true,
+            "--explore" => explore = args.next().and_then(|v| v.parse().ok()).or(Some(1)),
             "--snapshot-in" => snapshot_in = args.next(),
             "--snapshot-out" => {
                 let at = args.next().and_then(|v| v.parse().ok());
@@ -133,6 +139,8 @@ fn main() -> ExitCode {
         script,
         script2,
         watch_ram,
+        watch_pos,
+        explore,
         snapshot_in,
         snapshot_out,
         mash_from,
@@ -144,6 +152,8 @@ fn main() -> ExitCode {
             watch: None,
             link_trace: None,
             dump_at: Vec::new(),
+            watch_pos: false,
+            explore: None,
             ..options
         };
         let a = run(&rom, bios.as_deref(), &quiet);
@@ -260,6 +270,13 @@ struct Run {
     /// Addresses whose every change is reported, for finding a flag by
     /// provoking the thing it stands for.
     watch_ram: Vec<u32>,
+    /// Report the player's tile and map whenever either changes.
+    watch_pos: bool,
+    /// Walk the machine around on its own, looking for somewhere it has not
+    /// been. Navigating a building by writing button scripts and looking at
+    /// screenshots is guesswork; this is the same read the runner uses, in a
+    /// loop. The seed picks which way it wanders.
+    explore: Option<u64>,
     /// Both machines' states, so an experiment twenty thousand frames into a
     /// session does not have to replay those frames every time.
     snapshot_in: Option<String>,
@@ -276,6 +293,8 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
         script,
         script2: _,
         watch_ram: _,
+        watch_pos: _,
+        explore: _,
         snapshot_in: _,
         snapshot_out: _,
         mash_from,
@@ -504,6 +523,16 @@ fn run_cable(
     // thing, walking to the same counter. Netplay will feed each machine its
     // own player's input instead.
     let mut watched: Vec<u8> = Vec::new();
+    let mut last_pos: Option<(i8, i8, i16, i16)> = None;
+    let mut walker = Walker {
+        rng: options.explore.unwrap_or(1).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+        at: None,
+        map: None,
+        seen: std::collections::HashSet::new(),
+        dir: 3,
+        stuck: 0,
+        held: 0,
+    };
     let held = |script: &[(u64, u16, u64)], frame: u64| {
         let mut keys = 0u16;
         for (at, buttons, hold) in script {
@@ -560,6 +589,52 @@ fn run_cable(
                         2,
                     ),
                 );
+            }
+        }
+        // The explorer. It knows one thing -- whether the tile changed -- and
+        // that is enough: hold a direction while it is working, pick another
+        // when it stops, and prefer one that is not straight back the way it
+        // came. A building falls to this in a few thousand frames, where a
+        // hand-written script falls to the first piece of furniture.
+        if options.explore.is_some() {
+            let now = player_tile(&cable.machines[0].mem);
+            if now.is_some() && now != walker.at {
+                walker.at = now;
+                walker.stuck = 0;
+                if let Some((g, n, x, y)) = now {
+                    if walker.seen.insert((g, n, x, y)) && walker.map != Some((g, n)) {
+                        walker.map = Some((g, n));
+                        println!("frame {frame}: reached map {g}/{n} at ({x},{y})");
+                    }
+                }
+            } else {
+                walker.stuck += 1;
+            }
+            // Turn when blocked, and also every so often regardless, or it
+            // paces a corridor forever.
+            if walker.stuck > 30 || walker.held > 90 {
+                walker.rng = walker.rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let choice = ((walker.rng >> 33) % 3) as usize;
+                // Anything but a reversal: three choices, skipping the one
+                // that would undo the last move.
+                let back = walker.dir ^ 1;
+                let mut d = choice;
+                if d >= back { d += 1; }
+                walker.dir = d.min(3);
+                walker.stuck = 0;
+                walker.held = 0;
+            }
+            walker.held += 1;
+            keys |= [KeyState::LEFT, KeyState::RIGHT, KeyState::UP, KeyState::DOWN][walker.dir];
+            keys2 = keys;
+        }
+        if options.watch_pos {
+            if let Some(now) = player_tile(&cable.machines[0].mem) {
+                if last_pos != Some(now) {
+                    let (g, n, x, y) = now;
+                    println!("frame {frame}: map {g}/{n} tile ({x},{y})");
+                    last_pos = Some(now);
+                }
             }
         }
         let before = cable.transfers;
@@ -728,4 +803,40 @@ fn restore_snapshot(cable: &mut Cable, blob: &[u8]) -> Result<u64, gba_core::sta
     }
     cable.rebase();
     Ok(frame)
+}
+
+/// The player's map and tile, read the way the app reads it: `gSaveBlock1Ptr`
+/// is a word in IWRAM holding the address of SaveBlock1, whose first fields
+/// are the tile and then the map. Returns None until the game has built the
+/// block, or if the pointer does not land in EWRAM -- there is nothing to
+/// report rather than something to guess at.
+fn player_tile(mem: &gba_core::mem::Memory) -> Option<(i8, i8, i16, i16)> {
+    const SAVE_BLOCK_PTR: u32 = 0x0300_5008;
+    let block = (mem.peek16(SAVE_BLOCK_PTR) as u32) | ((mem.peek16(SAVE_BLOCK_PTR + 2) as u32) << 16);
+    if !(0x0200_0000..0x0204_0000).contains(&block) {
+        return None;
+    }
+    let x = mem.peek16(block) as i16;
+    let y = mem.peek16(block + 2) as i16;
+    let group = mem.peek8(block + 4) as i8;
+    let num = mem.peek8(block + 5) as i8;
+    // The same cross-check the app makes: a block with no party in it is not
+    // SaveBlock1.
+    let count = mem.peek8(block + 0x34);
+    if !(1..=6).contains(&count) {
+        return None;
+    }
+    Some((group, num, x, y))
+}
+
+/// State for `--explore`: where it is, where it has been, and which way it is
+/// currently pushing.
+struct Walker {
+    rng: u64,
+    at: Option<(i8, i8, i16, i16)>,
+    map: Option<(i8, i8)>,
+    seen: std::collections::HashSet<(i8, i8, i16, i16)>,
+    dir: usize,
+    stuck: u32,
+    held: u32,
 }
