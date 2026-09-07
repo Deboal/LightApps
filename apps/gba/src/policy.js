@@ -27,6 +27,16 @@ const LEG = 48;
  *  ball is, only that it is not moving. */
 const DIRS = [BTN.LEFT, BTN.DOWN, BTN.RIGHT, BTN.UP];
 
+/** How far from where it started the walk may wander, in tiles.
+ *
+ *  Pacing four equal-length legs only returns to where it began if all four
+ *  cover the same ground -- and they do not, because a blocked leg turns
+ *  early. The drift is systematic, so it walks steadily out of the grass it
+ *  was put in. Now that the tile is readable the answer is a leash rather
+ *  than a pattern: wander freely inside this radius, and head back the moment
+ *  it is exceeded. */
+const LEASH = 4;
+
 /** Frames of holding a direction on the same tile before calling it blocked.
  *
  *  The slowest honest case is a turn on the spot (eight frames) followed by a
@@ -90,6 +100,7 @@ export function runner(policy) {
   let stuckFor = 0;
   let lastTile = null;
   let everMoved = false;
+  let home = null;
 
   return {
     get phase() {
@@ -207,6 +218,19 @@ export function runner(policy) {
           stuckFor = 0;
         }
         lastTile = here;
+        // Where this was set going. Everything below is measured from here.
+        if (!home) home = here;
+      }
+
+      // Off the map it started on. It cannot find its way back -- it has no
+      // route and no map -- so stopping is the honest end rather than
+      // wandering further into a town.
+      if (here && home && (here.map.mapGroup !== home.map.mapGroup || here.map.mapNum !== home.map.mapNum)) {
+        return {
+          keys: 0,
+          done: true,
+          reason: "Walked off the map it started on, and it has no way back yet.",
+        };
       }
 
       if (elapsed > SEEK_PATIENCE) {
@@ -219,6 +243,26 @@ export function runner(policy) {
             : "Walked for a minute and a half without a single encounter. " +
               "This wants to be standing in tall grass.",
         };
+      }
+
+      // Too far from where it started: head back instead of wandering on.
+      // The bigger of the two offsets is the one worth closing, and closing
+      // it is one direction, not a plan.
+      if (here && home) {
+        const dx = here.x - home.x;
+        const dy = here.y - home.y;
+        if (Math.abs(dx) > LEASH || Math.abs(dy) > LEASH) {
+          const back =
+            Math.abs(dx) >= Math.abs(dy)
+              ? dx > 0 ? BTN.LEFT : BTN.RIGHT
+              : dy > 0 ? BTN.UP : BTN.DOWN;
+          // Still turn if that direction is blocked, or it would lean into a
+          // wall forever trying to get home.
+          if (stuckFor < STUCK) {
+            sinceTurn = 0;
+            return { keys: back | BTN.B };
+          }
+        }
       }
 
       // Turn at the end of a leg, or the moment the tile stops changing.

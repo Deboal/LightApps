@@ -1009,7 +1009,9 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
         <p style={{ color: "var(--dim)", fontSize: 13, margin: "0 0 16px", lineHeight: 1.5 }}>
           Say what you want done. It comes back as a plan you approve before
           anything moves — after that the emulator runs it on its own, reading
-          the game's memory rather than the screen, at four times speed.
+          the game's memory rather than the screen, at eight times speed —
+          change that while it runs and it keeps the speed you chose. It stays
+          within a few tiles of where you start it, so put it in the grass.
           Touching the controls takes it straight back.
         </p>
 
@@ -1680,14 +1682,21 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   }, [link?.phase]);
 
   // Starting and stopping the AI player. Speed is part of it: the point of
-  // handing the game over is not watching it, so it goes to four times while
-  // it runs and back to whatever it was afterwards.
+  // handing the game over is not watching it, so it runs fast and goes back
+  // to whatever it was afterwards.
+  //
+  // Eight, not four. Four was a number picked out of caution and nothing
+  // else: emulation is deterministic, so speed cannot change what happens,
+  // only how warm the device gets. The real ceiling is the sixteen frames the
+  // loop will simulate per animation frame, and the speed controls keep
+  // working while a run is going, so this is a starting point rather than a
+  // limit.
   const startAuto = useCallback(
     (policy) => {
       autoRef.current = { run: runner(policy), frame: 0, code, slot: policy.slot || 0, mon: null };
       setAuto({ policy, running: true, phase: "seek", battles: 0, mon: null, done: null });
       autoResume.current = baseSpeed.current;
-      baseSpeed.current = 4;
+      baseSpeed.current = 8;
       applySpeed();
     },
     [code, applySpeed]
