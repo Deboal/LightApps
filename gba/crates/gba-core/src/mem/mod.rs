@@ -290,6 +290,17 @@ impl Memory {
         }
     }
 
+    /// A side-effect-free byte read, for watching a flag without perturbing
+    /// the machine that owns it.
+    pub fn peek8(&self, addr: u32) -> u8 {
+        let half = self.peek16(addr & !1);
+        if addr & 1 == 0 {
+            half as u8
+        } else {
+            (half >> 8) as u8
+        }
+    }
+
     /// A side-effect-free halfword read, for debuggers and tracing. Does not
     /// tick the clock, so it cannot perturb a run.
     pub fn peek16(&self, addr: u32) -> u16 {

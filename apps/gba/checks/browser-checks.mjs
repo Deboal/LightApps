@@ -529,5 +529,50 @@ async function newPage() {
   await context.close();
 }
 
+// 11. The AI player's panel.
+//
+// What can be checked without the player's own save is the part that matters
+// most anyway: that the thing refuses. With no cartridge save loaded there is
+// no party in memory, and a policy acting on a party it cannot read is exactly
+// the failure the whole design is arranged around -- so the panel must say so
+// and offer nothing to start. It also proves the modules load: policy.js and
+// autopilot.js are only reached from here, and a bad import would show up as a
+// page error rather than a missing button.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(14000);
+
+  const auto = page.getByRole("button", { name: "Auto", exact: true });
+  const offered = await auto
+    .waitFor({ state: "visible", timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  check("a cartridge it can read offers to play itself", offered);
+
+  if (offered) {
+    await auto.click();
+    await page.waitForSelector("text=Play it for me", { timeout: 5000 });
+    check("the panel opens", true);
+
+    const refused = await page.locator("text=No party in memory yet").count();
+    const noBackend = await page.locator("text=no backend configured").count();
+    check(
+      "with nothing readable it refuses instead of offering to run",
+      refused + noBackend > 0,
+      `${refused} party notice, ${noBackend} backend notice`
+    );
+    check(
+      "and there is nothing to start",
+      (await page.getByRole("button", { name: "Start", exact: true }).count()) === 0
+    );
+
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    check("it closes", (await page.locator("text=Play it for me").count()) === 0);
+  }
+
+  check("no page errors around the AI player", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

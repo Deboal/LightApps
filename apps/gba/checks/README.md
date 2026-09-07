@@ -10,6 +10,8 @@ These are deliberately not wired into CI and Playwright is deliberately not in
 bash build.sh
 (cd public && python3 -m http.server 8199 &)
 GBA_ROM=/path/to/rom.gba node apps/gba/checks/browser-checks.mjs
+node apps/gba/checks/game-checks.mjs     # no browser, no ROM
+node apps/gba/checks/policy-checks.mjs   # no browser, no ROM
 ```
 
 `PLAYWRIGHT` and `CHROMIUM` can override where those are found.
