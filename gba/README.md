@@ -265,6 +265,26 @@ cp target/wasm32-unknown-unknown/release/gba_wasm.wasm \
 85 KB, no dependencies, no bindings generator: the interface is a dozen
 exported functions plus the module's linear memory.
 
+## Offline
+
+There is a service worker, so the app works with no connection at all: the
+cartridge and the saves were already on the device in IndexedDB, and this is
+what makes the app that reads them available too. There is a manifest as well,
+so it installs to a home screen and runs without browser chrome.
+
+The rule it is built around: `bundle.js` and `gba-core.wasm` are two halves of
+one program and must never be cached out of step. A save state encodes the
+core's internal layout, so a new shell against an old core is not a cosmetic
+mismatch — it is a state that will not load. So the whole shell is precached in
+one pass into a cache named for a hash of its contents, and files are never
+revalidated individually. A new build is a new worker, a new cache, and one
+atomic swap; nothing has to be remembered to bump. It deliberately does not
+`skipWaiting`: a running game holds emulator state in memory, and swapping the
+core out from under it mid-session is worse than waiting for the next visit.
+
+Proven the only way it can be — `context.setOffline(true)`, reload, and check
+the cartridge still boots.
+
 ## How this reaches a phone
 
 The core is deliberately I/O-free so the same crate serves a native shell, a

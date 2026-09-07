@@ -57,6 +57,16 @@ for dir in apps/*/; do
     cp -R "${dir}assets" "public/$name/"
   fi
 
+  # An app may ship a service worker to work offline. It is stamped with a
+  # hash of everything it precaches, so a changed build is a changed worker,
+  # a new cache and one atomic swap -- rather than a version constant someone
+  # has to remember to bump, which is a version constant that goes stale.
+  if [ -f "${dir}sw.js" ]; then
+    stamp=$(cat "public/$name/bundle.js" "public/$name/assets/"* 2>/dev/null | shasum -a 256 | cut -c1-12)
+    echo "  service worker for $name (build $stamp)"
+    sed "s/__BUILD__/$stamp/" "${dir}sw.js" > "public/$name/sw.js"
+  fi
+
   # An app may ship a browser extension alongside it; publish it as a download.
   # Guarded so a missing zip binary can never fail the deploy.
   if [ -d "${dir}extension" ]; then

@@ -422,5 +422,80 @@ async function newPage() {
   await context.close();
 }
 
+// 9. Offline.
+//
+// The cartridge and the saves already lived on the device; what was missing
+// was the app that reads them. This is the only check that can prove it: cut
+// the network and reload, which is exactly the situation the feature exists
+// for and the one no amount of reading the service worker will tell you about.
+{
+  const context = await browser.newContext({ viewport: { width: 900, height: 950 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("text=Choose a ROM");
+  await page.setInputFiles("input[type=file]", ROM);
+  await page.waitForTimeout(9000);
+
+  const active = await page.evaluate(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    return !!reg.active;
+  });
+  check("a service worker takes control", active === true);
+
+  // Everything the app needs must be in one cache, from one build: the shell
+  // and the core are two halves of one program, and a save state encodes the
+  // core's layout.
+  const cached = await page.evaluate(async () => {
+    const names = await caches.keys();
+    if (names.length !== 1) return { names };
+    const cache = await caches.open(names[0]);
+    const keys = (await cache.keys()).map((r) => new URL(r.url).pathname);
+    return { names, keys };
+  });
+  check("exactly one cache, named for the build", cached.names.length === 1, cached.names.join(","));
+  check(
+    "the shell and the core are cached together",
+    (cached.keys || []).some((k) => k.endsWith("/bundle.js")) &&
+      (cached.keys || []).some((k) => k.endsWith("/gba-core.wasm")),
+    (cached.keys || []).join(" ")
+  );
+
+  await context.setOffline(true);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  // Not a selector union: `canvas` and `text=` are different engines and
+  // cannot be combined in one CSS list, which is a selector that never
+  // matches rather than one that errors.
+  const loaded = await page
+    .waitForFunction(() => (document.getElementById("root")?.innerHTML.length ?? 0) > 200, null, {
+      timeout: 15000,
+    })
+    .then(() => true)
+    .catch(() => false);
+  check("the app loads with the network cut", loaded);
+
+  if (loaded) {
+    // And the cartridge is still there: it came out of IndexedDB, and the core
+    // that runs it came out of the cache.
+    const resume = page.getByRole("button", { name: /^Resume/ });
+    // Waited for, not counted: the ROM comes back out of IndexedDB
+    // asynchronously, so the shell renders before the cartridge is known.
+    const offered = await resume
+      .waitFor({ state: "visible", timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
+    check("the cartridge is still on the device", offered);
+    if (offered) {
+      await resume.click();
+      await page.waitForTimeout(9000);
+      const lit = await brightness(page);
+      check("and it still runs with no network at all", lit > 5, `luminance ${lit}`);
+    }
+  }
+  check("no page errors offline", errors.length === 0, errors.join("; "));
+  await context.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

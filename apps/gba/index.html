@@ -7,6 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>GBA</title>
+  <link rel="manifest" href="assets/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/icon-180.png" />
+  <link rel="icon" href="assets/icon-192.png" />
   <style>
     :root{--bg:#0d0f1a;--panel:#161a2c;--line:#2a3050;--text:#eef0ff;--dim:#8f96bd;--accent:#7c5cff;--accent2:#ff5db1;}
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -22,5 +25,16 @@
   <!-- The emulator core is Rust compiled to WebAssembly, in assets/. ROMs and
        saves never leave the device: both live in this browser's IndexedDB. -->
   <script src="bundle.js"></script>
+  <!-- Offline. The cartridge and the saves are already on the device; this is
+       what makes the app that reads them available without a connection too.
+       Registered after the bundle so a failure here can never stop the
+       emulator from starting. -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>
