@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { useAuth, signInWithEmail, signOut } from "../../../shared/auth.js";
 import * as netplay from "./netplay.js";
+import * as game from "./game.js";
 import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 
@@ -935,6 +936,55 @@ const LINK_PHASES = {
   over: "Session ended",
 };
 
+function PartyPanel({ party, gameName, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
+      <div style={{ ...panel, padding: 20, maxWidth: 420, width: "100%" }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>Party</h2>
+        <p style={{ color: "var(--dim)", fontSize: 13, margin: "0 0 16px", lineHeight: 1.5 }}>
+          Read out of {gameName}'s own memory while it runs — not from the
+          screen. This is what something driving the game would act on.
+        </p>
+        {!party && (
+          <p style={{ color: "var(--dim)", fontSize: 13 }}>
+            Nothing shaped like a party in memory yet. It appears once a save is
+            loaded and the game is past its title screen.
+          </p>
+        )}
+        {party &&
+          party.map((mon) => {
+            const share = mon.maxHp ? mon.hp / mon.maxHp : 0;
+            return (
+              <div key={mon.slot} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>
+                    {mon.name || "—"}{" "}
+                    <span style={{ color: "var(--dim)", fontWeight: 400 }}>Lv {mon.level}</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--line)", borderRadius: 3, marginTop: 4, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        width: `${Math.round(share * 100)}%`,
+                        height: "100%",
+                        background: share > 0.5 ? "var(--accent)" : share > 0.2 ? "#e8b14a" : "var(--accent2)",
+                      }}
+                    />
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: mon.fainted ? "var(--accent2)" : "var(--dim)", width: 68, textAlign: "right" }}>
+                  {mon.fainted ? "fainted" : `${mon.hp}/${mon.maxHp}`}
+                </div>
+              </div>
+            );
+          })}
+        <div style={{ marginTop: 18 }}>
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LinkPanel({ link, onHost, onJoin, onLeave, onClose, error }) {
   const [entry, setEntry] = useState("");
   const [copied, setCopied] = useState(false);
@@ -1123,6 +1173,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkError, setLinkError] = useState("");
   const [waiting, setWaiting] = useState(false);
+  const [party, setParty] = useState(null);
+  const [partyOpen, setPartyOpen] = useState(false);
 
   // Turbo walk: hold B for the player, but only while a direction is held.
   // In these games running is B plus a direction, and on a phone that means
@@ -1493,6 +1545,17 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       setWaiting(false);
     };
   }, [link?.phase]);
+
+  // Read the party while the panel is open. Twice a second: it changes at the
+  // pace of a battle, and a view over WebAssembly memory has to be re-derived
+  // each time because that memory can move when it grows.
+  useEffect(() => {
+    if (!partyOpen || !game.supports(code)) return;
+    const read = () => setParty(game.partyOf(game.ewram(core), code));
+    read();
+    const tick = setInterval(read, 500);
+    return () => clearInterval(tick);
+  }, [partyOpen, code, core]);
 
   // A tab that closes mid-session should tell the other side rather than
   // leaving them staring at a stall.
@@ -1977,6 +2040,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           {speed}× {speed === 8 ? "turbo" : "speed"}
         </button>
         <Button onClick={openStates}>States</Button>
+        {game.supports(code) && <Button onClick={() => setPartyOpen(true)}>Party</Button>}
         <Button
           onClick={() => setLinkOpen(true)}
           tone={link && link.phase === "live" ? "accent" : undefined}
@@ -2026,6 +2090,10 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           ? "The cartridge save is written locally a few seconds after the game finishes saving, then pushed to your account. Conflicts are always shown to you, never resolved silently."
           : "The cartridge save is written to this browser a few seconds after the game finishes saving, and again whenever you leave the page. Sign in to keep a copy that survives a cleared browser."}
       </p>
+
+      {partyOpen && (
+        <PartyPanel party={party} gameName={game.gameName(code)} onClose={() => setPartyOpen(false)} />
+      )}
 
       {linkOpen && (
         <LinkPanel

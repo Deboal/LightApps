@@ -422,7 +422,39 @@ async function newPage() {
   await context.close();
 }
 
-// 9. Offline.
+// 9. Reading the running game.
+//
+// The decoding is unit-tested against a synthetic machine in
+// game-checks.mjs; what only a browser can show is that the panel appears for
+// a cartridge it understands and, on a ROM booted with no save, reports
+// nothing rather than something. A false party is worse than no party.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(9000);
+  const button = page.getByRole("button", { name: "Party", exact: true });
+  const offered = (await button.count()) === 1;
+  check("a cartridge it can read offers the party", offered);
+  if (offered) {
+    await button.click();
+    await page.waitForTimeout(800);
+    const text = await page.evaluate(() => {
+      const h = [...document.querySelectorAll("h2")].find((e) => e.textContent.trim() === "Party");
+      return h ? h.parentElement.innerText : "";
+    });
+    check("it names the game it is reading", /FireRed/.test(text), text.split("\n")[1]);
+    // Booted with no save, the game is on its title screen and there is no
+    // party in memory. Anything else here is the shape test being too loose.
+    check(
+      "and reports nothing rather than nonsense before a game is loaded",
+      /Nothing shaped like a party/.test(text),
+      text.replace(/\n/g, " · ").slice(0, 120)
+    );
+  }
+  check("no page errors in the party flow", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// 10. Offline.
 //
 // The cartridge and the saves already lived on the device; what was missing
 // was the app that reads them. This is the only check that can prove it: cut
