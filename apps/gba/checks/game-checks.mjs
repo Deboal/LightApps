@@ -10,7 +10,7 @@
 //
 // Run: node apps/gba/checks/game-checks.mjs
 
-import { partyOf, supports, gameName, inBattleOf, positionOf, sameTile } from "../src/game.js";
+import { partyOf, supports, gameName, inBattleOf, positionOf, sameTile, battleMenuOf } from "../src/game.js";
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -189,6 +189,46 @@ const REAL = [
   );
   check("an unknown cartridge yields nothing", positionOf(iwram, ewram, "AXVE") === null);
   check("no views at all yield nothing", positionOf(null, null, "BPRE") === null);
+}
+
+// Which battle menu is up. Found by diffing a real machine's RAM across a
+// single A press in a real battle, and confirmed against all four cursor
+// values -- so what is checked here is the decoding and, more importantly,
+// that a build these addresses do not describe gets nothing rather than a
+// guess.
+{
+  const FUNCS = 0x03004fe0 - 0x03000000;
+  const CURSOR = 0x02023ffc - 0x02000000;
+  const machine = (fn, cursor) => {
+    const iwram = new Uint8Array(0x8000), ewram = new Uint8Array(0x40000);
+    for (let i = 0; i < 4; i++) iwram[FUNCS + i] = (fn >>> (i * 8)) & 0xff;
+    ewram[CURSOR] = cursor;
+    return { iwram, ewram };
+  };
+
+  const action = machine(0x0802e44d, 0);
+  const move = machine(0x0802ea25, 3);
+  check("the action menu is recognised", battleMenuOf(action.iwram, action.ewram, "BPRE").menu === "action");
+  check("so is the move list", battleMenuOf(move.iwram, move.ewram, "BPRE").menu === "move");
+  check("and the cursor comes with it", battleMenuOf(move.iwram, move.ewram, "BPRE").cursor === 3);
+
+  // Battle text, an animation, the overworld: a menu is not up, and that is
+  // different from not being able to tell.
+  const elsewhere = machine(0x08012345, 0);
+  check(
+    "any other state reports no menu rather than guessing",
+    battleMenuOf(elsewhere.iwram, elsewhere.ewram, "BPRE").menu === null
+  );
+
+  // The addresses are a specific build's ROM layout, so they emphatically do
+  // not carry to LeafGreen. Nothing is worse here than a wrong guess: it
+  // would press directions into a menu that is not there.
+  check(
+    "a build without verified menu addresses gets nothing",
+    battleMenuOf(action.iwram, action.ewram, "BPRG") === null
+  );
+  check("an unknown cartridge gets nothing", battleMenuOf(action.iwram, action.ewram, "AXVE") === null);
+  check("no views at all get nothing", battleMenuOf(null, null, "BPRE") === null);
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");

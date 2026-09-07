@@ -15,10 +15,27 @@
 // returns null rather than plausible nonsense if the cartridge is not the one
 // these addresses describe.
 
+import { decode } from "./mon.js";
+
 /** Cartridges this knows how to read, by the four-character code in the ROM
  *  header. FireRed and LeafGreen share a layout. */
 const KNOWN = {
-  BPRE: { name: "FireRed", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0, saveBlock: 0x03005008 },
+  BPRE: {
+    name: "FireRed",
+    party: 0x02024284,
+    partyCount: 0x02024029,
+    main: 0x030030f0,
+    saveBlock: 0x03005008,
+    // Battle menus. These two are ROM addresses of a specific build, so
+    // unlike the RAM layout above they are emphatically not shared with
+    // LeafGreen -- a different build puts its code somewhere else. Absent
+    // them, `battleMenuOf` returns nothing and the runner falls back to
+    // mashing A, which is what it did before any of this.
+    controllerFuncs: 0x03004fe0,
+    moveCursor: 0x02023ffc,
+    atActionMenu: 0x0802e44d,
+    atMoveList: 0x0802ea25,
+  },
   BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0, saveBlock: 0x03005008 },
 };
 
@@ -105,9 +122,49 @@ export function partyOf(view, code) {
       hp,
       maxHp,
       fainted: hp === 0,
+      // The encrypted half: species, moves, PP, EVs, IVs. Null when the
+      // checksum disagrees, which is a record caught mid-write rather than a
+      // reason to throw away the plain fields that did read cleanly.
+      record: decode(view, at),
     });
   }
   return party;
+}
+
+/** Which battle menu is up, and where its cursor is.
+ *
+ *  `gBattlerControllerFuncs[0]` is a function pointer that *is* the state:
+ *  one address while the FIGHT/BAG/POKéMON/RUN menu waits for input, another
+ *  while the move list does. Found by diffing a machine's RAM across a single
+ *  A press in a real battle -- it was the only word in either RAM that
+ *  changed from one ROM pointer to another -- and it stays put while the
+ *  cursor moves, which is what makes it a state rather than a step counter.
+ *
+ *  The cursor is `gMoveSelectionCursor[0]`, and it moves by XOR: left and
+ *  right flip bit 0, up and down flip bit 1. So any move is at most two
+ *  presses away and the direction within an axis does not matter. Confirmed
+ *  against all four values on a real cartridge.
+ *
+ *  Returns null when this is not a build these addresses describe, and
+ *  `{ menu: null }` when a battle is doing something other than waiting for
+ *  a menu choice -- text, an animation, or anything unrecognised. The
+ *  difference matters: null means do not act on this at all. */
+export function battleMenuOf(iwram, ewram, code) {
+  const map = KNOWN[code];
+  if (!map || !map.controllerFuncs || !iwram || !ewram) return null;
+
+  const at = map.controllerFuncs - IWRAM_BASE;
+  if (at < 0 || at + 4 > iwram.length) return null;
+  const fn =
+    (iwram[at] | (iwram[at + 1] << 8) | (iwram[at + 2] << 16) | (iwram[at + 3] << 24)) >>> 0;
+
+  const cursorAt = map.moveCursor - EWRAM_BASE;
+  if (cursorAt < 0 || cursorAt >= ewram.length) return null;
+
+  return {
+    menu: fn === map.atActionMenu ? "action" : fn === map.atMoveList ? "move" : null,
+    cursor: ewram[cursorAt] & 3,
+  };
 }
 
 /** Where the player is standing.

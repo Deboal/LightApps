@@ -9,7 +9,7 @@
 //
 // Run: node apps/gba/checks/policy-checks.mjs
 
-import { runner } from "../src/policy.js";
+import { runner, previewOf } from "../src/policy.js";
 import { BTN } from "../src/buttons.js";
 
 const LEG_FRAMES = 48;
@@ -360,6 +360,163 @@ const tile = (x, y, mapNum = 1) => ({ x, y, map: { mapGroup: 3, mapNum } });
   const { keys, end } = drive(run, 120, walking());
   check("with no position read it falls back to turning on the clock", end === null);
   check("and still holds a direction", keys.every((k) => k & (BTN.LEFT | BTN.DOWN | BTN.RIGHT | BTN.UP)));
+}
+
+// -- the move it will actually use ------------------------------------------
+//
+// A is the only button it presses in a battle, and A picks the first move.
+// So the first move is the entire strategy, and the two ways that goes wrong
+// -- no damage, and no PP -- are both worth catching before a night of it.
+const withMoves = (first, pp = 30, rest = []) => ({
+  ...mon(),
+  record: { moves: [{ id: first, pp }, ...rest.map((id) => ({ id, pp: 10 }))] },
+});
+
+{
+  // Every move spent. Now that it can choose, this is the only PP situation
+  // that is actually fatal.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), record: { moves: [{ id: 84, pp: 0 }, { id: 98, pp: 0 }] } }],
+  }));
+  check(
+    "no PP left in any move stops the run",
+    end !== null && /no PP left in any move/.test(end.reason),
+    end && end.reason
+  );
+}
+
+{
+  // A spent first move is no longer fatal: there is another one.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), record: { moves: [{ id: 84, pp: 0 }, { id: 98, pp: 20 }] } }],
+  }));
+  check("but a spent first move is not, when another has PP", end === null);
+}
+
+// -- choosing the move -------------------------------------------------------
+//
+// The reported bug three ways over: it mashed A, A takes the first move, and
+// on a typical party that is Growl, or Leer, or something with no PP left.
+// The cursor moves by XOR -- left/right flip bit 0, up/down flip bit 1 -- so
+// each press is one axis and is checked against the cursor rather than
+// counted.
+const party4 = (specs) => [{ ...mon(), record: { moves: specs.map(([id, pp]) => ({ id, pp })) } }];
+// LEER(0 power), PECK(35), FOCUS ENERGY(0), DOUBLE KICK(30) -- the real party
+// member this was found with.
+const NIDORAN = [[43, 30], [64, 35], [116, 30], [24, 20]];
+
+const inMove = (cursor, party) => (frame) => ({
+  frame, inBattle: true, party, battle: { menu: "move", cursor },
+});
+
+{
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys } = drive(run, 24, inMove(0, party4(NIDORAN)));
+  check(
+    "on the move list it walks the cursor towards the best move",
+    keys.some((k) => k & BTN.RIGHT) && !keys.some((k) => k & BTN.A),
+    "PECK is index 1, so bit 0 has to flip and nothing should be confirmed yet"
+  );
+}
+
+{
+  // Cursor already on PECK: confirm, do not wander off it.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys } = drive(run, 24, inMove(1, party4(NIDORAN)));
+  check(
+    "once the cursor is on it, it presses A",
+    keys.some((k) => k & BTN.A) && !keys.some((k) => k & (BTN.RIGHT | BTN.DOWN))
+  );
+}
+
+{
+  // Best move at index 3 from cursor 0 needs both bits. One axis per press.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const strong = party4([[43, 30], [45, 30], [116, 30], [25, 5]]); // MEGA KICK at 3
+  const { keys } = drive(run, 24, inMove(0, strong));
+  const pressed = keys.filter((k) => k !== 0);
+  check(
+    "two bits apart, it flips one axis at a time",
+    pressed.every((k) => k === BTN.RIGHT) && pressed.length > 0,
+    "bit 0 first; the next frame's cursor read decides the rest"
+  );
+}
+
+{
+  // Off the move list, A is right for everything: the action menu, text, an
+  // animation. Nothing here should be pressing directions.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys } = drive(run, 24, (frame) => ({
+    frame, inBattle: true, party: party4(NIDORAN), battle: { menu: "action", cursor: 0 },
+  }));
+  check("at the action menu it just presses A", keys.some((k) => k & BTN.A) && !keys.some((k) => k & (BTN.RIGHT | BTN.DOWN)));
+}
+
+{
+  // A build whose menus this cannot read falls back to what it did before.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys, end } = drive(run, 24, (frame) => ({
+    frame, inBattle: true, party: party4(NIDORAN), battle: null,
+  }));
+  check("with no menu read it falls back to mashing A", end === null && keys.some((k) => k & BTN.A));
+}
+
+{
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end, keys } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [withMoves(84, 12)],
+  }));
+  check("with PP left it fights on", end === null && keys.some((k) => k & BTN.A));
+}
+
+{
+  // A party read whose checksum did not agree carries no record, and that
+  // must not be mistaken for an empty move.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end } = drive(run, 40, fighting());
+  check("no decoded record is not the same as no PP", end === null);
+}
+
+{
+  // The preview, which is what the panel shows before anything runs.
+  check(
+    "the preview names the move and its power",
+    (() => {
+      const p = previewOf({ slot: 0 }, [withMoves(84, 30)]);
+      return p && p.move === "THUNDER SHOCK" && p.power === 40 && p.pp === 30;
+    })()
+  );
+  check(
+    "and it is the move that will be chosen, not the first one",
+    (() => {
+      const p = previewOf({ slot: 0 }, party4(NIDORAN));
+      return p && p.move === "PECK" && p.power === 35;
+    })(),
+    "LEER is in slot one and does nothing"
+  );
+  check(
+    "a party of nothing but status moves reads as zero power",
+    (() => {
+      const p = previewOf({ slot: 0 }, party4([[45, 40], [43, 30]])); // GROWL, LEER
+      return p && p.power === 0;
+    })()
+  );
+  check("no party means no preview", previewOf({ slot: 0 }, null) === null);
+  check(
+    "an undecodable record previews without a move rather than guessing",
+    (() => {
+      const p = previewOf({ slot: 0 }, [mon()]);
+      return p && p.move === null;
+    })()
+  );
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");
