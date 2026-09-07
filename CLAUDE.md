@@ -12,10 +12,14 @@ to one Netlify site. See `SETUP.md` for the one-time backend/Netlify setup and
   (public Supabase URL + publishable key; safe to commit).
 - `build.sh` — bundles every `apps/*/src/app.jsx` into `public/<name>/` with
   esbuild and generates the landing page. Netlify runs it via `netlify.toml`.
-  It also picks up two optional sidecars per app:
+  It also picks up three optional sidecars per app:
   `apps/<name>/src/*worker.js` gets its own bundle (a Worker needs its own entry
-  point; load it as `new Worker("worker.js")`), and `apps/<name>/assets/` is
-  copied verbatim for anything the app fetches at runtime.
+  point; load it as `new Worker("worker.js")`), `apps/<name>/assets/` is
+  copied verbatim for anything the app fetches at runtime, and
+  `apps/<name>/sw.js` is copied as a service worker with `__BUILD__` replaced
+  by a hash of everything it precaches — so a changed build is a changed
+  worker and one atomic cache swap, rather than a version constant someone has
+  to remember to bump.
 - React + esbuild only. No framework, no router — each app is a standalone
   bundle served at `/<name>/`.
 
@@ -53,6 +57,18 @@ Deploy is **git-driven**: there is no manual deploy step and no Netlify CLI here
    in the Netlify dashboard.
 
 Iterating is the same loop: edit → PR → merge → redeploys shortly after.
+
+## Offline for an app with a backend
+
+`make-offline.sh` refuses anything that imports `shared/client|store|auth` or
+ships an `assets/` folder, and it is right to: a `file://` page needing
+Supabase just spins. An app that is *local-first* rather than self-contained
+wants the other approach — a service worker, so the app that reads the
+device's data is available without a connection too. `apps/gba/sw.js` is the
+worked example, and its one rule is worth stealing: precache the whole shell
+in a single pass into a cache named for the build, and never revalidate a file
+on its own. Two halves of one program cached out of step is a worse failure
+than being offline.
 
 ## Offline single-file export (for self-contained apps)
 
