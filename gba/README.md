@@ -447,6 +447,29 @@ side's pause is the other's. That is also the first thing a real pair will hit,
 so a session that stops advancing says whose turn it is waiting on rather than
 showing a frozen picture.
 
+## Reading the running game
+
+`apps/gba/src/game.js` is a decoder ring for the cartridge's work RAM. The
+core is a Game Boy Advance and knows nothing about Pokémon; this is what lets
+something act on what is *true* rather than on what a screenshot appears to
+show — the party, its levels, whether anyone has fainted.
+
+The addresses were found, not looked up. `gPlayerParty` is at `0x02024284`
+because that is the only run of six consecutive hundred-byte records in EWRAM
+whose level, current HP, maximum HP and five stats are all in range and
+mutually consistent; `gPlayerPartyCount` is at `0x02024029` because that is
+the only byte equal to the party size in the `0x300` before it. Both were then
+confirmed against a real machine: the six names decode out of the game's own
+character set as PIKACHU, BEEDRILL, CHARMELEON, NIDORAN, JIGGLYPUFF, CLEFAIRY,
+which is the party that cartridge has.
+
+The shape test is not just how they were found — it runs on every read. A
+cartridge that merely shares a game code, or memory caught mid-write, fails it
+and the read returns nothing. **A false party is worse than no party**: this is
+meant to be the input to something that presses buttons on its own, and a
+policy acting on plausible nonsense is worse than one that waits. Twelve of
+the thirteen checks in `checks/game-checks.mjs` are refusals for that reason.
+
 ## Next
 
 1. **A trade, end to end.** Both players stand at the machine; completing a

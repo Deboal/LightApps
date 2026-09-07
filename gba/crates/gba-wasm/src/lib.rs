@@ -349,3 +349,52 @@ pub extern "C" fn gba_link_end() {
         *addr_of_mut!(CABLE) = None;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Reading the game
+// ---------------------------------------------------------------------------
+//
+// A pointer straight into the machine's work RAM, so the shell can read what
+// the running game knows -- the party, its levels, whether anyone is fainted.
+// Handed over as a view rather than copied a byte at a time: a party is six
+// hundred bytes and a policy wants it every frame.
+//
+// Read-only by convention. Nothing here writes, because a shell that pokes the
+// game's memory is a shell that can corrupt a save in ways no test would
+// catch, and every legitimate use of this is observation.
+
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub extern "C" fn gba_ewram() -> *const u8 {
+    match emulator() {
+        Some(emulator) => emulator.mem.ewram.as_ptr(),
+        None => core::ptr::null(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn gba_ewram_len() -> usize {
+    gba_core::mem::EWRAM_SIZE
+}
+
+#[no_mangle]
+pub extern "C" fn gba_iwram() -> *const u8 {
+    match emulator() {
+        Some(emulator) => emulator.mem.iwram.as_ptr(),
+        None => core::ptr::null(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn gba_iwram_len() -> usize {
+    gba_core::mem::IWRAM_SIZE
+}
+
+/// The same, for one unit of a linked session.
+#[no_mangle]
+pub extern "C" fn gba_link_ewram(unit: u32) -> *const u8 {
+    match cable().and_then(|c| c.machines.get(unit as usize)) {
+        Some(machine) => machine.mem.ewram.as_ptr(),
+        None => core::ptr::null(),
+    }
+}
