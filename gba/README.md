@@ -470,6 +470,51 @@ meant to be the input to something that presses buttons on its own, and a
 policy acting on plausible nonsense is worse than one that waits. Twelve of
 the thirteen checks in `checks/game-checks.mjs` are refusals for that reason.
 
+`gMain` is the other thing read out of memory, and it is read on weaker
+evidence. It is at `0x030030F0` because that is the only word in IWRAM
+advancing by exactly forty over forty frames (its vblank counter), and because
+the three pointers ahead of it all land in ROM, which nothing else at that
+address would. `inBattle` is bit 1 of the byte at `0x03003529` per the game's
+own `struct Main` — but unlike the party, **that flag has never been watched
+turning on here**. Three attempts to walk a snapshot out of a Pokémon Center
+and into grass failed, and hunting further was worth less than the alternative:
+nothing downstream trusts the flag on its own. See the self-check below.
+
+## Playing it for you
+
+`apps/gba/src/policy.js` is a runner: hand it the party and the battle flag
+each frame and it answers with a button mask. `supabase/functions/gba-policy`
+turns a sentence ("grind Pikachu to level 30") into the small object it runs.
+
+The split is the design, not an optimisation:
+
+- **The model is asked once.** One short request per run, not one per frame.
+  A twenty-minute grind costs a single call, keeps working with the tab in the
+  background, and cannot change its mind halfway through.
+- **The model cannot emit behaviour.** It fills in parameters — slot, stop
+  level, flee threshold, stop threshold — and `policy.js` is the entire
+  vocabulary those select from. Something that could emit behaviour could do
+  anything while nobody was watching, which is the whole situation here.
+- **The key never reaches a browser.** It is a Supabase secret read via
+  `Deno.env.get` inside the function, with `verify_jwt` left on.
+- **Nothing is started without being read first.** The plan comes back in
+  plain words with its stopping condition spelled out, and the player approves
+  it before a button moves.
+
+Every way it stops is checked (`checks/policy-checks.mjs`, 30 checks): the
+level reached, HP below the floor, a faint, a battle that stops responding, a
+minute and a half of walking with no encounter, and a party that stays
+unreadable. The last of those tolerates a torn read for a second first — the
+party is read out of memory the cartridge is writing to.
+
+And the self-check, which is there because of the paragraph above: HP falling
+is a fight, whatever `inBattle` says. Three unexplained drops with no battle
+observed between them and the run stops rather than pressing buttons into a
+state it is misreading. Seeing one real battle resets the count, so the
+one-frame race between a battle ending and the damage that ended it cannot add
+up to a false stop. If the flag turns out to be wrong, the failure is a run
+that halts and says so — not a fainted party.
+
 ## Next
 
 1. **A trade, end to end.** Both players stand at the machine; completing a

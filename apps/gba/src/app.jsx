@@ -5,6 +5,9 @@ import * as netplay from "./netplay.js";
 import * as game from "./game.js";
 import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
+import { BTN, DPAD } from "./buttons.js";
+import { runner } from "./policy.js";
+import * as autopilot from "./autopilot.js";
 
 // GBA — a Game Boy Advance emulator. The core is Rust compiled to WebAssembly
 // (see gba/ in this repo); this file is only the shell.
@@ -21,25 +24,6 @@ import { makeStates } from "./states.js";
 const WIDTH = 240;
 const HEIGHT = 160;
 const FPS = 59.7275;
-
-// Must match KeyState in gba-core.
-const BTN = {
-  A: 1 << 0,
-  B: 1 << 1,
-  SELECT: 1 << 2,
-  START: 1 << 3,
-  RIGHT: 1 << 4,
-  LEFT: 1 << 5,
-  UP: 1 << 6,
-  DOWN: 1 << 7,
-  R: 1 << 8,
-  L: 1 << 9,
-};
-
-// Any direction. The run latch keys off this: B is only held while the
-// character is actually moving, so a latched run never leaks into a menu,
-// where a held B would back straight out of it.
-const DPAD = BTN.UP | BTN.DOWN | BTN.LEFT | BTN.RIGHT;
 
 const KEYBOARD = {
   KeyZ: BTN.A,
@@ -985,6 +969,146 @@ function PartyPanel({ party, gameName, onClose }) {
   );
 }
 
+// The AI player.
+//
+// The shape of this screen is the whole safety argument. A sentence goes up
+// once; what comes back is a plan in plain words, with its stopping condition
+// spelled out, and nothing runs until the player has read it and agreed. The
+// model is not in the loop after that -- the emulator runs the plan locally,
+// so the only thing that can happen while nobody is watching is the thing on
+// screen here.
+function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
+  const [prompt, setPrompt] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [thinking, setThinking] = useState(false);
+  const [error, setError] = useState("");
+  const running = auto && auto.running;
+
+  const think = async (event) => {
+    event.preventDefault();
+    const said = prompt.trim();
+    if (!said) return;
+    setThinking(true);
+    setError("");
+    setPlan(null);
+    try {
+      setPlan(await autopilot.compile(said, party));
+    } catch (problem) {
+      setError(problem.message);
+    } finally {
+      setThinking(false);
+    }
+  };
+
+  const mon = auto && auto.mon;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
+      <div style={{ ...panel, padding: 20, maxWidth: 420, width: "100%" }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>Play it for me</h2>
+        <p style={{ color: "var(--dim)", fontSize: 13, margin: "0 0 16px", lineHeight: 1.5 }}>
+          Say what you want done. It comes back as a plan you approve before
+          anything moves — after that the emulator runs it on its own, reading
+          the game's memory rather than the screen, at four times speed.
+          Touching the controls takes it straight back.
+        </p>
+
+        {/* A panel that cannot start anything still has to be closable. This
+            was a trapped modal until a check tried to leave it. */}
+        {blocked && (
+          <>
+            <p style={{ color: "var(--accent2)", fontSize: 13 }}>{blocked}</p>
+            <div style={{ marginTop: 18 }}>
+              <Button onClick={onClose}>Close</Button>
+            </div>
+          </>
+        )}
+
+        {!blocked && running && (
+          <>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{auto.policy.name}</div>
+            <p style={{ color: "var(--dim)", fontSize: 13, margin: "6px 0 14px", lineHeight: 1.5 }}>
+              {auto.policy.summary}
+            </p>
+            <div style={{ ...panel, padding: 12, fontSize: 13, lineHeight: 1.8 }}>
+              <div>
+                <span style={{ color: "var(--dim)" }}>Doing</span>{" "}
+                {auto.phase === "battle" ? "fighting" : "looking for a fight"}
+              </div>
+              <div>
+                <span style={{ color: "var(--dim)" }}>Battles</span> {auto.battles}
+              </div>
+              {mon && (
+                <div>
+                  <span style={{ color: "var(--dim)" }}>{mon.name}</span> Lv {mon.level} ·{" "}
+                  {mon.hp}/{mon.maxHp} HP
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+              <Button onClick={onStop} tone="accent">Stop</Button>
+              <Button onClick={onClose}>Close</Button>
+            </div>
+          </>
+        )}
+
+        {!blocked && !running && (
+          <>
+            {auto && auto.done && (
+              <p style={{ fontSize: 13, lineHeight: 1.5, margin: "0 0 14px" }}>
+                <strong>{auto.policy.name}</strong> stopped: {auto.done}
+              </p>
+            )}
+            <form onSubmit={think}>
+              <input
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Grind Pikachu to level 30"
+                style={{ ...panel, width: "100%", padding: "12px", fontSize: 15, color: "inherit", boxSizing: "border-box" }}
+              />
+              <Button
+                onClick={think}
+                disabled={thinking || !prompt.trim()}
+                tone="accent"
+                style={{ width: "100%", padding: 12, marginTop: 10 }}
+              >
+                {thinking ? "Thinking…" : "Make a plan"}
+              </Button>
+            </form>
+
+            {error && (
+              <p style={{ color: "var(--accent2)", fontSize: 13, lineHeight: 1.5 }}>{error}</p>
+            )}
+
+            {plan && (
+              <div style={{ ...panel, padding: 14, marginTop: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{plan.name}</div>
+                <p style={{ fontSize: 13, lineHeight: 1.5, margin: "6px 0 0" }}>{plan.summary}</p>
+                <p style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.6, margin: "10px 0 0" }}>
+                  It cannot heal, use items or switch Pokémon. It runs from a
+                  battle below {Math.round(plan.fleeBelowHp * 100)}% HP and stops
+                  altogether below {Math.round(plan.stopBelowHp * 100)}%.
+                </p>
+                <Button
+                  onClick={() => onStart(plan)}
+                  tone="accent"
+                  style={{ width: "100%", padding: 12, marginTop: 12 }}
+                >
+                  Start
+                </Button>
+              </div>
+            )}
+
+            <div style={{ marginTop: 18 }}>
+              <Button onClick={onClose}>Close</Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LinkPanel({ link, onHost, onJoin, onLeave, onClose, error }) {
   const [entry, setEntry] = useState("");
   const [copied, setCopied] = useState(false);
@@ -1175,6 +1299,15 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [waiting, setWaiting] = useState(false);
   const [party, setParty] = useState(null);
   const [partyOpen, setPartyOpen] = useState(false);
+
+  // The AI player. As with the link session, the frame loop reads a ref and
+  // never React state: `autoRef` holds the runner, the cartridge code it was
+  // started against and its own frame count, and `auto` is only what the panel
+  // draws. A re-render must not be able to restart or disturb a run.
+  const autoRef = useRef(null);
+  const autoResume = useRef(1);
+  const [auto, setAuto] = useState(null);
+  const [autoOpen, setAutoOpen] = useState(false);
 
   // Turbo walk: hold B for the player, but only while a direction is held.
   // In these games running is B plus a direction, and on a phone that means
@@ -1546,16 +1679,55 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     };
   }, [link?.phase]);
 
+  // Starting and stopping the AI player. Speed is part of it: the point of
+  // handing the game over is not watching it, so it goes to four times while
+  // it runs and back to whatever it was afterwards.
+  const startAuto = useCallback(
+    (policy) => {
+      autoRef.current = { run: runner(policy), frame: 0, code, slot: policy.slot || 0, mon: null };
+      setAuto({ policy, running: true, phase: "seek", battles: 0, mon: null, done: null });
+      autoResume.current = baseSpeed.current;
+      baseSpeed.current = 4;
+      applySpeed();
+    },
+    [code, applySpeed]
+  );
+
+  const stopAuto = useCallback(
+    (reason) => {
+      if (!autoRef.current) return;
+      const last = autoRef.current;
+      autoRef.current = null;
+      // Let go of the buttons. A run that ends mid-tap with A still down would
+      // hand the game back holding a button nobody is pressing.
+      keysRef.current = 0;
+      baseSpeed.current = autoResume.current;
+      applySpeed();
+      setAuto((prev) =>
+        prev
+          ? { ...prev, running: false, phase: last.run.phase, battles: last.run.battles, mon: last.mon, done: reason || "Stopped." }
+          : prev
+      );
+    },
+    [applySpeed]
+  );
+
+  // A link session and an AI player cannot both be driving. The session wins:
+  // the other person is real.
+  useEffect(() => {
+    if (link && autoRef.current) stopAuto("A link session started.");
+  }, [link, stopAuto]);
+
   // Read the party while the panel is open. Twice a second: it changes at the
   // pace of a battle, and a view over WebAssembly memory has to be re-derived
   // each time because that memory can move when it grows.
   useEffect(() => {
-    if (!partyOpen || !game.supports(code)) return;
+    if ((!partyOpen && !autoOpen) || !game.supports(code)) return;
     const read = () => setParty(game.partyOf(game.ewram(core), code));
     read();
     const tick = setInterval(read, 500);
     return () => clearInterval(tick);
-  }, [partyOpen, code, core]);
+  }, [partyOpen, autoOpen, code, core]);
 
   // A tab that closes mid-session should tell the other side rather than
   // leaving them staring at a stall.
@@ -1598,6 +1770,35 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       while (owed >= period && ran < 16) {
         let keys = keysRef.current;
         if (runRef.current && keys & DPAD) keys |= BTN.B;
+
+        // The AI player, if one is running. It is read out of the game every
+        // frame rather than sampled: its stopping conditions are the only
+        // thing between an unattended run and a fainted party, and a stale
+        // read is exactly the read that misses the frame HP crossed the line.
+        const drive = autoRef.current;
+        if (drive && keys) {
+          // Touching the controls takes the game back. There is no other way
+          // to grab the wheel from something that is holding it four times
+          // faster than you are watching, and asking someone to find a button
+          // in a panel first is the wrong answer to "stop, stop, stop".
+          stopAuto("You took over.");
+          break;
+        }
+        if (drive) {
+          const seen = game.partyOf(game.ewram(core), drive.code);
+          if (seen && seen[drive.slot]) drive.mon = seen[drive.slot];
+          const out = drive.run.step({
+            frame: drive.frame++,
+            party: seen,
+            inBattle: game.inBattleOf(game.iwram(core), drive.code) === true,
+          });
+          keys = out.keys;
+          if (out.done) {
+            stopAuto(out.reason);
+            break;
+          }
+        }
+
         if (live) {
           // A frame cannot run until both players' inputs for it are known.
           // Waiting is the only correct answer: an invented input is a session
@@ -1643,6 +1844,17 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         setFps(Math.round((drawn * 1000) / (now - counted)));
         drawn = 0;
         counted = now;
+        // The run's own readout, at the same twice-a-second cadence. Pushing
+        // this per frame would re-render the app four hundred times a second
+        // to change a battle count that moves once a minute.
+        const running = autoRef.current;
+        if (running) {
+          setAuto((prev) =>
+            prev && prev.running
+              ? { ...prev, phase: running.run.phase, battles: running.run.battles, mon: running.mon }
+              : prev
+          );
+        }
       }
 
       // Persist a few seconds after the cartridge stops being written, which
@@ -1658,7 +1870,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
     handle = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(handle);
-  }, [core, persist]);
+  }, [core, persist, stopAuto]);
 
   // Flush on the way out. iOS can kill a backgrounded tab without warning, so
   // hiding the page is the last reliable moment to write.
@@ -2041,6 +2253,11 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         </button>
         <Button onClick={openStates}>States</Button>
         {game.supports(code) && <Button onClick={() => setPartyOpen(true)}>Party</Button>}
+        {game.supports(code) && (
+          <Button onClick={() => setAutoOpen(true)} tone={auto && auto.running ? "accent" : undefined}>
+            {auto && auto.running ? "Playing…" : "Auto"}
+          </Button>
+        )}
         <Button
           onClick={() => setLinkOpen(true)}
           tone={link && link.phase === "live" ? "accent" : undefined}
@@ -2091,6 +2308,30 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           : "The cartridge save is written to this browser a few seconds after the game finishes saving, and again whenever you leave the page. Sign in to keep a copy that survives a cleared browser."}
       </p>
 
+      {autoOpen && (
+        <AutoPanel
+          party={party}
+          auto={auto}
+          onStart={(plan) => startAuto(plan)}
+          onStop={() => stopAuto("You stopped it.")}
+          onClose={() => setAutoOpen(false)}
+          // Only ever a reason it cannot be *started*. A run already going
+          // keeps its readout and its Stop button whatever a party read does
+          // this instant -- taking Stop away from someone is the last thing
+          // this screen should do.
+          blocked={
+            auto && auto.running
+              ? ""
+              : link
+                ? "Not while a link session is running — the other player is real."
+                : !autopilot.available
+                  ? "This build has no backend configured, so there is nothing to ask."
+                  : !party
+                    ? "No party in memory yet. Load your save and get past the title screen first."
+                    : ""
+          }
+        />
+      )}
       {partyOpen && (
         <PartyPanel party={party} gameName={game.gameName(code)} onClose={() => setPartyOpen(false)} />
       )}

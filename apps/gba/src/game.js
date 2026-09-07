@@ -18,11 +18,26 @@
 /** Cartridges this knows how to read, by the four-character code in the ROM
  *  header. FireRed and LeafGreen share a layout. */
 const KNOWN = {
-  BPRE: { name: "FireRed", party: 0x02024284, partyCount: 0x02024029 },
-  BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029 },
+  BPRE: { name: "FireRed", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0 },
+  BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0 },
 };
 
 const EWRAM_BASE = 0x02000000;
+const IWRAM_BASE = 0x03000000;
+
+/** `gMain` is the game's per-frame bookkeeping struct, and the one field worth
+ *  reading out of it is whether a battle is happening. It was found the same
+ *  way as the party: the only word in IWRAM advancing by exactly forty over
+ *  forty frames is its vblank counter, and the three callback pointers ahead
+ *  of it all land in ROM, which nothing else at that address would.
+ *
+ *  The offset and the bit come from the game's own source rather than from
+ *  observation -- unlike the party, this flag has never been *watched* turning
+ *  on here. So nothing downstream trusts it on its own: the policy runner
+ *  cross-checks it against HP actually falling and stops if the two disagree.
+ *  Read `inBattleOf` as evidence, not as fact. */
+const MAIN_FLAGS = 0x439;
+const IN_BATTLE = 1 << 1;
 
 /** One party slot: eighty bytes of box data, then the fields that only a
  *  Pokémon in a party has. */
@@ -95,9 +110,31 @@ export function partyOf(view, code) {
   return party;
 }
 
+/**
+ * Whether the game currently believes it is in a battle, or null if this
+ * cartridge is not one it can read. See MAIN_FLAGS above for why this is
+ * evidence rather than fact.
+ */
+export function inBattleOf(view, code) {
+  const map = KNOWN[code];
+  if (!map || !view) return null;
+  const at = map.main + MAIN_FLAGS - IWRAM_BASE;
+  if (at < 0 || at >= view.length) return null;
+  return (view[at] & IN_BATTLE) !== 0;
+}
+
 /** A view over the running machine's work RAM. */
 export function ewram(core) {
   const ptr = core.gba_ewram();
   if (!ptr) return null;
   return new Uint8Array(core.memory.buffer, ptr, core.gba_ewram_len());
+}
+
+/** A view over the machine's fast internal RAM, where gMain lives. Both of
+ *  these are rebuilt on every read on purpose: WebAssembly memory moves when
+ *  it grows, and a view held across that reads whatever is there now. */
+export function iwram(core) {
+  const ptr = core.gba_iwram();
+  if (!ptr) return null;
+  return new Uint8Array(core.memory.buffer, ptr, core.gba_iwram_len());
 }

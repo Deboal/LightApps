@@ -10,7 +10,7 @@
 //
 // Run: node apps/gba/checks/game-checks.mjs
 
-import { partyOf, supports, gameName } from "../src/game.js";
+import { partyOf, supports, gameName, inBattleOf } from "../src/game.js";
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -112,6 +112,28 @@ const REAL = [
   check("a level above a hundred is refused", partyOf(overLevelled, "BPRE") === null);
 
   check("no view at all is refused", partyOf(null, "BPRE") === null);
+}
+
+// The battle flag. This one is read out of IWRAM and, unlike the party, has
+// never been watched turning on -- so what is checked here is only that the
+// bit is decoded from the right byte and that unknown cartridges get nothing.
+{
+  const FLAGS = 0x03003529 - 0x03000000; // gMain + 0x439
+  const iwram = new Uint8Array(0x8000);
+  check("no battle in a zeroed machine", inBattleOf(iwram, "BPRE") === false);
+
+  iwram[FLAGS] = 0b01;
+  check("the neighbouring bit is not mistaken for it", inBattleOf(iwram, "BPRE") === false);
+
+  iwram[FLAGS] = 0b10;
+  check("bit one is the battle", inBattleOf(iwram, "BPRE") === true);
+
+  iwram[FLAGS] = 0xff;
+  check("and it survives the rest of the flags being set", inBattleOf(iwram, "BPRE") === true);
+
+  check("an unknown cartridge yields nothing, not false", inBattleOf(iwram, "AXVE") === null);
+  check("no view at all yields nothing", inBattleOf(null, "BPRE") === null);
+  check("a view too short to hold gMain yields nothing", inBattleOf(new Uint8Array(16), "BPRE") === null);
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");

@@ -31,6 +31,7 @@ fn main() -> ExitCode {
     let mut dump_at: Vec<u64> = Vec::new();
     let mut script: Vec<(u64, u16, u64)> = Vec::new();
     let mut script2: Vec<(u64, u16, u64)> = Vec::new();
+    let mut watch_ram: Vec<u32> = Vec::new();
     let mut snapshot_in: Option<String> = None;
     let mut snapshot_out: Option<(u64, String)> = None;
     let mut mash_from: Option<u64> = None;
@@ -50,6 +51,17 @@ fn main() -> ExitCode {
             "--determinism" => determinism = true,
             "--script" => script = args.next().map(|v| parse_script(&v)).unwrap_or_default(),
             "--script-2" => script2 = args.next().map(|v| parse_script(&v)).unwrap_or_default(),
+            // Report every change to a byte of the machine's memory. Finding a
+            // flag means provoking the thing it stands for, and watching is a
+            // great deal cheaper than dumping memory and diffing it by hand.
+            "--watch-ram" => {
+                if let Some(v) = args.next() {
+                    watch_ram.extend(
+                        v.split(',')
+                            .filter_map(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()),
+                    );
+                }
+            }
             "--snapshot-in" => snapshot_in = args.next(),
             "--snapshot-out" => {
                 let at = args.next().and_then(|v| v.parse().ok());
@@ -120,6 +132,7 @@ fn main() -> ExitCode {
         dump_at,
         script,
         script2,
+        watch_ram,
         snapshot_in,
         snapshot_out,
         mash_from,
@@ -244,6 +257,9 @@ struct Run {
     /// driven differently: they sit on opposite sides of the machine and each
     /// picks their own Pokemon.
     script2: Vec<(u64, u16, u64)>,
+    /// Addresses whose every change is reported, for finding a flag by
+    /// provoking the thing it stands for.
+    watch_ram: Vec<u32>,
     /// Both machines' states, so an experiment twenty thousand frames into a
     /// session does not have to replay those frames every time.
     snapshot_in: Option<String>,
@@ -259,6 +275,7 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
         watch,
         script,
         script2: _,
+        watch_ram: _,
         snapshot_in: _,
         snapshot_out: _,
         mash_from,
@@ -486,6 +503,7 @@ fn run_cable(
     // Both units get the same buttons: they are two people doing the same
     // thing, walking to the same counter. Netplay will feed each machine its
     // own player's input instead.
+    let mut watched: Vec<u8> = Vec::new();
     let held = |script: &[(u64, u16, u64)], frame: u64| {
         let mut keys = 0u16;
         for (at, buttons, hold) in script {
@@ -546,6 +564,18 @@ fn run_cable(
         }
         let before = cable.transfers;
         cable.run_frame(&[KeyState(keys), KeyState(keys2)]);
+        if !options.watch_ram.is_empty() {
+            for (i, addr) in options.watch_ram.iter().enumerate() {
+                let value = cable.machines[0].mem.peek8(*addr);
+                if watched.get(i).copied() != Some(value) {
+                    println!("f{frame}  {addr:08x} = {value:02x} ({value:08b})");
+                    while watched.len() <= i {
+                        watched.push(0);
+                    }
+                    watched[i] = value;
+                }
+            }
+        }
         if let Some(from) = options.link_trace {
             if frame >= from {
                 let mut line = format!("f{frame} x{}", cable.transfers - before);
