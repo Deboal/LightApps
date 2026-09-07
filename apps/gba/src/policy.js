@@ -12,6 +12,7 @@
 
 import { BTN } from "./buttons.js";
 import { sameTile } from "./game.js";
+import { MOVES, moveName } from "./moves.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
  *  held A advances one message and then nothing. Four frames down, eight up. */
@@ -36,6 +37,16 @@ const DIRS = [BTN.LEFT, BTN.DOWN, BTN.RIGHT, BTN.UP];
  *  than a pattern: wander freely inside this radius, and head back the moment
  *  it is exceeded. */
 const LEASH = 4;
+
+/** The move this will actually use.
+ *
+ *  It mashes A, and A picks the first move -- so the first move is the whole
+ *  strategy until the move list can be navigated, which needs a battle-menu
+ *  read this does not have yet. What it *can* do is know which move that is
+ *  and refuse to pretend. A first move with no PP left is a battle the game
+ *  will not let it start, and mashing A into "there's no PP left for this
+ *  move" forever is the worst way to spend a night. */
+const firstMove = (mon) => (mon && mon.record ? mon.record.moves[0] : null);
 
 /** Frames of holding a direction on the same tile before calling it blocked.
  *
@@ -71,6 +82,26 @@ const tapping = (frame) => (frame % TAP_CYCLE < TAP_DOWN);
  * given plus its own counters — no clock, no randomness — so a run is
  * reproducible and a test can drive it anywhere in seconds.
  */
+/**
+ * What a policy will actually do with a given party, in one line, before
+ * anything runs. The move matters more than the thresholds: four of a typical
+ * party's six have a status move in the first slot, and that is the move this
+ * will use every turn.
+ */
+export function previewOf(policy, party) {
+  const slot = (policy && policy.slot) || 0;
+  const mon = party && party[slot];
+  const move = firstMove(mon);
+  if (!mon) return null;
+  if (!move || !move.id) return { name: mon.name, move: null };
+  return {
+    name: mon.name,
+    move: moveName(move.id),
+    power: MOVES[move.id] ? MOVES[move.id].p : 0,
+    pp: move.pp,
+  };
+}
+
 export function runner(policy) {
   const { slot = 0, stopAtLevel = 100, fleeBelowHp = 0.34, stopBelowHp = 0.15 } = policy || {};
 
@@ -140,6 +171,18 @@ export function runner(policy) {
       }
 
       // -- the reasons to stop --------------------------------------------
+      // The move it is about to use, checked before it is used rather than
+      // after a minute of mashing A into a refusal.
+      const move = firstMove(mon);
+      if (move && move.id && move.pp === 0) {
+        return {
+          keys: 0,
+          done: true,
+          reason:
+            `${mon.name} has no PP left for ${moveName(move.id)}, which is the only ` +
+            `move this can use. Heal at a Centre, or move a different one into the first slot.`,
+        };
+      }
       if (mon.fainted) {
         return { keys: 0, done: true, reason: `${mon.name} fainted.` };
       }

@@ -15,6 +15,8 @@
 // returns null rather than plausible nonsense if the cartridge is not the one
 // these addresses describe.
 
+import { decode } from "./mon.js";
+
 /** Cartridges this knows how to read, by the four-character code in the ROM
  *  header. FireRed and LeafGreen share a layout. */
 const KNOWN = {
@@ -105,6 +107,10 @@ export function partyOf(view, code) {
       hp,
       maxHp,
       fainted: hp === 0,
+      // The encrypted half: species, moves, PP, EVs, IVs. Null when the
+      // checksum disagrees, which is a record caught mid-write rather than a
+      // reason to throw away the plain fields that did read cleanly.
+      record: decode(view, at),
     });
   }
   return party;

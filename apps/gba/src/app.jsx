@@ -6,7 +6,7 @@ import * as game from "./game.js";
 import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 import { BTN, DPAD } from "./buttons.js";
-import { runner } from "./policy.js";
+import { runner, previewOf } from "./policy.js";
 import * as autopilot from "./autopilot.js";
 
 // GBA — a Game Boy Advance emulator. The core is Rust compiled to WebAssembly
@@ -920,7 +920,7 @@ const LINK_PHASES = {
   over: "Session ended",
 };
 
-function PartyPanel({ party, gameName, onClose }) {
+function PartyPanel({ party, world, gameName, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
       <div style={{ ...panel, padding: 20, maxWidth: 420, width: "100%" }}>
@@ -961,6 +961,30 @@ function PartyPanel({ party, gameName, onClose }) {
               </div>
             );
           })}
+        {/* What the AI player actually acts on, shown raw.
+            The tile is a strong read: press LEFT and x falls by one. The
+            battle flag is not -- it comes from the game's own struct but has
+            never been watched turning on here, which is why the runner
+            cross-checks it against HP falling rather than trusting it. One
+            wild encounter with this panel open settles it. */}
+        {world && (
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)", fontSize: 12, color: "var(--dim)", lineHeight: 1.7 }}>
+            <div>
+              Standing on{" "}
+              {world.position
+                ? `map ${world.position.map.mapGroup}/${world.position.map.mapNum}, tile (${world.position.x}, ${world.position.y})`
+                : "— (no position yet)"}
+            </div>
+            <div>
+              Battle flag{" "}
+              <span style={{ color: world.inBattle ? "var(--accent)" : "var(--dim)", fontWeight: world.inBattle ? 700 : 400 }}>
+                {world.inBattle === null ? "unreadable" : world.inBattle ? "ON" : "off"}
+              </span>
+              {world.inBattle === false && " — unverified; it has never been seen turn on"}
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: 18 }}>
           <Button onClick={onClose}>Close</Button>
         </div>
@@ -1001,6 +1025,7 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
   };
 
   const mon = auto && auto.mon;
+  const preview = plan && party ? previewOf(plan, party) : null;
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 10 }}>
@@ -1086,10 +1111,30 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
               <div style={{ ...panel, padding: 14, marginTop: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{plan.name}</div>
                 <p style={{ fontSize: 13, lineHeight: 1.5, margin: "6px 0 0" }}>{plan.summary}</p>
+                {/* The move it will actually use, named before anything
+                    starts. A is the only button it presses in a battle and A
+                    picks the first move, so a status move in slot one means a
+                    night of Growl. Better to see that here than find it. */}
+                {preview && preview.move && (
+                  <p
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      margin: "10px 0 0",
+                      color: preview.power === 0 ? "var(--accent2)" : "inherit",
+                    }}
+                  >
+                    It will use <strong>{preview.move}</strong> every turn — {preview.pp} PP left
+                    {preview.power === 0
+                      ? ", and it does no damage. Move a damaging one into the first slot first."
+                      : `, ${preview.power} power.`}
+                  </p>
+                )}
                 <p style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.6, margin: "10px 0 0" }}>
-                  It cannot heal, use items or switch Pokémon. It runs from a
-                  battle below {Math.round(plan.fleeBelowHp * 100)}% HP and stops
-                  altogether below {Math.round(plan.stopBelowHp * 100)}%.
+                  It can only use the first move, and cannot heal, use items or
+                  switch Pokémon. It runs from a battle below{" "}
+                  {Math.round(plan.fleeBelowHp * 100)}% HP and stops altogether below{" "}
+                  {Math.round(plan.stopBelowHp * 100)}%.
                 </p>
                 <Button
                   onClick={() => onStart(plan)}
@@ -1300,6 +1345,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [linkError, setLinkError] = useState("");
   const [waiting, setWaiting] = useState(false);
   const [party, setParty] = useState(null);
+  const [world, setWorld] = useState(null);
   const [partyOpen, setPartyOpen] = useState(false);
 
   // The AI player. As with the link session, the frame loop reads a ref and
@@ -1732,7 +1778,18 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   // each time because that memory can move when it grows.
   useEffect(() => {
     if ((!partyOpen && !autoOpen) || !game.supports(code)) return;
-    const read = () => setParty(game.partyOf(game.ewram(core), code));
+    const read = () => {
+      const ewram = game.ewram(core);
+      const iwram = game.iwram(core);
+      setParty(game.partyOf(ewram, code));
+      // The two reads the AI player acts on, shown raw. The battle flag in
+      // particular has never been watched turning on here, so this is the
+      // cheapest way to find out whether it does.
+      setWorld({
+        position: game.positionOf(iwram, ewram, code),
+        inBattle: game.inBattleOf(iwram, code),
+      });
+    };
     read();
     const tick = setInterval(read, 500);
     return () => clearInterval(tick);
@@ -2347,7 +2404,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         />
       )}
       {partyOpen && (
-        <PartyPanel party={party} gameName={game.gameName(code)} onClose={() => setPartyOpen(false)} />
+        <PartyPanel party={party} world={world} gameName={game.gameName(code)} onClose={() => setPartyOpen(false)} />
       )}
 
       {linkOpen && (

@@ -9,7 +9,7 @@
 //
 // Run: node apps/gba/checks/policy-checks.mjs
 
-import { runner } from "../src/policy.js";
+import { runner, previewOf } from "../src/policy.js";
 import { BTN } from "../src/buttons.js";
 
 const LEG_FRAMES = 48;
@@ -360,6 +360,75 @@ const tile = (x, y, mapNum = 1) => ({ x, y, map: { mapGroup: 3, mapNum } });
   const { keys, end } = drive(run, 120, walking());
   check("with no position read it falls back to turning on the clock", end === null);
   check("and still holds a direction", keys.every((k) => k & (BTN.LEFT | BTN.DOWN | BTN.RIGHT | BTN.UP)));
+}
+
+// -- the move it will actually use ------------------------------------------
+//
+// A is the only button it presses in a battle, and A picks the first move.
+// So the first move is the entire strategy, and the two ways that goes wrong
+// -- no damage, and no PP -- are both worth catching before a night of it.
+const withMoves = (first, pp = 30, rest = []) => ({
+  ...mon(),
+  record: { moves: [{ id: first, pp }, ...rest.map((id) => ({ id, pp: 10 }))] },
+});
+
+{
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: true,
+    // THUNDER SHOCK, spent.
+    party: [withMoves(84, 0)],
+  }));
+  check(
+    "a first move with no PP stops the run and names it",
+    end !== null && /no PP left for THUNDER SHOCK/.test(end.reason),
+    end && end.reason
+  );
+}
+
+{
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end, keys } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [withMoves(84, 12)],
+  }));
+  check("with PP left it fights on", end === null && keys.some((k) => k & BTN.A));
+}
+
+{
+  // A party read whose checksum did not agree carries no record, and that
+  // must not be mistaken for an empty move.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { end } = drive(run, 40, fighting());
+  check("no decoded record is not the same as no PP", end === null);
+}
+
+{
+  // The preview, which is what the panel shows before anything runs.
+  check(
+    "the preview names the move and its power",
+    (() => {
+      const p = previewOf({ slot: 0 }, [withMoves(84, 30)]);
+      return p && p.move === "THUNDER SHOCK" && p.power === 40 && p.pp === 30;
+    })()
+  );
+  check(
+    "a status move in the first slot reads as zero power",
+    (() => {
+      const p = previewOf({ slot: 0 }, [withMoves(45, 40)]); // GROWL
+      return p && p.move === "GROWL" && p.power === 0;
+    })()
+  );
+  check("no party means no preview", previewOf({ slot: 0 }, null) === null);
+  check(
+    "an undecodable record previews without a move rather than guessing",
+    (() => {
+      const p = previewOf({ slot: 0 }, [mon()]);
+      return p && p.move === null;
+    })()
+  );
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");
