@@ -1124,15 +1124,15 @@ function AutoPanel({ party, auto, onStart, onStop, onClose, blocked }) {
                       color: preview.power === 0 ? "var(--accent2)" : "inherit",
                     }}
                   >
-                    It will use <strong>{preview.move}</strong> every turn — {preview.pp} PP left
+                    It will use <strong>{preview.move}</strong> — {preview.pp} PP left
                     {preview.power === 0
-                      ? ", and it does no damage. Move a damaging one into the first slot first."
+                      ? ", and nothing in this moveset does damage."
                       : `, ${preview.power} power.`}
                   </p>
                 )}
                 <p style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.6, margin: "10px 0 0" }}>
-                  It can only use the first move, and cannot heal, use items or
-                  switch Pokémon. It runs from a battle below{" "}
+                  It uses the strongest move with PP left, and cannot heal, use
+                  items or switch Pokémon. It runs from a battle below{" "}
                   {Math.round(plan.fleeBelowHp * 100)}% HP and stops altogether below{" "}
                   {Math.round(plan.stopBelowHp * 100)}%.
                 </p>
@@ -1852,16 +1852,21 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         }
         if (drive) {
           const seen = game.partyOf(game.ewram(core), drive.code);
+
           if (seen && seen[drive.slot]) drive.mon = seen[drive.slot];
           const iwram = game.iwram(core);
+          const ewram = game.ewram(core);
           const out = drive.run.step({
             frame: drive.frame++,
             party: seen,
             inBattle: game.inBattleOf(iwram, drive.code) === true,
+            // Which battle menu is up and where its cursor sits, so a move
+            // can be chosen rather than whichever one happens to be first.
+            battle: game.battleMenuOf(iwram, ewram, drive.code),
             // Where the player is standing, which is how the runner tells
             // being blocked by an item ball from walking. Null is fine: it
             // falls back to turning on the clock alone.
-            position: game.positionOf(iwram, game.ewram(core), drive.code),
+            position: game.positionOf(iwram, ewram, drive.code),
           });
           keys = out.keys;
           if (out.done) {
