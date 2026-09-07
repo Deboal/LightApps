@@ -51,6 +51,22 @@ impl Cable {
         }
     }
 
+    /// Align the shared grid to the machines' own clocks.
+    ///
+    /// The quanta are measured against `cycles`, and the machines are stepped
+    /// until they reach it. Replace their state wholesale -- restoring a
+    /// snapshot, say -- and they arrive already far past a grid still sitting
+    /// at zero, so the loop that steps them "until they catch up" never runs
+    /// them at all. Nothing crashes; they simply stop.
+    pub fn rebase(&mut self) {
+        self.cycles = self
+            .machines
+            .iter()
+            .map(|machine| machine.mem.cycles)
+            .max()
+            .unwrap_or(0);
+    }
+
     pub fn players(&self) -> usize {
         self.machines.len()
     }

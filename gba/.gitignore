@@ -1,0 +1,6 @@
+
+# Debug dumps from gba-headless --dump-at: machine RAM, never ours to commit.
+dump-*.ewram
+dump-*.iwram
+dump-*.png
+*.bin
