@@ -13,11 +13,15 @@
 // reason it is safe — the model picks parameters from a fixed vocabulary and
 // cannot emit code that runs on anyone's machine.
 
-// Pinned, and the pair matters: the SDK declares zod ^3.25 || ^4 as a peer,
-// so an older zod resolves but the schema helper will not work against it.
+// Pinned, and the subpath is the load-bearing part: `helpers/zod` does
+// `require("zod/v4")` and calls `z.toJSONSchema`, which exists only in zod v4.
+// zod 3.25.x satisfies the SDK's `^3.25 || ^4` peer range and ships v4 under
+// `zod/v4`, but its bare entry point is still classic v3 -- and a v3 schema
+// handed to v4's converter fails as `Cannot read properties of undefined
+// (reading 'def')`, which names neither zod nor the version. Hence `/v4`.
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0";
 import { zodOutputFormat } from "npm:@anthropic-ai/sdk@0.124.0/helpers/zod";
-import { z } from "npm:zod@3.25.76";
+import { z } from "npm:zod@3.25.76/v4";
 
 /** What the emulator knows how to do. Adding a task means teaching the
  *  runtime first and widening this second — never the other way round, or the
