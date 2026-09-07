@@ -82,6 +82,15 @@ Verify the result by loading it as a `file://` URL with all network requests
 blocked. `offline/` is gitignored; the file is a build artifact to hand over,
 not something to commit.
 
+## Server-side secrets
+
+`shared/config.js` holds public values only. Anything that must not reach a
+browser — an API key for a paid service — goes in a Supabase Edge Function
+under `supabase/functions/<name>/`, with the value stored as a project secret
+and read via `Deno.env.get`. Leave "Verify JWT" on so the function is only
+reachable by a signed-in user; it is the only thing standing between a URL and
+someone else's bill. `supabase/functions/gba-policy/` is the worked example.
+
 ## Conventions
 
 - Keep apps small and dependency-light; reuse `shared/` rather than adding libs.

@@ -22,6 +22,42 @@ never run a provisioning script per app again.
   shared across every signed-in hub user, which is fine for trip photos and
   wrong for cartridges and save files.
 
+### 1c. GBA prompt-driven play (only if you want it)
+
+This is what lets you type "grind experience for Pikachu" and walk away. The
+model is asked **once**, for a small object saying what to do; the emulator then
+runs that object on its own at eight times speed with nothing on the network.
+One short request per prompt — not one per frame — which is why it costs cents
+rather than dollars an hour.
+
+The Anthropic key lives on the server and never reaches a browser. The app is a
+static page: anything it holds, anyone who opens it holds too.
+
+1. **Get a key.** console.anthropic.com > API keys > Create key. Copy it; you
+   cannot read it again afterwards.
+2. **Store it as a secret.** Supabase dashboard > Edge Functions > Secrets >
+   Add new secret. Name it exactly `ANTHROPIC_API_KEY`, paste the key, save.
+   Secrets are project-wide, so this only has to be done once.
+3. **Deploy the function.** Dashboard > Edge Functions > Deploy a new function
+   > *via editor*. Name it exactly `gba-policy`, paste the whole contents of
+   `supabase/functions/gba-policy/index.ts`, and deploy.
+
+   With the Supabase CLI instead:
+   ```sh
+   supabase functions deploy gba-policy --project-ref <your-project-ref>
+   ```
+4. **Leave "Verify JWT" on.** It is the default, and it is what stops anyone
+   who finds the URL from spending your credits: without it the function is an
+   open door to your key.
+
+If the app reports that no key is set, the function is deployed but step 2 was
+missed or the secret is spelled differently — the name must match exactly. A
+secret added after a deploy is picked up without redeploying.
+
+**What it costs.** One request per prompt, a few hundred tokens in and well
+under a hundred out. At Opus 5 rates that is a fraction of a cent per prompt.
+The run itself is free: nothing touches the network once it starts.
+
 ### 2. The repo (once)
 - Create a GitHub repo and push this folder to it.
 
