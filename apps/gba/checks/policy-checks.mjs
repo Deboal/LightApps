@@ -14,6 +14,7 @@ import { BTN } from "../src/buttons.js";
 
 const LEG_FRAMES = 48;
 const STUCK_FRAMES = 28;
+const LEASH_TILES = 4;
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -298,16 +299,59 @@ const tile = (x, y, mapNum = 1) => ({ x, y, map: { mapGroup: 3, mapNum } });
 }
 
 {
-  // The same tile on a different map is not the same tile. A door is a warp:
-  // the coordinates can repeat while the player has plainly moved.
+  // A door is a warp onto a different map, and there is no route home yet, so
+  // this stops rather than wandering off into a town.
   const run = runner({ slot: 0, stopAtLevel: 30 });
-  const { keys } = drive(run, 40, (frame) => ({
+  const { end } = drive(run, 60, (frame) => ({
     frame,
     inBattle: false,
     party: [mon()],
     position: tile(9, 9, frame < 20 ? 1 : 2),
   }));
-  check("walking through a door is not being stuck", keys.every((k) => k & BTN.LEFT));
+  check(
+    "walking onto another map stops the run",
+    end !== null && /off the map it started on/.test(end.reason),
+    end && end.reason
+  );
+}
+
+// -- the leash ---------------------------------------------------------------
+//
+// Four equal-length legs only return to where they began if all four cover
+// the same ground, and a blocked leg turns early, so the drift is systematic:
+// it walks steadily out of the grass it was put in. The tile read makes the
+// fix a leash rather than a better pattern.
+{
+  // A world that actually moves. The player drifts west one tile every eight
+  // frames while LEFT is held, and east while RIGHT is.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  let x = 20, y = 9, last = 0, held = 0;
+  const trace = [];
+  for (let frame = 0; frame < 900; frame++) {
+    const out = run.step({ frame, inBattle: false, party: [mon()], position: tile(x, y) });
+    if (out.done) break;
+    if (out.keys === last) held++;
+    else { held = 0; last = out.keys; }
+    if (held > 0 && held % 8 === 0) {
+      if (out.keys & BTN.LEFT) x--;
+      else if (out.keys & BTN.RIGHT) x++;
+      else if (out.keys & BTN.UP) y--;
+      else if (out.keys & BTN.DOWN) y++;
+    }
+    trace.push([x, y]);
+  }
+  const far = trace.filter(([tx, ty]) => Math.abs(tx - 20) > LEASH_TILES + 1 || Math.abs(ty - 9) > LEASH_TILES + 1);
+  check(
+    "and never wanders more than the leash from where it started",
+    far.length === 0,
+    far.length ? `strayed to ${far[0]} from (20,9)` : `stayed within ${LEASH_TILES + 1} tiles over ${trace.length} frames`
+  );
+  const visited = new Set(trace.map((t) => t.join(",")));
+  check(
+    "while still covering ground rather than standing still",
+    visited.size >= 4,
+    `${visited.size} distinct tiles`
+  );
 }
 
 {
