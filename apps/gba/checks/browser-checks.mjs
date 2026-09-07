@@ -336,8 +336,12 @@ async function newPage() {
   check("both sides reach a live session", both);
 
   if (both) {
+    // Only one tab can be in front, and a browser cuts the other to about one
+    // animation frame a second. Lockstep hands that pace to both, so which
+    // tab is in front decides what every measurement below sees.
+    await a.page.bringToFront();
     // Let it run well past the first fingerprint exchange (every 120 frames).
-    await a.page.waitForTimeout(9000);
+    await a.page.waitForTimeout(12000);
     const frames = async ({ page }) =>
       page.evaluate(() => {
         const strip = document.querySelector("[data-role=link-status]");
@@ -349,6 +353,10 @@ async function newPage() {
     // arriving just in time, which over a loopback would mean something is
     // wrong with the scheduling rather than with the wire.
     check("and input is arriving ahead of the frame that needs it", /frames of slack/.test(health || ""), health);
+    // The session's own rate, not this machine's. Idling to stay level with a
+    // partner is not a stall, so a session crawling behind a backgrounded tab
+    // used to report perfect health while nothing moved.
+    check("and the session reports the rate it is actually running at", /session at \d+ fps/.test(health || ""), health);
 
     // A desync stops the session and replaces the strip with an error, so a
     // still-running session is the fingerprints having matched throughout.
@@ -379,7 +387,10 @@ async function newPage() {
       for (let i = 0; i < data.length; i += 4) sum += data[i];
       return Math.round(sum / (data.length / 4));
     });
-    check("the partner's screen is being drawn", partnerLit > 5, `luminance ${partnerLit}`);
+    // Non-black at all is the assertion: the partner's machine is running in
+    // this process, and a black canvas would mean it never started. How
+    // bright it is depends on how far the throttled tab has got.
+    check("the partner's screen is being drawn", partnerLit > 0, `luminance ${partnerLit}`);
   }
 
   // Leaving hands the machine back to the single-player path where the cable
@@ -388,8 +399,19 @@ async function newPage() {
   await a.page.getByRole("button", { name: "Linked" }).click();
   await a.page.getByRole("button", { name: "End session" }).click();
   await a.page.waitForTimeout(2500);
-  const alive = await brightness(a.page);
-  check("the game keeps running after leaving a session", alive > 5, `luminance ${alive}`);
+  // Whether it is *running*, not what is on screen. The two-tab harness has
+  // one of its tabs in the background, throttled to about one animation frame
+  // a second, and lockstep hands that pace to both -- so the linked machine
+  // may have advanced almost nowhere and be showing a dark frame it is
+  // perfectly entitled to show.
+  const rate = await a.page.evaluate(() => {
+    const el = [...document.querySelectorAll("span")].find((e) => /\d+ fps$/.test(e.textContent.trim()));
+    return el ? parseInt(el.textContent, 10) : -1;
+  });
+  // A low bar on purpose: this tab shares a browser with a second one, and
+  // whichever is behind runs at a crawl. Running at all is the property --
+  // handing the machine back must not leave it stopped.
+  check("the game is still running after leaving a session", rate > 0, `${rate} fps`);
   check(
     "and the link control goes back to offering one",
     (await a.page.getByRole("button", { name: "Link", exact: true }).count()) === 1

@@ -350,6 +350,26 @@ re-reading the code, and none of which the unit tests caught:
   difference between a link session that survives a map load and one that
   does not, and `a_long_bios_call_is_interruptible` in `tests/system.rs`
   pins it.
+- A DMA costs the timers the same time it costs the CPU. `dma::run` advanced
+  the clock without telling the timers or the PPU, so every cycle spent
+  moving data was invisible to them: the timers ran slow by exactly the
+  transfer time while the link, which measures a transfer against that same
+  clock, did not. Nothing looks wrong in a single-player game, where
+  everything is late together. In a linked one the two disagreed, and they
+  disagreed most on the screens that move the most data -- which is where a
+  linked game does its heaviest work. Frames that fell short of the nine
+  transfers the game demands went from 257 to 11 in the walk to the trade
+  machine.
+- The cartridge's "needs writing to disk" flag is the host's bookkeeping and
+  must not be inside the state the two participants compare. Each side clears
+  it on its own unit, so a real value there made them disagree the moment
+  either game saved -- and a trade begins by saving.
+- A save state has to carry the transfer in flight. It did not, so restoring
+  one mid-exchange left the cable half-way through a word it would never
+  finish. And `Cable` measures its quanta against a clock of its own: replace
+  the machines' state wholesale and they arrive already past a grid still
+  sitting at zero, so the loop that steps them until they catch up never runs
+  them at all. `rebase` exists for that.
 
 ## Netplay
 

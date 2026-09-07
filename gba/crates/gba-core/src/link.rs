@@ -59,6 +59,24 @@ impl Default for Link {
     }
 }
 
+impl Phase {
+    pub fn to_u8(self) -> u8 {
+        match self {
+            Phase::Idle => 0,
+            Phase::Requested => 1,
+            Phase::Active => 2,
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Phase {
+        match value {
+            1 => Phase::Requested,
+            2 => Phase::Active,
+            _ => Phase::Idle,
+        }
+    }
+}
+
 impl Link {
     pub fn is_parent(&self) -> bool {
         self.id == 0

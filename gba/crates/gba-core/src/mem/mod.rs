@@ -56,7 +56,7 @@ pub struct Memory {
     /// Set when the game writes HALTCNT; the emulator loop parks the CPU.
     pub halt_requested: bool,
     /// Words latched by a transfer in flight, delivered when it completes.
-    link_incoming: [u16; 4],
+    pub(crate) link_incoming: [u16; 4],
 }
 
 impl Memory {

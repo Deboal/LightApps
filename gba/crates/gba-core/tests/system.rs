@@ -475,3 +475,53 @@ fn a_long_bios_call_is_interruptible() {
     assert_eq!(emu.cpu.stall, 0, "the debt is eventually paid in full");
     assert!(steps > 100, "and paid gradually, not in one jump");
 }
+
+#[test]
+fn a_dma_costs_the_timers_the_same_time_it_costs_the_cpu() {
+    // The bug this pins down: a DMA advanced the clock without the timers or
+    // the PPU being told, so every cycle spent moving data was invisible to
+    // them. The timers ran slow by exactly the transfer time. Nothing looks
+    // wrong in a single-player game -- everything is late together -- but a
+    // linked game measures a transfer against the clock that *did* include
+    // it, so the two disagreed, and they disagreed most on the screens that
+    // move the most data.
+    let mut emu = machine();
+    let source = IWRAM + 0x1000;
+    let destination = IWRAM + 0x3000;
+
+    // A timer counting single cycles, so its counter reads as elapsed time.
+    emu.mem.write16(0x0400_0100, 0);
+    emu.mem.write16(0x0400_0102, 0x0080);
+
+    let idle_start = emu.mem.read_io16(0x100);
+    for _ in 0..40 {
+        emu.step();
+    }
+    let idle = emu.mem.read_io16(0x100).wrapping_sub(idle_start);
+
+    // Now the same number of steps, one of which kicks off a large DMA.
+    let mut emu = machine();
+    emu.mem.write16(0x0400_0100, 0);
+    emu.mem.write16(0x0400_0102, 0x0080);
+    emu.mem.write32(0x0400_00D4, source);
+    emu.mem.write32(0x0400_00D8, destination);
+    emu.mem.write16(0x0400_00DC, 0x1000); // 4096 words
+    let busy_start = emu.mem.read_io16(0x100);
+    let cycles_before = emu.mem.cycles;
+    emu.mem.write16(0x0400_00DE, 0x8400); // enable, 32-bit, immediate
+    for _ in 0..40 {
+        emu.step();
+    }
+    let moved = emu.mem.cycles - cycles_before;
+    let busy = emu.mem.read_io16(0x100).wrapping_sub(busy_start);
+
+    assert!(
+        moved > 4000,
+        "the DMA should have cost real time, spent {moved}"
+    );
+    assert!(
+        busy > idle + 4000,
+        "the timer saw {busy} cycles where the CPU spent {moved}; the DMA was \
+         invisible to it (an idle run of the same length saw {idle})"
+    );
+}

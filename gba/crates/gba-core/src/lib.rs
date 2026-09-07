@@ -163,7 +163,22 @@ impl Emulator {
             ppu::step(&mut self.mem, elapsed);
         }
         if dma::any_pending(&self.mem) {
+            // A DMA holds the CPU, but not the rest of the machine: the
+            // timers keep counting through it and the PPU keeps drawing, and
+            // an interrupt raised part-way through is taken the moment it
+            // ends. Advancing the clock without telling them left every cycle
+            // spent in DMA invisible to both -- so the timers ran slow by
+            // exactly the transfer time while the link, which measures a
+            // transfer against that same clock, did not. The two disagreed
+            // most on the screens that move the most data, which is where a
+            // linked game does its heaviest work.
+            let before = self.mem.cycles;
             dma::run(&mut self.mem);
+            let spent = (self.mem.cycles - before) as u32;
+            if spent > 0 {
+                timers::step(&mut self.mem, spent);
+                ppu::step(&mut self.mem, spent);
+            }
         }
     }
 
@@ -237,6 +252,16 @@ impl Emulator {
         // states written before the stall existed still load.
         w.u32(self.cpu.stall);
         w.u32(self.cpu.stall_pc);
+        // A transfer in flight. Without it a state taken mid-exchange comes
+        // back with the cable half-way through a word it will never finish,
+        // and the game's link driver gives up. The unit's id and how many are
+        // on the cable are deliberately absent: those describe the wiring,
+        // which belongs to whoever is doing the wiring, not to the machine.
+        w.u8(self.mem.link.phase.to_u8());
+        w.u64(self.mem.link.finish_at);
+        for word in self.mem.link_incoming {
+            w.u16(word);
+        }
         w.buf
     }
 
@@ -301,6 +326,13 @@ impl Emulator {
         self.mem.cart.deserialize(&mut r)?;
         self.cpu.stall = r.u32().unwrap_or(0);
         self.cpu.stall_pc = r.u32().unwrap_or(0);
+        // Read with defaults, so a state written before any of this existed
+        // still loads: an idle cable with nothing in flight.
+        self.mem.link.phase = link::Phase::from_u8(r.u8().unwrap_or(0));
+        self.mem.link.finish_at = r.u64().unwrap_or(0);
+        for slot in 0..4 {
+            self.mem.link_incoming[slot] = r.u16().unwrap_or(link::DISCONNECTED);
+        }
         Ok(())
     }
 }

@@ -30,6 +30,9 @@ fn main() -> ExitCode {
     let mut link_trace: Option<u64> = None;
     let mut dump_at: Vec<u64> = Vec::new();
     let mut script: Vec<(u64, u16, u64)> = Vec::new();
+    let mut script2: Vec<(u64, u16, u64)> = Vec::new();
+    let mut snapshot_in: Option<String> = None;
+    let mut snapshot_out: Option<(u64, String)> = None;
     let mut mash_from: Option<u64> = None;
     let mut mash_until: Option<u64> = None;
     let mut save_in: Option<String> = None;
@@ -46,6 +49,15 @@ fn main() -> ExitCode {
             "--steps" => steps = args.next().and_then(|v| v.parse().ok()),
             "--determinism" => determinism = true,
             "--script" => script = args.next().map(|v| parse_script(&v)).unwrap_or_default(),
+            "--script-2" => script2 = args.next().map(|v| parse_script(&v)).unwrap_or_default(),
+            "--snapshot-in" => snapshot_in = args.next(),
+            "--snapshot-out" => {
+                let at = args.next().and_then(|v| v.parse().ok());
+                let path = args.next();
+                if let (Some(at), Some(path)) = (at, path) {
+                    snapshot_out = Some((at, path));
+                }
+            }
             "--mash-from" => mash_from = args.next().and_then(|v| v.parse().ok()),
             "--mash-until" => mash_until = args.next().and_then(|v| v.parse().ok()),
             "--save-in" => save_in = args.next(),
@@ -107,6 +119,9 @@ fn main() -> ExitCode {
         link_trace,
         dump_at,
         script,
+        script2,
+        snapshot_in,
+        snapshot_out,
         mash_from,
         mash_until,
     };
@@ -225,6 +240,14 @@ struct Run {
     link_trace: Option<u64>,
     dump_at: Vec<u64>,
     script: Vec<(u64, u16, u64)>,
+    /// The second player's buttons. Completing a trade needs the two units
+    /// driven differently: they sit on opposite sides of the machine and each
+    /// picks their own Pokemon.
+    script2: Vec<(u64, u16, u64)>,
+    /// Both machines' states, so an experiment twenty thousand frames into a
+    /// session does not have to replay those frames every time.
+    snapshot_in: Option<String>,
+    snapshot_out: Option<(u64, String)>,
     mash_from: Option<u64>,
     mash_until: Option<u64>,
 }
@@ -235,6 +258,9 @@ fn run(rom: &[u8], bios: Option<&[u8]>, options: &Run) -> Outcome {
         steps,
         watch,
         script,
+        script2: _,
+        snapshot_in: _,
+        snapshot_out: _,
         mash_from,
         mash_until,
         save,
@@ -432,23 +458,67 @@ fn run_cable(
         Emulator::new(first, bios, save),
         Emulator::new(second, bios, save),
     ]);
+    // Resuming both machines from a snapshot skips replaying the twenty
+    // thousand frames it takes to walk two players into a trade.
+    let mut start = 0u64;
+    if let Some(path) = options.snapshot_in.as_deref() {
+        match std::fs::read(path) {
+            Ok(blob) => match restore_snapshot(&mut cable, &blob) {
+                Ok(at) => {
+                    start = at;
+                    println!("resumed both machines at frame {at}");
+                }
+                Err(e) => {
+                    eprintln!("cannot restore {path}: {e:?}");
+                    return ExitCode::FAILURE;
+                }
+            },
+            Err(e) => {
+                eprintln!("cannot read {path}: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     if options.link_trace.is_some() {
         cable.transfer_log = Some(Vec::new());
     }
     // Both units get the same buttons: they are two people doing the same
     // thing, walking to the same counter. Netplay will feed each machine its
     // own player's input instead.
-    for frame in 0..options.frames {
+    let held = |script: &[(u64, u16, u64)], frame: u64| {
         let mut keys = 0u16;
-        for (at, buttons, hold) in &options.script {
+        for (at, buttons, hold) in script {
             if frame >= *at && frame < at + hold {
                 keys |= buttons;
             }
         }
-        if let Some(start) = options.mash_from {
+        keys
+    };
+
+    for frame in start..options.frames {
+        let mut keys = held(&options.script, frame);
+        // With no second script the two units get the same buttons, which is
+        // enough to walk them both to the counter but never enough to trade.
+        let mut keys2 = if options.script2.is_empty() {
+            keys
+        } else {
+            held(&options.script2, frame)
+        };
+        if let Some(from) = options.mash_from {
             let stop = options.mash_until.unwrap_or(u64::MAX);
-            if frame >= start && frame < stop && (frame - start) % 24 < 6 {
+            if frame >= from && frame < stop && (frame - from) % 24 < 6 {
                 keys |= KeyState::A;
+                keys2 |= KeyState::A;
+            }
+        }
+        if let Some((at, path)) = options.snapshot_out.as_ref() {
+            if frame == *at {
+                let blob = take_snapshot(&cable, frame);
+                match std::fs::write(path, &blob) {
+                    Ok(()) => println!("snapshot at frame {frame} -> {path}"),
+                    Err(e) => eprintln!("cannot write {path}: {e}"),
+                }
             }
         }
         // A PC census for one frame, to see where a stalled machine actually
@@ -474,9 +544,8 @@ fn run_cable(
                 );
             }
         }
-        let input = KeyState(keys);
         let before = cable.transfers;
-        cable.run_frame(&[input, input]);
+        cable.run_frame(&[KeyState(keys), KeyState(keys2)]);
         if let Some(from) = options.link_trace {
             if frame >= from {
                 let mut line = format!("f{frame} x{}", cable.transfers - before);
@@ -604,4 +673,29 @@ fn fnv1a(data: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     hash
+}
+
+/// Both machines' states plus the frame they stood at, so an experiment can
+/// begin where a long walk ended.
+fn take_snapshot(cable: &Cable, frame: u64) -> Vec<u8> {
+    let mut blob = frame.to_le_bytes().to_vec();
+    for machine in &cable.machines {
+        let state = machine.serialize_state();
+        blob.extend_from_slice(&(state.len() as u32).to_le_bytes());
+        blob.extend_from_slice(&state);
+    }
+    blob
+}
+
+fn restore_snapshot(cable: &mut Cable, blob: &[u8]) -> Result<u64, gba_core::state::StateError> {
+    let frame = u64::from_le_bytes(blob[..8].try_into().unwrap_or_default());
+    let mut at = 8usize;
+    for machine in cable.machines.iter_mut() {
+        let len = u32::from_le_bytes(blob[at..at + 4].try_into().unwrap_or_default()) as usize;
+        at += 4;
+        machine.deserialize_state(&blob[at..at + len])?;
+        at += len;
+    }
+    cable.rebase();
+    Ok(frame)
 }

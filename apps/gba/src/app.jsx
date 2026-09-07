@@ -1471,18 +1471,21 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   useEffect(() => {
     if (!link || link.phase !== "live") return;
     let previous = -1;
-    let still = 0;
+    let slow = 0;
     const tick = setInterval(() => {
       if (!sessionRef.current) return;
       const next = sessionRef.current.state;
-      // A session that stops advancing is almost always the other person's
-      // tab going to the background, where the browser cuts animation frames
-      // to about one a second. Lockstep means their pause is your pause, so
-      // say whose it is -- a frozen picture with no explanation reads as a
-      // crash.
-      still = next.frame === previous ? still + 1 : 0;
+      // How fast the *session* is actually advancing, which is not the same
+      // as this machine's frame rate and is the number that matters. Idling
+      // to stay level with a partner is not a stall, so a session crawling
+      // along behind a backgrounded tab reported perfect health while nothing
+      // moved. Measuring the frames themselves cannot be fooled that way.
+      const rate = previous < 0 ? FPS : (next.frame - previous) * 2;
       previous = next.frame;
-      setWaiting(still >= 2);
+      next.rate = Math.round(rate);
+      // Two consecutive half-seconds below half speed. One is a hiccup.
+      slow = rate < FPS / 2 ? slow + 1 : 0;
+      setWaiting(slow >= 2);
       setLink(next);
     }, 500);
     return () => {
@@ -1891,8 +1894,9 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             </div>
             <div style={{ fontSize: 12, color: "var(--dim)", maxWidth: 280, lineHeight: 1.5 }}>
               Both consoles run in step, so the game only moves as fast as the
-              slower side. If they have switched tabs or their phone has slept,
-              it will pick up the moment they come back.
+              slower side. A browser cuts a tab it cannot see to about one
+              frame a second, so if their window is behind another one, this is
+              what it looks like. It picks up the moment they come back.
             </div>
           </div>
         )}
@@ -1934,8 +1938,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
                   so it is the one worth showing. */}
               {link.lead > 0 ? `${link.lead} frames of slack` : "waiting for input…"}
             </div>
-            <div style={{ color: link.stalls > 0 ? "var(--accent2)" : "var(--dim)" }}>
-              {link.stalls > 0 ? `${link.stalls} stalls` : "no stalls"}
+            <div style={{ color: link.rate !== undefined && link.rate < FPS - 8 ? "var(--accent2)" : "var(--dim)" }}>
+              {link.rate === undefined ? "—" : `session at ${link.rate} fps`}
             </div>
             <div style={{ color: "var(--dim)" }}>code {link.code}</div>
           </div>
