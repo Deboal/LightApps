@@ -10,6 +10,7 @@
 // Run: node apps/gba/checks/policy-checks.mjs
 
 import { runner, previewOf } from "../src/policy.js";
+import { recorder } from "../src/route.js";
 import { BTN } from "../src/buttons.js";
 
 const LEG_FRAMES = 48;
@@ -516,6 +517,123 @@ const inMove = (cursor, party) => (frame) => ({
       const p = previewOf({ slot: 0 }, [mon()]);
       return p && p.move === null;
     })()
+  );
+}
+
+// -- the trip to the Pokemon Center -----------------------------------------
+//
+// The whole point of the feature: a run that heals is a run that lasts the
+// night. What is checked is the loop end to end -- hurt enough to go, follow
+// the route, be healed, come back, and resume grinding where it started --
+// plus the two ways it can go wrong that must stop rather than wander.
+
+const place = (x, y, mapNum = 24) => ({ x, y, map: { mapGroup: 3, mapNum } });
+
+/** A route from the grass on Route 6 south into Vermilion, to a nurse, and
+ *  back -- the actual shape of the trip this save would make. */
+function centreRoute() {
+  const rec = recorder();
+  const hurtParty = [{ hp: 4, maxHp: 34 }];
+  const wholeParty = [{ hp: 34, maxHp: 34 }];
+  for (let y = 22; y >= 19; y--) rec.sample(place(20, y), hurtParty, BTN.UP);
+  rec.sample(place(15, 7, 5), hurtParty, BTN.UP);   // north off Route 6 is the door
+  rec.sample(place(15, 8, 5), hurtParty, BTN.DOWN);
+  rec.sample(place(15, 8, 5), wholeParty, BTN.DOWN);
+  rec.sample(place(15, 7, 5), wholeParty, BTN.UP);  // north out of Vermilion again
+  for (let y = 19; y <= 22; y++) rec.sample(place(20, y), wholeParty, BTN.DOWN);
+  return rec.stop();
+}
+
+{
+  const route = centreRoute();
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0.4, stopBelowHp: 0.05 }, route);
+
+  // A world that walks where it is told and heals when A is pressed at the
+  // counter, so the loop itself is what is under test.
+  let at = place(20, 22);
+  let hp = 8; // 8/34 -- under the threshold, over the floor
+  const seen = new Set();
+  let healedAt = null;
+  let last = 0, held = 0, out = null;
+
+  for (let frame = 0; frame < 4000; frame++) {
+    out = run.step({
+      frame,
+      inBattle: false,
+      party: [{ ...mon(), hp, maxHp: 34, record: { moves: [{ id: 84, pp: 20 }] } }],
+      position: at,
+    });
+    if (out.done) break;
+    seen.add(run.mode);
+    if (out.keys === last) held++; else { held = 0; last = out.keys; }
+    if (held > 0 && held % 8 === 0) {
+      const before = `${at.map.mapNum}:${at.x},${at.y}`;
+      if (out.keys & BTN.LEFT) at = place(at.x - 1, at.y, at.map.mapNum);
+      else if (out.keys & BTN.RIGHT) at = place(at.x + 1, at.y, at.map.mapNum);
+      else if (out.keys & BTN.UP) at = place(at.x, at.y - 1, at.map.mapNum);
+      else if (out.keys & BTN.DOWN) at = place(at.x, at.y + 1, at.map.mapNum);
+      // The warp: walking north off Route 6 at y=18 lands in Vermilion.
+      if (at.map.mapNum === 24 && at.y < 19) at = place(15, 7, 5);
+      // And walking north out of Vermilion goes back to Route 6.
+      if (at.map.mapNum === 5 && at.y < 7) at = place(20, 19, 24);
+      if (before !== `${at.map.mapNum}:${at.x},${at.y}`) held = 0;
+    }
+    // The nurse: A at (15,8) in Vermilion heals.
+    if (at.map.mapNum === 5 && at.x === 15 && at.y === 8 && (out.keys & BTN.A) && hp < 34) {
+      hp = 34;
+      healedAt = frame;
+    }
+  }
+
+  check("hurt enough, it sets off for the Centre", seen.has("toNurse"));
+  check("it reaches the nurse", seen.has("atNurse"));
+  check("and is healed", healedAt !== null, healedAt !== null ? `at frame ${healedAt}` : "never");
+  check("then walks back", seen.has("back"));
+  check(
+    "and resumes grinding where it started",
+    run.mode === "grind" && at.map.mapNum === 24,
+    `mode ${run.mode}, at map ${at.map.mapNum} (${at.x},${at.y})`
+  );
+  check("without stopping the run", out !== null && !out.done, out && out.reason);
+}
+
+{
+  // No route: healing is not on the table, and low HP stops the run exactly
+  // as it did before. This must not regress.
+  const run = runner({ slot: 0, stopAtLevel: 99, stopBelowHp: 0.15 });
+  const { end } = drive(run, 60, (frame) => ({
+    frame, inBattle: false, position: place(20, 22),
+    party: [{ ...mon(), hp: 4, maxHp: 34 }],
+  }));
+  check("with no route, low HP still stops the run", end !== null && /down to 4\/34/.test(end.reason), end && end.reason);
+}
+
+{
+  // A route recorded without a heal in it is not a route to a Centre, and
+  // must not be acted on as one.
+  const rec = recorder();
+  for (let y = 22; y >= 19; y--) rec.sample(place(20, y), [{ hp: 4, maxHp: 34 }], BTN.UP);
+  const run = runner({ slot: 0, stopAtLevel: 99, stopBelowHp: 0.15 }, rec.stop());
+  const { end } = drive(run, 60, (frame) => ({
+    frame, inBattle: false, position: place(20, 22),
+    party: [{ ...mon(), hp: 4, maxHp: 34 }],
+  }));
+  check("a route with no observed heal is not used", end !== null && /down to 4\/34/.test(end.reason));
+}
+
+{
+  // Blocked on the way. An NPC standing in a doorway is patient-worthy; a
+  // wall that was not there when the route was walked is not.
+  const route = centreRoute();
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0.4, stopBelowHp: 0.02 }, route);
+  const { end } = drive(run, 3000, (frame) => ({
+    frame, inBattle: false, position: place(20, 22),
+    party: [{ ...mon(), hp: 8, maxHp: 34, record: { moves: [{ id: 84, pp: 20 }] } }],
+  }));
+  check(
+    "stuck on the way, it says where",
+    end !== null && /Stuck on the way to the Pokémon Center/.test(end.reason),
+    end && end.reason
   );
 }
 

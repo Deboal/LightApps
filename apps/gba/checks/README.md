@@ -12,6 +12,7 @@ bash build.sh
 GBA_ROM=/path/to/rom.gba node apps/gba/checks/browser-checks.mjs
 node apps/gba/checks/game-checks.mjs     # no browser, no ROM
 node apps/gba/checks/mon-checks.mjs      # no browser, no ROM
+node apps/gba/checks/route-checks.mjs    # no browser, no ROM
 node apps/gba/checks/policy-checks.mjs   # no browser, no ROM
 ```
 
