@@ -11,15 +11,30 @@
 // would be a policy that could do anything while nobody was watching.
 
 import { BTN } from "./buttons.js";
+import { sameTile } from "./game.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
  *  held A advances one message and then nothing. Four frames down, eight up. */
 const TAP_DOWN = 4;
 const TAP_CYCLE = 12;
 
-/** How long to walk one way before turning around. Long enough to cross a
- *  patch of grass, short enough not to leave it. */
-const LEG = 40;
+/** How long to walk one way before turning around. Six tiles at a run: long
+ *  enough to cross a patch of grass, short enough not to leave it. */
+const LEG = 48;
+
+/** The four ways to walk, in the order they are tried when something is in
+ *  the way. Turning is the whole repertoire: this does not know what an item
+ *  ball is, only that it is not moving. */
+const DIRS = [BTN.LEFT, BTN.DOWN, BTN.RIGHT, BTN.UP];
+
+/** Frames of holding a direction on the same tile before calling it blocked.
+ *
+ *  The slowest honest case is a turn on the spot (eight frames) followed by a
+ *  walking step (sixteen), so twenty-four frames is the most a real step can
+ *  take; twenty-eight leaves margin. It has to be comfortably *below* LEG or
+ *  it never fires -- both were forty at first, which made this dead code that
+ *  read as a feature. */
+const STUCK = 28;
 
 /** Frames of a battle spent pressing A before concluding the menu is not where
  *  we think it is. A battle that will not advance is a stuck run, and a stuck
@@ -66,6 +81,15 @@ export function runner(policy) {
   let lastHp = null;
   let damageUnseen = 0;
   let blind = 0;
+
+  // Walking, now that the game will say where the player is standing. Holding
+  // LEFT into an item ball and walking left are the same buttons and the same
+  // screen; the only thing that tells them apart is the tile not changing.
+  let dir = 0;
+  let sinceTurn = 0;
+  let stuckFor = 0;
+  let lastTile = null;
+  let everMoved = false;
 
   return {
     get phase() {
@@ -131,7 +155,15 @@ export function runner(policy) {
           // the last one, not evidence against the flag.
           damageUnseen = 0;
         }
-        if (phase === "seek") fleeing = 0;
+        if (phase === "seek") {
+          fleeing = 0;
+          // A battle moves nothing, but it does end with the player facing a
+          // different way. Start the leg over rather than counting frames
+          // spent fighting as frames spent walking.
+          sinceTurn = 0;
+          stuckFor = 0;
+          lastTile = null;
+        }
       }
       const elapsed = inPhase++;
 
@@ -164,23 +196,44 @@ export function runner(policy) {
         return { keys: tapping(elapsed) ? BTN.A : 0 };
       }
 
+      // Blocked, or just walking? The tile answers it. Without a position
+      // read this falls back to turning on the clock alone, which is what it
+      // did before and is still better than nothing.
+      const here = state.position;
+      if (here) {
+        if (lastTile && sameTile(here, lastTile)) stuckFor++;
+        else {
+          if (lastTile) everMoved = true;
+          stuckFor = 0;
+        }
+        lastTile = here;
+      }
+
       if (elapsed > SEEK_PATIENCE) {
         return {
           keys: 0,
           done: true,
-          reason:
-            "Walked for a minute and a half without a single encounter. " +
-            "This wants to be standing in tall grass.",
+          reason: here && !everMoved
+            ? "Tried all four directions and never moved a single tile. " +
+              "Something is in the way, or this is not somewhere it can walk."
+            : "Walked for a minute and a half without a single encounter. " +
+              "This wants to be standing in tall grass.",
         };
       }
-      // Walk a leg one way, then the other, and hold B the whole time. B is
-      // running, encounters are counted per step, so this is close to twice
-      // the fights per minute for nothing -- and on a save without the Running
-      // Shoes it simply does nothing. What is deliberately absent is A: an A
-      // press in the overworld talks to whoever is standing nearby, and this
-      // is meant to be left alone.
-      const leg = Math.floor(elapsed / LEG) % 2;
-      return { keys: (leg === 0 ? BTN.LEFT : BTN.RIGHT) | BTN.B };
+
+      // Turn at the end of a leg, or the moment the tile stops changing.
+      if (sinceTurn >= LEG || stuckFor >= STUCK) {
+        dir = (dir + 1) % DIRS.length;
+        sinceTurn = 0;
+        stuckFor = 0;
+      }
+      sinceTurn++;
+      // B is held the whole time: B is running, encounters are counted per
+      // step, so this is close to twice the fights per minute for nothing --
+      // and on a save without the Running Shoes it simply does nothing. What
+      // is deliberately absent is A: an A press in the overworld talks to
+      // whoever is standing nearby, and this is meant to be left alone.
+      return { keys: DIRS[dir] | BTN.B };
     },
   };
 }
