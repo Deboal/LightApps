@@ -633,9 +633,18 @@ async function newPage() {
       });
       check("the game is not covered", covered === false);
 
+      // Done is deliberately unavailable until the walk has a heal in it and
+      // has come back: a route that stops at the counter cannot bring the
+      // player home, and accepting one is what "it did not take me back"
+      // turned out to be.
       const done = page.getByRole("button", { name: "Done", exact: true });
-      check("and the recording can be ended from it", (await done.count()) > 0);
-      await done.click();
+      check("Done exists but is not yet offered", (await done.count()) > 0 && (await done.isDisabled()));
+      check("the strip says what is missing", (await page.locator("text=walk back").count()) > 0);
+
+      // Which means there has to be a way out that is not Done.
+      const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+      check("a recording can be abandoned", (await cancel.count()) > 0);
+      await cancel.click();
       await page.waitForTimeout(300);
       check("which puts the strip away", (await page.locator("text=REC").count()) === 0);
     }
