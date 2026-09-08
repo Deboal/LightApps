@@ -11,6 +11,10 @@ const { chromium } = await import(process.env.PLAYWRIGHT || "playwright");
 const ROM = process.env.GBA_ROM;
 const URL = process.env.GBA_URL || "http://localhost:8199/gba/";
 const CHROMIUM = process.env.CHROMIUM;
+/** A cartridge save, optional. Without one the game boots to a new file with
+ *  no party, and everything that reads the running game has nothing to read.
+ *  With one, the checks below can exercise the parts that need a party. */
+const SAV = process.env.GBA_SAV;
 
 if (!ROM) {
   console.error("set GBA_ROM to a .gba file");
@@ -571,6 +575,72 @@ async function newPage() {
   }
 
   check("no page errors around the AI player", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// 12. Recording a route must not cover the game.
+//
+// Reported: the Auto screen hides the game, which makes recording a walk to a
+// Pokémon Center impossible -- walking it is the whole activity. So starting a
+// recording hands the screen straight back, and what remains is a strip.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(14000);
+
+  if (SAV) {
+    // A party has to exist before any of this is offered, and a party comes
+    // from a save. Without one the panel correctly refuses instead.
+    await page.setInputFiles('input[accept*=".sav"]', SAV);
+    await page.waitForTimeout(6000);
+  }
+
+  const auto = page.getByRole("button", { name: "Auto", exact: true });
+  const offered = await auto.waitFor({ state: "visible", timeout: 20000 }).then(() => true).catch(() => false);
+  if (offered) {
+    await auto.click();
+    await page.waitForSelector("text=Play it for me", { timeout: 5000 });
+    const record = page.getByRole("button", { name: /Record the way/ });
+    const canRecord = await record.count();
+    if (!SAV) {
+      // Not a failure: with no save there is no party, and a route with no
+      // party to watch could never find a nurse. Set GBA_SAV to exercise it.
+      check(
+        "with no save, recording is not offered",
+        canRecord === 0,
+        "set GBA_SAV to a .sav to check the recording flow itself"
+      );
+    } else {
+      check("with a readable cartridge, a route can be recorded", canRecord > 0);
+    }
+
+    if (canRecord > 0) {
+      await record.click();
+      await page.waitForTimeout(500);
+      check(
+        "starting a recording closes the panel",
+        (await page.locator("text=Play it for me").count()) === 0,
+        "you cannot walk a route you cannot see"
+      );
+      check("and leaves a strip behind", (await page.locator("text=REC").count()) > 0);
+
+      // The canvas must still be visible, which is the whole complaint: no
+      // full-screen backdrop over it.
+      const covered = await page.evaluate(() => {
+        const canvas = document.querySelector("canvas");
+        const box = canvas.getBoundingClientRect();
+        const at = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return at !== canvas;
+      });
+      check("the game is not covered", covered === false);
+
+      const done = page.getByRole("button", { name: "Done", exact: true });
+      check("and the recording can be ended from it", (await done.count()) > 0);
+      await done.click();
+      await page.waitForTimeout(300);
+      check("which puts the strip away", (await page.locator("text=REC").count()) === 0);
+    }
+  }
+  check("no page errors while recording", errors.length === 0, errors.join("; "));
   await page.close();
 }
 

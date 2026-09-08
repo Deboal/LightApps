@@ -48,6 +48,11 @@ const HEAL_PATIENCE = 60 * 60;
  *  change, so consecutive waypoints are adjacent and this is arithmetic
  *  rather than pathfinding -- but it still works for a target several tiles
  *  off, which is what walking back to a route's start needs. */
+/** The action menu is the same two-bit grid as the moves: FIGHT 0, BAG 1,
+ *  POKéMON 2, RUN 3. */
+const FIGHT = 0;
+const RUN = 3;
+
 const towards = (key) =>
   // A warp answers with the direction that worked when it was walked; a step
   // on the same map answers with the difference between two tiles.
@@ -193,6 +198,10 @@ export function runner(policy, route = null) {
   // The trip to the Pokemon Center. `mode` is what the walking is *for*;
   // `phase` above stays the question of whether a battle is happening.
   let mode = "grind";
+  // Set when a battle is left because something is wrong with the Pokémon
+  // that is out -- hurt, spent, or knocked out. Acted on once the battle is
+  // over and there is somewhere to walk to.
+  let needsHeal = false;
   let walk = null;
   let healTicks = 0;
   let walkStuck = 0;
@@ -245,19 +254,29 @@ export function runner(policy, route = null) {
       // after a minute of mashing A into a refusal.
       const moves = movesOf(mon);
       if (moves && !bestMove(mon)) {
-        return {
-          keys: 0,
-          done: true,
-          reason: `${mon.name} has no PP left in any move. Nothing to fight with.`,
-        };
+        // A Centre restores PP as well as HP, which is the whole reason
+        // running dry does not have to end a run.
+        if (!canHeal) {
+          return {
+            keys: 0,
+            done: true,
+            reason: `${mon.name} has no PP left in any move. Nothing to fight with.`,
+          };
+        }
+        needsHeal = true;
       }
       if (mon.fainted) {
-        return { keys: 0, done: true, reason: `${mon.name} fainted.` };
+        // With a route this is an errand, not an ending: the game sends out
+        // the next Pokémon, this runs from the fight and walks to a Centre.
+        if (!canHeal) return { keys: 0, done: true, reason: `${mon.name} fainted.` };
+        needsHeal = true;
       }
       if (mon.level >= stopAtLevel) {
         return { keys: 0, done: true, reason: `${mon.name} reached level ${mon.level}.` };
       }
-      if (share < stopBelowHp && !(canHeal && mode !== "grind")) {
+      // With a route this is an errand rather than an ending, so the floor
+      // only applies when there is nowhere to go.
+      if (share < stopBelowHp && !canHeal) {
         return {
           keys: 0,
           done: true,
@@ -297,46 +316,76 @@ export function runner(policy, route = null) {
             reason: "A battle stopped responding. Stopping before this goes anywhere strange.",
           };
         }
-        // Hurt enough to leave. Backing out with B first is what makes this
-        // work from either menu: from the move list B returns to the main one,
-        // and on the main menu it does nothing. Then down-right is RUN.
-        // On the way to be healed, every fight is one to leave.
-        if (share < fleeBelowHp || mode !== "grind") fleeing = 1;
-        if (fleeing) {
-          // One whole tap cycle per step, and that is not cosmetic: a window
-          // shorter than the cycle can fall entirely between two taps, and the
-          // step in it is then never pressed at all. Four steps of twelve.
-          const beat = elapsed % (4 * TAP_CYCLE);
-          const key =
-            beat < TAP_CYCLE ? BTN.B
-            : beat < 2 * TAP_CYCLE ? BTN.DOWN
-            : beat < 3 * TAP_CYCLE ? BTN.RIGHT
-            : BTN.A;
-          return { keys: tapping(elapsed) ? key : 0 };
-        }
-        // Choosing a move, now that the game will say which menu is up.
-        //
-        // Without this the only button in a battle is A, and A takes the
-        // first move -- which on a typical party is Growl about half the
-        // time, and eventually a move with no PP. The menu read turns that
-        // into a choice: the cursor moves by XOR, so any of the four is at
-        // most two presses away, and each press is checked against the cursor
-        // rather than counted.
+
         const battle = state.battle;
+        // Who is actually out. Without this a faint leaves the runner judging
+        // the HP of a Pokémon that stopped fighting a minute ago -- it reads
+        // zero, and every decision after that is about the wrong animal.
+        // Defensive about a partial read: a menu state without a cursor must
+        // not become a direction press into a menu.
+        const activeSlot = battle && Number.isInteger(battle.active) ? battle.active : slot;
+        const actionAt = battle && Number.isInteger(battle.action) ? battle.action : FIGHT;
+        const fighter = party[activeSlot] || mon;
+        const fighterShare = fighter.maxHp ? fighter.hp / fighter.maxHp : 0;
+
+        // "Choose a POKéMON" -- which the game opens by itself the moment the
+        // one that was out faints. Two A presses send out the next: the first
+        // takes the highlighted party member, the second takes SHIFT, which is
+        // already under the cursor. Learned by opening it and looking at it.
+        if (battle && battle.menu === "party") {
+          if (canHeal) needsHeal = true;
+          return { keys: tapping(elapsed) ? BTN.A : 0 };
+        }
+
+        // Reasons to be somewhere else. Note what is *not* among them: being
+        // hurt is not a reason to stop, it is a reason to go to a Centre --
+        // and a Centre restores PP as well as HP, so running dry has exactly
+        // the same remedy as running low.
+        const leave =
+          mode !== "grind" ||
+          !bestMove(fighter) ||
+          fighterShare < fleeBelowHp ||
+          (activeSlot !== slot && canHeal);
+
+        if (leave) {
+          if (canHeal) needsHeal = true;
+          // RUN is the fourth option, and the cursor reaches it the way the
+          // move cursor does -- by XOR, one axis per press, checked rather
+          // than counted. This replaces a blind B/DOWN/RIGHT/A sequence that
+          // only worked from a cursor position nobody was reading.
+          if (battle && battle.menu === "action") {
+            const differs = actionAt ^ RUN;
+            if (differs) {
+              return { keys: tapping(elapsed) ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : 0 };
+            }
+            return { keys: tapping(elapsed) ? BTN.A : 0 };
+          }
+          // Backing out of the move list to where RUN lives.
+          if (battle && battle.menu === "move") {
+            return { keys: tapping(elapsed) ? BTN.B : 0 };
+          }
+          // Text or an animation: A advances it.
+          return { keys: tapping(elapsed) ? BTN.A : 0 };
+        }
+
+        // Choosing a move, now that the game will say which menu is up.
         if (battle && battle.menu === "move") {
-          const want = bestMove(mon);
+          const want = bestMove(fighter);
           if (want) {
             const differs = battle.cursor ^ want.index;
             if (differs) {
-              // One axis per press. Which direction within it does not
-              // matter: both flip the same bit.
               return { keys: tapping(elapsed) ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : 0 };
             }
           }
         }
-        // The action menu, battle text, an animation: A is right for all of
-        // them. FIGHT is where the action cursor starts and nothing here
-        // moves it.
+        // Put the action cursor back on FIGHT before confirming it. It starts
+        // there and nothing here moves it -- except a battle this ran from,
+        // which leaves it on RUN.
+        if (battle && battle.menu === "action" && actionAt !== FIGHT) {
+          const differs = actionAt ^ FIGHT;
+          return { keys: tapping(elapsed) ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : 0 };
+        }
+        // The action menu on FIGHT, battle text, an animation: A for all.
         return { keys: tapping(elapsed) ? BTN.A : 0 };
       }
 
@@ -452,6 +501,20 @@ export function runner(policy, route = null) {
         }
         if (out.arrived) {
           mode = "grind";
+          needsHeal = false;
+          // Did the errand work? Walking to a counter and back without being
+          // fixed would otherwise loop all night, so the same reads that sent
+          // it are checked on the way back.
+          const back = party[slot];
+          if (back && (back.fainted || (movesOf(back) && !bestMove(back)))) {
+            return {
+              keys: 0,
+              done: true,
+              reason:
+                `Came back from the Pokémon Center and ${back.name} is still ` +
+                `${back.fainted ? "fainted" : "out of PP"}. Whatever the route ends at, it is not healing anything.`,
+            };
+          }
           // Back to the anchor, not to wherever the recording happened to
           // stop -- so the next trip starts from the same place this one did.
           home = asPlace(route.tiles[0]);
@@ -461,7 +524,11 @@ export function runner(policy, route = null) {
       }
 
       // Hurt enough to be worth the trip, and there is a way to make it.
-      if (canHeal && here && share < healBelowHp && !everyoneWhole(party)) {
+      // Hurt, spent, or knocked out. `needsHeal` on its own is enough: a
+      // party at full HP with no PP left has nothing wrong that HP can show,
+      // and a Centre fixes it all the same.
+      if (canHeal && here && (needsHeal || (share < healBelowHp && !everyoneWhole(party)))) {
+        needsHeal = false;
         mode = "toNurse";
         walk = follower(route, 0);
         walkStuck = 0;

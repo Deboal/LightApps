@@ -17,9 +17,16 @@
 // the arithmetic, and across a warp it presses the direction that worked when
 // a person walked it.
 //
-// The heal point is not marked by hand. While recording, the party is
-// watched; the moment every member reads full, that tile is where the nurse
-// is. The route therefore only records what was actually seen to work.
+// The heal point is not marked by hand: while recording, the party is watched
+// and the tile where it gained the most HP is where the nurse is. That is a
+// deliberately loose rule. The first version demanded the party go from "not
+// all full" to "all full", which is exactly right and useless in practice --
+// walk to the Centre already healthy and the nurse heals nothing, so there is
+// no edge to see and the recording silently never marks anything. Watching
+// for the largest gain works whether the party was half hurt or nearly dead,
+// and still only marks something that was actually observed to happen.
+//
+// `markHere` is the override for when even that finds nothing.
 
 /** Two readings on the same tile of the same map. */
 const same = (a, b) =>
@@ -37,6 +44,11 @@ const point = (position) => ({
   dir: 0,
 });
 
+const totalHp = (party) =>
+  Array.isArray(party) && party.length > 0
+    ? party.reduce((sum, mon) => sum + mon.hp, 0)
+    : null;
+
 const allFull = (party) =>
   Array.isArray(party) && party.length > 0 && party.every((mon) => mon.hp === mon.maxHp);
 
@@ -49,8 +61,12 @@ const allFull = (party) =>
  */
 export function recorder() {
   const tiles = [];
-  let healAt = -1;
-  let wasFull = null;
+  // HP gained per tile. A nurse fills the bars over a couple of seconds and
+  // the player stands still for it, so the gain accumulates on one tile.
+  const gains = new Map();
+  let marked = -1;
+  let lastTotal = null;
+  let lastFull = null;
   let held = 0;
 
   return {
@@ -58,11 +74,45 @@ export function recorder() {
       return tiles.length;
     },
     get healed() {
-      return healAt >= 0;
+      return this.healAt >= 0;
+    },
+    /** The tile with the largest gain, or whichever one was marked by hand. */
+    get healAt() {
+      if (marked >= 0) return marked;
+      let best = -1;
+      let most = 0;
+      for (const [index, gained] of gains) {
+        if (gained > most) {
+          most = gained;
+          best = index;
+        }
+      }
+      return best;
+    },
+    /** How much was healed there — shown while recording, so "no heal yet"
+     *  can be told apart from "healed 63". */
+    get gained() {
+      return gains.get(this.healAt) || 0;
+    },
+    /** Whether the party is currently untouched, which is the usual reason
+     *  nothing gets marked: a full party has nothing for a nurse to do. */
+    get full() {
+      return lastFull === true;
+    },
+
+    /** Mark the tile underfoot as the nurse, for when watching finds nothing
+     *  -- a party that was already whole, most likely. */
+    markHere() {
+      marked = tiles.length - 1;
     },
 
     sample(position, party, keys = 0) {
       if (!position) return;
+      // The tile the player was standing on when HP was last read. Any gain
+      // measured now accrued *there*, not on whichever tile this sample may
+      // be about to step onto -- which matters because the follower stops at
+      // the marked tile, and being one past a nurse is as bad as one short.
+      const wasAt = Math.max(0, tiles.length - 1);
       const here = point(position);
       if (!same(here, tiles[tiles.length - 1])) {
         // The direction held on the frame the tile changed is the one that
@@ -73,17 +123,22 @@ export function recorder() {
       }
       if (keys) held = keys;
 
-      // The nurse, found by watching rather than by being told. The edge is
-      // what matters: a party that was already full when recording started
-      // never went from hurt to whole, so nothing is marked.
-      const full = allFull(party);
-      if (wasFull === false && full === true) healAt = tiles.length - 1;
-      if (party) wasFull = full;
+      // The nurse, found by watching rather than by being told: HP going up
+      // is the only thing a counter does, and the tile it goes up most on is
+      // where the counter is.
+      const total = totalHp(party);
+      if (total !== null) {
+        if (lastTotal !== null && total > lastTotal) {
+          gains.set(wasAt, (gains.get(wasAt) || 0) + (total - lastTotal));
+        }
+        lastTotal = total;
+        lastFull = allFull(party);
+      }
     },
 
     stop() {
       if (tiles.length < 2) return null;
-      return { tiles, healAt };
+      return { tiles, healAt: this.healAt };
     },
   };
 }

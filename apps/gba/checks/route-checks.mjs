@@ -163,5 +163,81 @@ const build = () => {
   check("nor nothing at all", usable(null) === false);
 }
 
+// -- finding the nurse without an edge to see -------------------------------
+//
+// The first rule here demanded the party go from "not all full" to "all
+// full", which is right and useless: walk to the Centre already healthy and
+// the nurse heals nothing, so nothing is ever marked and the recording just
+// says "no heal yet" without saying why. Reported from a real attempt.
+{
+  // Healed only partway -- a hurt party that is still hurt afterwards. The
+  // old rule saw nothing here; this one sees where the HP went up. Standing
+  // still for it, because that is what being healed looks like.
+  const rec = recorder();
+  rec.sample(at(20, 22), [{ hp: 4, maxHp: 34 }], BTN.UP);
+  rec.sample(at(20, 21), [{ hp: 4, maxHp: 34 }], BTN.UP);
+  rec.sample(at(20, 21), [{ hp: 20, maxHp: 34 }], BTN.UP);
+  rec.sample(at(20, 20), [{ hp: 20, maxHp: 34 }], BTN.UP);
+  const route = rec.stop();
+  check(
+    "a partial heal still finds the counter",
+    usable(route) && route.tiles[route.healAt].y === 21,
+    `healAt ${route && route.healAt}`
+  );
+}
+
+{
+  // The gain accumulates over the frames a nurse takes to fill the bars, and
+  // the player stands still for it -- so it lands on one tile, not spread.
+  const rec = recorder();
+  rec.sample(at(20, 22), [{ hp: 4, maxHp: 34 }], BTN.UP);
+  rec.sample(at(20, 21), [{ hp: 4, maxHp: 34 }], BTN.UP);
+  for (const hp of [10, 18, 26, 34]) rec.sample(at(20, 21), [{ hp, maxHp: 34 }], BTN.UP);
+  rec.sample(at(20, 20), [{ hp: 34, maxHp: 34 }], BTN.UP);
+  const route = rec.stop();
+  check(
+    "a heal drawn out over several frames counts as one",
+    route.healAt === 1 && route.tiles[route.healAt].y === 21,
+    `healAt ${route.healAt}`
+  );
+}
+
+{
+  // Two gains: a Potion swallowed at one tile and the nurse at another. The
+  // bigger one wins, so a Potion on the way does not become the "Centre".
+  const rec = recorder();
+  rec.sample(at(20, 22), [{ hp: 4, maxHp: 60 }], BTN.UP);
+  rec.sample(at(20, 22), [{ hp: 24, maxHp: 60 }], BTN.UP); // a potion, +20
+  rec.sample(at(20, 21), [{ hp: 24, maxHp: 60 }], BTN.UP);
+  rec.sample(at(20, 21), [{ hp: 60, maxHp: 60 }], BTN.UP); // the nurse, +36
+  rec.sample(at(20, 20), [{ hp: 60, maxHp: 60 }], BTN.UP);
+  const route = rec.stop();
+  check(
+    "the largest gain wins over a smaller one",
+    route.tiles[route.healAt].y === 21,
+    `healAt ${route.healAt} — the potion tile is (20,22)`
+  );
+}
+
+{
+  // A party that was whole the whole way. Nothing to see, and it says so
+  // rather than marking a tile at random.
+  const rec = recorder();
+  for (let y = 22; y >= 19; y--) rec.sample(at(20, y), whole, BTN.UP);
+  check("a party that never lost HP marks nothing", !usable(rec.stop()));
+  check("and it can say why", rec.full === true);
+}
+
+{
+  // The override, for exactly that case.
+  const rec = recorder();
+  rec.sample(at(20, 22), whole, BTN.UP);
+  rec.sample(at(20, 21), whole, BTN.UP);
+  rec.markHere();
+  rec.sample(at(20, 20), whole, BTN.UP);
+  const route = rec.stop();
+  check("marking by hand works when watching finds nothing", usable(route) && route.healAt === 1, `healAt ${route && route.healAt}`);
+}
+
 console.log(failures ? `\n${failures} failed` : "\nall good");
 process.exit(failures ? 1 : 0);

@@ -994,6 +994,97 @@ function PartyPanel({ party, world, gameName, onClose }) {
   );
 }
 
+// The strip that stays on screen while something is running.
+//
+// Recording a route *requires* watching the game -- you are walking it -- and
+// a full-screen panel makes that impossible. So the modal is for setting up,
+// and this is for the parts where the game is the thing you need to see. It
+// covers a sliver of the top rather than the screen, and nothing behind it is
+// blocked: the pad and the canvas keep working.
+function AutoBar({ recording, auto, onMarkNurse, onRecorded, onStop, onOpen }) {
+  const running = auto && auto.running;
+  if (!recording && !running) return null;
+
+  const chip = {
+    ...panel,
+    padding: "6px 10px",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: "env(safe-area-inset-top, 0px)",
+        left: 0,
+        right: 0,
+        zIndex: 9,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 10px",
+        background: "rgba(12,14,22,.92)",
+        borderBottom: "1px solid var(--line)",
+        fontSize: 12,
+      }}
+    >
+      {recording ? (
+        <>
+          <span style={{ color: "var(--accent)", fontWeight: 700 }}>REC</span>
+          <span style={{ color: "var(--dim)" }}>
+            {recording.tiles} tiles ·{" "}
+            <span style={{ color: recording.healed ? "var(--accent)" : "var(--accent2)" }}>
+              {recording.healed
+                ? recording.gained
+                  ? `heal seen (${recording.gained} HP)`
+                  : "nurse marked"
+                : "no heal yet"}
+            </span>
+          </span>
+          <span style={{ flex: 1 }} />
+          <button onClick={onMarkNurse} style={chip}>
+            Nurse here
+          </button>
+          <button
+            onClick={onRecorded}
+            style={{ ...chip, background: recording.healed ? "var(--accent)" : "var(--panel)" }}
+          >
+            Done
+          </button>
+        </>
+      ) : (
+        <>
+          <span style={{ color: "var(--accent)", fontWeight: 700 }}>AUTO</span>
+          <span style={{ color: "var(--dim)", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {auto.phase === "battle"
+              ? "fighting"
+              : auto.mode === "toNurse"
+                ? "→ Pokémon Center"
+                : auto.mode === "atNurse"
+                  ? "being healed"
+                  : auto.mode === "back"
+                    ? "→ back to the grass"
+                    : "looking for a fight"}
+            {" · "}
+            {auto.battles} battles
+            {auto.mon ? ` · ${auto.mon.name} Lv ${auto.mon.level} ${auto.mon.hp}/${auto.mon.maxHp}` : ""}
+          </span>
+          <span style={{ flex: 1 }} />
+          <button onClick={onOpen} style={chip}>
+            Details
+          </button>
+          <button onClick={onStop} style={{ ...chip, background: "var(--accent2)" }}>
+            Stop
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // The AI player.
 //
 // The shape of this screen is the whole safety argument. A sentence goes up
@@ -1002,7 +1093,7 @@ function PartyPanel({ party, world, gameName, onClose }) {
 // model is not in the loop after that -- the emulator runs the plan locally,
 // so the only thing that can happen while nobody is watching is the thing on
 // screen here.
-function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecorded, onForget, onStart, onStop, onClose, blocked }) {
+function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecorded, onMarkNurse, onForget, onStart, onStop, onClose, blocked }) {
   const [prompt, setPrompt] = useState("");
   const [plan, setPlan] = useState(null);
   const [thinking, setThinking] = useState(false);
@@ -1064,9 +1155,29 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
             <div style={{ fontSize: 13, marginTop: 10 }}>
               {recording.tiles} tiles ·{" "}
               <span style={{ color: recording.healed ? "var(--accent)" : "var(--dim)" }}>
-                {recording.healed ? "heal seen" : "no heal yet"}
+                {recording.healed
+                  ? recording.gained
+                    ? `heal seen, ${recording.gained} HP`
+                    : "nurse marked"
+                  : "no heal yet"}
               </span>
             </div>
+            {/* Why nothing has been seen, rather than leaving it a mystery.
+                A full party is the usual answer: the nurse has nothing to do,
+                so there is no heal to watch for. */}
+            {!recording.healed && recording.full && (
+              <p style={{ color: "var(--accent2)", fontSize: 12, lineHeight: 1.6, margin: "8px 0 0" }}>
+                Your party is at full HP, so the nurse will not do anything and
+                there is no heal to see. Fight something first, or stand at the
+                counter and mark it by hand.
+              </p>
+            )}
+            <Button
+              onClick={onMarkNurse}
+              style={{ width: "100%", padding: 9, marginTop: 10, fontSize: 13 }}
+            >
+              The nurse is right here
+            </Button>
             <Button
               onClick={onRecorded}
               tone={recording.healed ? "accent" : undefined}
@@ -1858,7 +1969,22 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
   const startRecording = useCallback(() => {
     recordRef.current = route.recorder();
-    setRecording({ tiles: 0, healed: false });
+    setRecording({ tiles: 0, healed: false, gained: 0, full: false });
+    // Out of the way at once: recording a route means walking it, and you
+    // cannot walk what you cannot see.
+    setAutoOpen(false);
+  }, []);
+
+  const markNurse = useCallback(() => {
+    if (recordRef.current) {
+      recordRef.current.markHere();
+      setRecording({
+        tiles: recordRef.current.length,
+        healed: recordRef.current.healed,
+        gained: recordRef.current.gained,
+        full: recordRef.current.full,
+      });
+    }
   }, []);
 
   const stopRecording = useCallback(() => {
@@ -1887,6 +2013,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       autoResume.current = baseSpeed.current;
       baseSpeed.current = 8;
       applySpeed();
+      setAutoOpen(false);
     },
     [code, applySpeed]
   );
@@ -2080,7 +2207,14 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         // this per frame would re-render the app four hundred times a second
         // to change a battle count that moves once a minute.
         const taken = recordRef.current;
-        if (taken) setRecording({ tiles: taken.length, healed: taken.healed });
+        if (taken) {
+          setRecording({
+            tiles: taken.length,
+            healed: taken.healed,
+            gained: taken.gained,
+            full: taken.full,
+          });
+        }
         const running = autoRef.current;
         if (running) {
           setAuto((prev) =>
@@ -2542,6 +2676,14 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           : "The cartridge save is written to this browser a few seconds after the game finishes saving, and again whenever you leave the page. Sign in to keep a copy that survives a cleared browser."}
       </p>
 
+      <AutoBar
+        recording={recording}
+        auto={auto}
+        onMarkNurse={markNurse}
+        onRecorded={stopRecording}
+        onStop={() => stopAuto("You stopped it.")}
+        onOpen={() => setAutoOpen(true)}
+      />
       {autoOpen && (
         <AutoPanel
           party={party}
@@ -2550,6 +2692,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           recording={recording}
           onRecord={startRecording}
           onRecorded={stopRecording}
+          onMarkNurse={markNurse}
           onForget={forgetRoute}
           onStart={(plan) => startAuto(plan)}
           onStop={() => stopAuto("You stopped it.")}
