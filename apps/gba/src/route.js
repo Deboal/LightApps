@@ -99,6 +99,17 @@ export function recorder() {
     get full() {
       return lastFull === true;
     },
+    /** Whether the walk has come back to the map it began on, after healing.
+     *  Shown while recording so a missing return leg is visible before Done
+     *  rather than discovered from inside a Pokémon Center. */
+    get returned() {
+      const healAt = this.healAt;
+      return (
+        healAt >= 0 &&
+        healAt < tiles.length - 1 &&
+        sameMap(tiles[0], tiles[tiles.length - 1])
+      );
+    },
 
     /** Mark the tile underfoot as the nurse, for when watching finds nothing
      *  -- a party that was already whole, most likely. */
@@ -178,6 +189,18 @@ export function follower(route, from = 0) {
       advance();
       if (index >= route.tiles.length) return { key: 0, index, arrived: true, lost: false };
 
+      // Close enough to the end is the end. Requiring the final tile exactly
+      // makes arriving hinge on landing on one square, and a walk that
+      // overshoots by one would press towards it forever.
+      const last = route.tiles[route.tiles.length - 1];
+      if (
+        index >= route.tiles.length - 2 &&
+        sameMap(now, last) &&
+        Math.abs(now.x - last.x) + Math.abs(now.y - last.y) <= 1
+      ) {
+        return { key: 0, index: route.tiles.length, arrived: true, lost: false };
+      }
+
       const aim = () => {
         const target = route.tiles[index];
         return { key: { dx: target.x - now.x, dy: target.y - now.y }, index, arrived: false, lost: false };
@@ -216,8 +239,26 @@ export function follower(route, from = 0) {
   };
 }
 
-/** Whether a route is worth acting on: long enough to be a walk, and with a
- *  heal in it that was actually observed. */
+/** Whether a route is worth acting on.
+ *
+ *  Three things, and the third is the one that was missing: a walk, a heal
+ *  that was actually observed, and *a way back*. A recording that stops at
+ *  the counter has no return leg, so following it leaves the player standing
+ *  in a Pokémon Center with the grind anchor a building away — which is
+ *  exactly what "it does not take me back" looks like.
+ *
+ *  Ending on the map it started on is the test. It is not perfect — you could
+ *  end up on the right map in the wrong place — but it cannot be passed by
+ *  pressing Done at the nurse, which is the mistake that is easy to make. */
 export function usable(route) {
-  return !!route && Array.isArray(route.tiles) && route.tiles.length >= 2 && route.healAt >= 0;
+  if (!route || !Array.isArray(route.tiles) || route.tiles.length < 2) return false;
+  if (!(route.healAt >= 0)) return false;
+  return returns(route);
+}
+
+/** Whether the walk came back to the map it set out from, after the heal. */
+export function returns(route) {
+  if (!route || !Array.isArray(route.tiles) || route.tiles.length < 2) return false;
+  if (!(route.healAt >= 0) || route.healAt >= route.tiles.length - 1) return false;
+  return sameMap(route.tiles[0], route.tiles[route.tiles.length - 1]);
 }

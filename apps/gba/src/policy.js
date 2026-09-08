@@ -202,6 +202,12 @@ export function runner(policy, route = null) {
   // that is out -- hurt, spent, or knocked out. Acted on once the battle is
   // over and there is somewhere to walk to.
   let needsHeal = false;
+  // Frames spent in a battle with a controller pointer this build does not
+  // recognise. Without the menus the runner can only mash A, and A takes the
+  // first move -- which looks exactly like the move picker choosing badly.
+  // Counting it means it can say so instead.
+  let menuBlind = 0;
+  let strangeFn = 0;
   let walk = null;
   let healTicks = 0;
   let walkStuck = 0;
@@ -218,6 +224,16 @@ export function runner(policy, route = null) {
      *  off to a Centre does not look like one that has wandered off. */
     get mode() {
       return mode;
+    },
+    /** True once a battle has spent long enough in menus this build cannot
+     *  read that the moves are certainly not being chosen. A minute of it is
+     *  well past any animation. */
+    get menuBlind() {
+      return menuBlind > 60 * 60;
+    },
+    /** The pointer that was not recognised, for saying which build this is. */
+    get strangeFn() {
+      return strangeFn;
     },
     get ticks() {
       return ticks;

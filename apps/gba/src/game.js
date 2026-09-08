@@ -170,6 +170,10 @@ export function battleMenuOf(iwram, ewram, code) {
   };
 
   return {
+    /** The raw controller pointer. Kept so a build whose menus this does not
+     *  recognise can *say* the number instead of silently doing nothing --
+     *  which is exactly how a wrong one went unnoticed. */
+    fn,
     menu:
       fn === map.atActionMenu ? "action"
       : fn === map.atMoveList ? "move"
