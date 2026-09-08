@@ -1012,7 +1012,7 @@ function PartyPanel({ party, world, gameName, onClose }) {
 // and this is for the parts where the game is the thing you need to see. It
 // covers a sliver of the top rather than the screen, and nothing behind it is
 // blocked: the pad and the canvas keep working.
-function AutoBar({ recording, auto, onMarkNurse, onRecorded, onStop, onOpen }) {
+function AutoBar({ recording, auto, onMarkNurse, onRecorded, onCancel, onStop, onOpen }) {
   const running = auto && auto.running;
   if (!recording && !running) return null;
 
@@ -1063,6 +1063,9 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onStop, onOpen }) {
             </span>
           </span>
           <span style={{ flex: 1 }} />
+          <button onClick={onCancel} style={chip}>
+            Cancel
+          </button>
           <button onClick={onMarkNurse} style={chip}>
             Nurse here
           </button>
@@ -2016,6 +2019,14 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     }
   }, []);
 
+  // Abandoning one. Done is disabled until a route is worth keeping, so
+  // without this a recording begun by accident could never be put down --
+  // the same trap the panel had before a check walked into it.
+  const cancelRecording = useCallback(() => {
+    recordRef.current = null;
+    setRecording(null);
+  }, []);
+
   const stopRecording = useCallback(() => {
     const rec = recordRef.current;
     recordRef.current = null;
@@ -2723,6 +2734,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         auto={auto}
         onMarkNurse={markNurse}
         onRecorded={stopRecording}
+        onCancel={cancelRecording}
         onStop={() => stopAuto("You stopped it.")}
         onOpen={() => setAutoOpen(true)}
       />
