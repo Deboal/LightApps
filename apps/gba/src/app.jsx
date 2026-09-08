@@ -1046,13 +1046,20 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onStop, onOpen }) {
         <>
           <span style={{ color: "var(--accent)", fontWeight: 700 }}>REC</span>
           <span style={{ color: "var(--dim)" }}>
-            {recording.tiles} tiles ·{" "}
+            {recording.tiles} ·{" "}
             <span style={{ color: recording.healed ? "var(--accent)" : "var(--accent2)" }}>
               {recording.healed
                 ? recording.gained
-                  ? `heal seen (${recording.gained} HP)`
+                  ? `healed ${recording.gained}`
                   : "nurse marked"
-                : "no heal yet"}
+                : "no heal"}
+            </span>
+            {" · "}
+            {/* The half that was missing. A recording that stops at the
+                counter has no way back, so following it ends inside a
+                Pokémon Center with the grass a building away. */}
+            <span style={{ color: recording.returned ? "var(--accent)" : "var(--accent2)" }}>
+              {recording.returned ? "back in the grass" : "walk back"}
             </span>
           </span>
           <span style={{ flex: 1 }} />
@@ -1061,7 +1068,12 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onStop, onOpen }) {
           </button>
           <button
             onClick={onRecorded}
-            style={{ ...chip, background: recording.healed ? "var(--accent)" : "var(--panel)" }}
+            disabled={!recording.healed || !recording.returned}
+            style={{
+              ...chip,
+              opacity: recording.healed && recording.returned ? 1 : 0.45,
+              background: recording.healed && recording.returned ? "var(--accent)" : "var(--panel)",
+            }}
           >
             Done
           </button>
@@ -1985,7 +1997,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
   const startRecording = useCallback(() => {
     recordRef.current = route.recorder();
-    setRecording({ tiles: 0, healed: false, gained: 0, full: false });
+    setRecording({ tiles: 0, healed: false, gained: 0, full: false, returned: false });
     // Out of the way at once: recording a route means walking it, and you
     // cannot walk what you cannot see.
     setAutoOpen(false);
@@ -1999,6 +2011,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         healed: recordRef.current.healed,
         gained: recordRef.current.gained,
         full: recordRef.current.full,
+        returned: recordRef.current.returned,
       });
     }
   }, []);
@@ -2233,6 +2246,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             healed: taken.healed,
             gained: taken.gained,
             full: taken.full,
+            returned: taken.returned,
           });
         }
         const running = autoRef.current;

@@ -8,7 +8,7 @@
 //
 // Run: node apps/gba/checks/route-checks.mjs
 
-import { recorder, follower, usable } from "../src/route.js";
+import { recorder, follower, usable, returns } from "../src/route.js";
 import { BTN } from "../src/buttons.js";
 
 let failures = 0;
@@ -237,6 +237,52 @@ const build = () => {
   rec.sample(at(20, 20), whole, BTN.UP);
   const route = rec.stop();
   check("marking by hand works when watching finds nothing", usable(route) && route.healAt === 1, `healAt ${route && route.healAt}`);
+}
+
+// -- the way back ------------------------------------------------------------
+//
+// Reported: after healing it did not come back to the grass. A recording that
+// stops at the counter has no return leg, so following it ends inside a
+// Pokémon Center with the grind anchor a building away. That is not a bug in
+// the following -- it is a route that was never a round trip, and it should
+// not have been accepted as one.
+{
+  const rec = recorder();
+  for (let y = 22; y >= 19; y--) rec.sample(at(20, y), hurt, BTN.UP);
+  rec.sample(at(15, 7, 5), hurt, BTN.UP);
+  rec.sample(at(15, 8, 5), hurt, BTN.DOWN);
+  rec.sample(at(15, 8, 5), whole, BTN.DOWN); // healed, and Done pressed here
+  const oneWay = rec.stop();
+  check("a walk that stops at the nurse has a heal", oneWay.healAt >= 0);
+  check("but is refused, because there is no way back", !usable(oneWay));
+  check("and the recorder says so while it is happening", rec.returned === false);
+}
+
+{
+  // Back onto the map it set out from: a round trip.
+  const rec = recorder();
+  for (let y = 22; y >= 19; y--) rec.sample(at(20, y), hurt, BTN.UP);
+  rec.sample(at(15, 7, 5), hurt, BTN.UP);
+  rec.sample(at(15, 8, 5), hurt, BTN.DOWN);
+  rec.sample(at(15, 8, 5), whole, BTN.DOWN);
+  rec.sample(at(15, 7, 5), whole, BTN.UP);
+  for (let y = 19; y <= 22; y++) rec.sample(at(20, y), whole, BTN.DOWN);
+  const round = rec.stop();
+  check("a round trip is accepted", usable(round) && returns(round));
+  check("and the recorder knew before Done", rec.returned === true);
+}
+
+{
+  // Arriving must not hinge on landing on one exact square: a walk that
+  // overshoots by a tile would otherwise press towards it forever.
+  const route = build();
+  const walk = follower(route);
+  for (const tile of route.tiles.slice(0, -1)) {
+    walk.step(at(tile.x, tile.y, tile.mapNum, tile.mapGroup));
+  }
+  const last = route.tiles[route.tiles.length - 1];
+  const past = walk.step(at(last.x, last.y + 1, last.mapNum, last.mapGroup));
+  check("one tile past the end still counts as arrived", past.arrived === true, "not stuck pressing at a square it walked over");
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");
