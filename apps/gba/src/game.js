@@ -32,9 +32,12 @@ const KNOWN = {
     // them, `battleMenuOf` returns nothing and the runner falls back to
     // mashing A, which is what it did before any of this.
     controllerFuncs: 0x03004fe0,
+    actionCursor: 0x02023ff8,
     moveCursor: 0x02023ffc,
+    battlerParty: 0x0203b0a8,
     atActionMenu: 0x0802e44d,
     atMoveList: 0x0802ea25,
+    atPartyMenu: 0x08030699,
   },
   BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0, saveBlock: 0x03005008 },
 };
@@ -161,9 +164,27 @@ export function battleMenuOf(iwram, ewram, code) {
   const cursorAt = map.moveCursor - EWRAM_BASE;
   if (cursorAt < 0 || cursorAt >= ewram.length) return null;
 
+  const at8 = (address) => {
+    const o = address - EWRAM_BASE;
+    return o >= 0 && o < ewram.length ? ewram[o] : 0;
+  };
+
   return {
-    menu: fn === map.atActionMenu ? "action" : fn === map.atMoveList ? "move" : null,
-    cursor: ewram[cursorAt] & 3,
+    menu:
+      fn === map.atActionMenu ? "action"
+      : fn === map.atMoveList ? "move"
+      // "Choose a POKéMON", which the game also opens by itself when the one
+      // that was out faints. Learned by opening it: A picks the highlighted
+      // party member, and A again takes SHIFT, which is already under the
+      // cursor. Two presses and the next one is out.
+      : fn === map.atPartyMenu ? "party"
+      : null,
+    cursor: at8(map.moveCursor) & 3,
+    /** FIGHT 0, BAG 1, POKéMON 2, RUN 3 — the same XOR grid as the moves. */
+    action: at8(map.actionCursor) & 3,
+    /** Which party member is actually out. Without this a faint leaves the
+     *  runner judging the HP of a Pokémon that is no longer fighting. */
+    active: map.battlerParty ? at8(map.battlerParty) : 0,
   };
 }
 

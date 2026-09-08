@@ -145,29 +145,85 @@ const fighting = (over) => (frame) => ({ frame, inBattle: true, party: [mon(over
 
 // -- running away -----------------------------------------------------------
 {
-  // Between the flee threshold and the stop threshold: hurt enough to leave,
-  // not hurt enough to give up.
-  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.15 });
-  const { keys, end, pressed } = drive(run, 48, fighting({ hp: 12 }));
+  // Hurt enough to leave. RUN is the fourth option on the action menu and the
+  // cursor gets there by XOR, exactly like the moves -- which replaced a
+  // blind B/DOWN/RIGHT/A sequence that only worked from a cursor position
+  // nobody was reading.
+  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
+  const { keys, end } = drive(run, 24, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), hp: 12, record: { moves: [{ id: 84, pp: 20 }] } }],
+    battle: { menu: "action", action: 0, cursor: 0, active: 0 },
+  }));
   check("hurt in a battle, it runs instead of stopping", end === null);
-  check("B first, to back out of whichever menu is up", pressed(BTN.B));
-  check("then down", pressed(BTN.DOWN));
-  check("then right", pressed(BTN.RIGHT), "the step a shorter window used to skip entirely");
-  check("then A", pressed(BTN.A));
   check(
-    "every step of RUN is actually pressed in one cycle",
-    [BTN.B, BTN.DOWN, BTN.RIGHT, BTN.A].every((m) => keys.some((k) => k & m))
+    "and steers the action cursor towards RUN",
+    keys.some((k) => k & BTN.RIGHT),
+    "RUN is index 3, so bit 0 flips first"
   );
 }
 
 {
-  // Healthy: no fleeing, so no stray directions into the move menu.
-  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34 });
-  const { pressed } = drive(run, 48, fighting({ hp: 50 }));
+  // Already on RUN: confirm it rather than cycling past.
+  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
+  const { keys } = drive(run, 24, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), hp: 12, record: { moves: [{ id: 84, pp: 20 }] } }],
+    battle: { menu: "action", action: 3, cursor: 0, active: 0 },
+  }));
   check(
-    "a healthy battle presses nothing but A",
-    !pressed(BTN.DOWN | BTN.RIGHT | BTN.B),
-    "the B held while walking must not follow it into a menu"
+    "with the cursor already on RUN it presses A",
+    keys.some((k) => k & BTN.A) && !keys.some((k) => k & (BTN.RIGHT | BTN.DOWN))
+  );
+}
+
+{
+  // Caught on the move list while wanting out: B goes back to where RUN is.
+  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
+  const { keys } = drive(run, 24, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), hp: 12, record: { moves: [{ id: 84, pp: 20 }] } }],
+    battle: { menu: "move", action: 0, cursor: 0, active: 0 },
+  }));
+  check("from the move list it backs out with B", keys.some((k) => k & BTN.B));
+}
+
+{
+  // The game opens "Choose a POKéMON" by itself when the one out faints. Two
+  // A presses send out the next: the party member, then SHIFT.
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  const { keys, end } = drive(run, 24, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), record: { moves: [{ id: 84, pp: 20 }] } }],
+    battle: { menu: "party", action: 2, cursor: 0, active: 0 },
+  }));
+  check(
+    "a forced switch is answered with A, not directions",
+    end === null && keys.some((k) => k & BTN.A) && !keys.some((k) => k & (BTN.LEFT | BTN.RIGHT | BTN.UP | BTN.DOWN))
+  );
+}
+
+{
+  // Judging the right animal. The trainee is slot 0 and healthy; slot 1 is
+  // out and nearly dead. It is slot 1 that decides whether to run.
+  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
+  const { keys } = drive(run, 24, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [
+      { ...mon(), hp: 50, record: { moves: [{ id: 84, pp: 20 }] } },
+      { ...mon(), slot: 1, name: "BEEDRILL", hp: 3, maxHp: 49, record: { moves: [{ id: 84, pp: 20 }] } },
+    ],
+    battle: { menu: "action", action: 0, cursor: 0, active: 1 },
+  }));
+  check(
+    "it judges the Pokémon that is actually out",
+    keys.some((k) => k & BTN.RIGHT),
+    "the lead is fine; the one fighting is not, so it heads for RUN"
   );
 }
 
@@ -413,7 +469,7 @@ const party4 = (specs) => [{ ...mon(), record: { moves: specs.map(([id, pp]) => 
 const NIDORAN = [[43, 30], [64, 35], [116, 30], [24, 20]];
 
 const inMove = (cursor, party) => (frame) => ({
-  frame, inBattle: true, party, battle: { menu: "move", cursor },
+  frame, inBattle: true, party, battle: { menu: "move", cursor, action: 0, active: 0 },
 });
 
 {
@@ -454,7 +510,8 @@ const inMove = (cursor, party) => (frame) => ({
   // animation. Nothing here should be pressing directions.
   const run = runner({ slot: 0, stopAtLevel: 30 });
   const { keys } = drive(run, 24, (frame) => ({
-    frame, inBattle: true, party: party4(NIDORAN), battle: { menu: "action", cursor: 0 },
+    frame, inBattle: true, party: party4(NIDORAN),
+    battle: { menu: "action", action: 0, cursor: 0, active: 0 },
   }));
   check("at the action menu it just presses A", keys.some((k) => k & BTN.A) && !keys.some((k) => k & (BTN.RIGHT | BTN.DOWN)));
 }
@@ -661,6 +718,74 @@ function centreRoute() {
     (out.keys & BTN.LEFT) !== 0,
     "the anchor is the route's first tile, not wherever Start was pressed"
   );
+}
+
+// -- running dry, and what a Centre actually fixes ---------------------------
+//
+// Playing it surfaced the simplification the whole loop turns on: a Pokémon
+// Center restores PP as well as HP. So "out of PP" and "nearly dead" are not
+// two problems, they are one errand -- and only without a route are either of
+// them an ending.
+{
+  const route = centreRoute();
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0.4, stopBelowHp: 0.02 }, route);
+  const seen = new Set();
+  // Fewer frames than the route's own stuck timeout: this world does not
+  // move, and what is under test is that it sets off at all.
+  const { end } = drive(run, 200, (frame) => {
+    seen.add(run.mode);
+    return {
+      frame, inBattle: false, position: place(20, 22),
+      party: [{ ...mon(), hp: 34, maxHp: 34, record: { moves: [{ id: 84, pp: 0 }, { id: 98, pp: 0 }] } }],
+    };
+  });
+  check(
+    "out of PP with a route is an errand, not an ending",
+    end === null && seen.has("toNurse"),
+    end ? end.reason : `modes seen: ${[...seen].join(", ")}`
+  );
+}
+
+{
+  // The same party with nowhere to go still stops, and says why.
+  const run = runner({ slot: 0, stopAtLevel: 99, stopBelowHp: 0.02 });
+  const { end } = drive(run, 60, (frame) => ({
+    frame, inBattle: false, position: place(20, 22),
+    party: [{ ...mon(), hp: 34, maxHp: 34, record: { moves: [{ id: 84, pp: 0 }] } }],
+  }));
+  check("and without one it still stops", end !== null && /no PP left in any move/.test(end.reason));
+}
+
+{
+  // A faint with a route: the game forces a switch, this takes it and then
+  // leaves for a Centre rather than ending the night.
+  const route = centreRoute();
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0.4, stopBelowHp: 0.02 }, route);
+  const seen = new Set();
+  const { end } = drive(run, 200, (frame) => {
+    seen.add(run.mode);
+    return {
+      frame, inBattle: false, position: place(20, 22),
+      party: [
+        { ...mon(), hp: 0, fainted: true, record: { moves: [{ id: 84, pp: 20 }] } },
+        { ...mon(), slot: 1, name: "BEEDRILL", hp: 49, maxHp: 49, record: { moves: [{ id: 84, pp: 20 }] } },
+      ],
+    };
+  });
+  check(
+    "a faint with a route sends it to a Centre rather than ending",
+    end === null && seen.has("toNurse"),
+    end ? end.reason : `modes seen: ${[...seen].join(", ")}`
+  );
+}
+
+{
+  const run = runner({ slot: 0, stopAtLevel: 99 });
+  const { end } = drive(run, 60, (frame) => ({
+    frame, inBattle: false, position: place(20, 22),
+    party: [{ ...mon(), hp: 0, fainted: true }],
+  }));
+  check("a faint with nowhere to go still stops", end !== null && /fainted/.test(end.reason));
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");

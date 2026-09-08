@@ -574,5 +574,54 @@ async function newPage() {
   await page.close();
 }
 
+// 12. Recording a route must not cover the game.
+//
+// Reported: the Auto screen hides the game, which makes recording a walk to a
+// Pokémon Center impossible -- walking it is the whole activity. So starting a
+// recording hands the screen straight back, and what remains is a strip.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(14000);
+
+  const auto = page.getByRole("button", { name: "Auto", exact: true });
+  const offered = await auto.waitFor({ state: "visible", timeout: 20000 }).then(() => true).catch(() => false);
+  if (offered) {
+    await auto.click();
+    await page.waitForSelector("text=Play it for me", { timeout: 5000 });
+    const record = page.getByRole("button", { name: /Record the way/ });
+    const canRecord = await record.count();
+    check("with a readable cartridge, a route can be recorded", canRecord > 0);
+
+    if (canRecord > 0) {
+      await record.click();
+      await page.waitForTimeout(500);
+      check(
+        "starting a recording closes the panel",
+        (await page.locator("text=Play it for me").count()) === 0,
+        "you cannot walk a route you cannot see"
+      );
+      check("and leaves a strip behind", (await page.locator("text=REC").count()) > 0);
+
+      // The canvas must still be visible, which is the whole complaint: no
+      // full-screen backdrop over it.
+      const covered = await page.evaluate(() => {
+        const canvas = document.querySelector("canvas");
+        const box = canvas.getBoundingClientRect();
+        const at = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return at !== canvas;
+      });
+      check("the game is not covered", covered === false);
+
+      const done = page.getByRole("button", { name: "Done", exact: true });
+      check("and the recording can be ended from it", (await done.count()) > 0);
+      await done.click();
+      await page.waitForTimeout(300);
+      check("which puts the strip away", (await page.locator("text=REC").count()) === 0);
+    }
+  }
+  check("no page errors while recording", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);
