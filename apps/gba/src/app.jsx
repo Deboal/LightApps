@@ -151,7 +151,10 @@ function gameCodeOf(core) {
 /** Title and game code straight out of the cartridge header. */
 function headerOf(bytes) {
   const text = (from, to) => new TextDecoder().decode(bytes.slice(from, to)).replace(/\0+$/, "").trim();
-  return { title: text(0xa0, 0xac), gameCode: text(0xac, 0xb0) };
+  // The version byte matters more than it looks: FireRed shipped as 1.0 and
+  // 1.1, and while their RAM layouts agree, their *code* does not. Anything
+  // read as a ROM address is only true for the revision it was found on.
+  return { title: text(0xa0, 0xac), gameCode: text(0xac, 0xb0), version: bytes[0xbc] };
 }
 
 function download(bytes, name) {
@@ -977,6 +980,14 @@ function PartyPanel({ party, world, gameName, onClose }) {
                 : "— (no position yet)"}
             </div>
             <div>
+              Battle menu{" "}
+              {world.battle
+                ? world.battle.menu
+                  ? `${world.battle.menu} (cursor ${world.battle.cursor}, action ${world.battle.action}, out ${world.battle.active})`
+                  : `not recognised — 0x${(world.battle.fn >>> 0).toString(16).toUpperCase()}`
+                : "unreadable"}
+            </div>
+            <div>
               Battle flag{" "}
               <span style={{ color: world.inBattle ? "var(--accent)" : "var(--dim)", fontWeight: world.inBattle ? 700 : 400 }}>
                 {world.inBattle === null ? "unreadable" : world.inBattle ? "ON" : "off"}
@@ -1058,6 +1069,11 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onStop, onOpen }) {
       ) : (
         <>
           <span style={{ color: "var(--accent)", fontWeight: 700 }}>AUTO</span>
+          {auto.menuBlind && (
+            <span style={{ color: "var(--accent2)", fontWeight: 700 }}>
+              menus unread (0x{(auto.strangeFn >>> 0).toString(16).toUpperCase()})
+            </span>
+          )}
           <span style={{ color: "var(--dim)", overflow: "hidden", textOverflow: "ellipsis" }}>
             {auto.phase === "battle"
               ? "fighting"
@@ -2058,6 +2074,10 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       setWorld({
         position: game.positionOf(iwram, ewram, code),
         inBattle: game.inBattleOf(iwram, code),
+        // What the battle menus look like from here. Shown raw, because a
+        // pointer that matches nothing is the difference between "the move
+        // picker is off" and "the move picker is running and choosing badly".
+        battle: game.battleMenuOf(iwram, ewram, code),
       });
     };
     read();
@@ -2219,7 +2239,15 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         if (running) {
           setAuto((prev) =>
             prev && prev.running
-              ? { ...prev, phase: running.run.phase, mode: running.run.mode, battles: running.run.battles, mon: running.mon }
+              ? {
+                  ...prev,
+                  phase: running.run.phase,
+                  mode: running.run.mode,
+                  battles: running.run.battles,
+                  mon: running.mon,
+                  menuBlind: running.run.menuBlind,
+                  strangeFn: running.run.strangeFn,
+                }
               : prev
           );
         }

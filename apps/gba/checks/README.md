@@ -20,4 +20,13 @@ node apps/gba/checks/route-checks.mjs    # no browser, no ROM
 node apps/gba/checks/policy-checks.mjs   # no browser, no ROM
 ```
 
+There is also an end-to-end check that needs no browser at all: the shipped
+wasm core booted with a real cartridge and save, driven by the shipped policy
+through the shipped reads. It is the fastest way to tell "the move picker is
+off" from "the move picker is running and choosing badly".
+
+```sh
+GBA_ROM=/path/to/rom.gba GBA_SAV=/path/to/save.sav node apps/gba/checks/live-checks.mjs
+```
+
 `PLAYWRIGHT` and `CHROMIUM` can override where those are found.
