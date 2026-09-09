@@ -515,6 +515,22 @@ one-frame race between a battle ending and the damage that ended it cannot add
 up to a false stop. If the flag turns out to be wrong, the failure is a run
 that halts and says so — not a fainted party.
 
+## Playing it unattended
+
+The in-app runner above answers one question per frame — which button now — and
+that is the right shape for something running in a tab the player is watching.
+It is the wrong shape for "get this Pokémon to level 36", which needs a map,
+a Pokémon Center, and the patience to walk back afterwards.
+
+`tools/autoplay/` is that: the same wasm core booted headless from a real
+cartridge and save, stepped a frame at a time, with pokefirered's own map data
+standing in for eyes. It levelled a Charmeleon into a Charizard in thirteen
+minutes across 116 battles and four trips to the Centre, unattended.
+
+Its one rule is the one the whole directory is built from — *press towards a
+state, look, and only move on once the machine agrees* — and the walk back from
+each mistake that taught it is written down in `tools/autoplay/README.md`.
+
 ## Next
 
 1. **A trade, end to end.** Both players stand at the machine; completing a
