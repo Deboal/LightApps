@@ -324,10 +324,47 @@ node apps/seating-board/checks/session-blind.mjs
 session-blind ok — 4 requests, all as anon; roster rendered
 ```
 
+### An empty board now says why
+
+Three states used to render identically — an empty roster, a roster row-level
+security is hiding, and a backend that isn't answering — and telling them apart
+by hand cost days of "is it fixed?" / "no names still". The board now says which
+one it is, in a banner, in words:
+
+| State | How it's detected | What it says |
+|---|---|---|
+| Backend refusing | reads return nothing **and** the seed write fails | "The database is refusing this board… run `schema-anon-restore.sql`" |
+| Genuinely empty | reads return nothing, the seed write **succeeds** | "The shared board is empty… restore with **Open file**" |
+| Unreachable | reads throw, or don't answer within 10s | "Can't reach the shared board… this is the blank starting layout" |
+
+The seed write is what makes this possible: an RLS-filtered read is a `200` with
+an empty array, indistinguishable from an empty table, but **a write cannot be
+ambiguous**. The 10-second timeout matters as much — a request that never
+answers left the board on *"Loading"* forever while showing the blank starting
+layout as though it were the real one.
+
+`node apps/seating-board/checks/backend-states.mjs` exercises all four.
+
+### Restoring the roster
+
+There is no server-side undo — no archive, no soft delete. The recovery paths,
+in order:
+
+1. **`Open file`** with a `Save file` export. It writes every person in the file
+   back to the shared board.
+2. **A Supabase backup / point-in-time restore**, if the rows were deleted and
+   there's no export.
+3. **Re-typing them.** `Add names` takes a comma-separated list.
+
+`Save file` before anything destructive is the whole safety net. It is worth
+doing before an import, before bulk removals, and before any schema change.
+
 ### If people report an empty or stale board
 
 In order of likelihood:
 
+0. **Read the banner.** It now names the cause; the list below is for when
+   there is no banner, or for understanding what the banner means.
 1. **A signed-in visitor on an old bundle** — the trap above. Fix: they reload
    to pick up the current bundle. Signing *out* also works, which is the tell.
 2. **Anonymous access was revoked** — someone ran `schema-auth-enforce.sql`.

@@ -71,6 +71,12 @@
   .sync[data-state="error"],.sync[data-state="offline"]{color:var(--flag);border-color:var(--flag);background:var(--flag-wash)}
   .sync[data-state="error"] .dot,.sync[data-state="offline"] .dot{background:var(--flag)}
 
+  /* ---------- notice banner ---------- */
+  .notice{padding:11px 18px;font-size:13px;border-bottom:1px solid var(--hairline);background:var(--wash-1);color:var(--ink)}
+  .notice[data-kind="error"]{background:var(--flag-wash);border-bottom-color:var(--flag)}
+  .notice strong{font-weight:600}
+  .notice code{font-family:var(--mono);font-size:12px;background:var(--surface);border:1px solid var(--hairline);padding:1px 4px}
+
   /* ---------- shell ---------- */
   .shell{display:grid;grid-template-columns:264px 1fr;align-items:start}
   .shell.collapsed{grid-template-columns:0 1fr}

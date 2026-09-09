@@ -40,6 +40,7 @@ var MARKUP = [
   '    <input type="file" data-el="file-in" accept=".json" hidden>',
   '  </div>',
   '</header>',
+  '<div class="notice" data-el="notice" role="status" hidden></div>',
   '<div class="shell" data-el="shell">',
   '  <aside class="roster">',
   '    <h2>Roster</h2>',
@@ -946,6 +947,17 @@ export function mountBoard(container, hooks) {
       try {
         var data = JSON.parse(reader.result);
         if (!data.groups || !data.people) throw new Error("shape");
+        /* This overwrites the shared board for everyone, so it asks first. It
+           used to do that AND delete anyone missing from the file, which is how
+           a stale export could wipe the roster; it no longer removes anybody. */
+        var when = data.saved ? new Date(data.saved).toLocaleString() : "an unknown date";
+        if (!window.confirm(
+          "Load this file over the shared board?\n\n" +
+          "It has " + data.people.length + " name(s), saved " + when + ", and replaces " +
+          "the rooms and desk assignments everyone sees.\n\n" +
+          "Nobody is deleted: people on the board but not in this file are left " +
+          "where they are. Remove them individually if you want them gone."
+        )) return;
         applyState(data);
         notify({ kind: "import" });
       } catch (e) {
@@ -1058,6 +1070,19 @@ export function mountBoard(container, hooks) {
     $("sync-text").textContent = text;
   }
 
+  /* A banner for the one thing the board cannot show by drawing itself: that
+     what you are looking at is not the shared board. An empty roster and a
+     roster nobody is allowed to read look the same, so one of them has to say
+     so in words. */
+  function setNotice(kind, html) {
+    var el = $("notice");
+    if (!el) return;
+    if (!kind) { el.hidden = true; el.innerHTML = ""; return; }
+    el.dataset.kind = kind;
+    el.innerHTML = html;
+    el.hidden = false;
+  }
+
   function setHeader(text) {
     var el = $("eyebrow");
     if (el) el.innerHTML = text;
@@ -1072,6 +1097,7 @@ export function mountBoard(container, hooks) {
     snapshot: snapshot,
     render: render,
     setSync: setSync,
+    setNotice: setNotice,
     setHeader: setHeader,
     defaultGroups: function () { return buildGroups(nextId); },
     reserveIds: reserveIds,

@@ -97,7 +97,37 @@ function Board() {
       },
     });
 
-    sync.load();
+    /* Say out loud which of the three states this is, because the board cannot
+       show the difference by drawing itself: an empty roster, a roster nobody
+       is allowed to read, and a backend that isn't answering all render as the
+       same empty board. Guessing between them by hand cost days. */
+    sync.load().then(function (res) {
+      if (dead || !res) return;
+      if (!res.ok) {
+        board.setNotice("error",
+          "<strong>Can't reach the shared board.</strong> Nothing here is saved, and " +
+          "this is not the current seating &mdash; it's the blank starting layout. " +
+          "Check the connection and use <strong>Reload</strong>.");
+      } else if (res.denied) {
+        board.setNotice("error",
+          "<strong>The database is refusing this board.</strong> It answered, but it " +
+          "returned nothing and won't accept a write &mdash; so this is the blank " +
+          "starting layout, not your seating, and the roster is not gone. " +
+          "Anonymous access needs restoring: run <code>schema-anon-restore.sql</code> " +
+          "in the Supabase SQL editor, then <strong>Reload</strong>.");
+      } else if (res.seeded && !res.people) {
+        board.setNotice("error",
+          "<strong>The shared board is empty.</strong> The database is reachable and " +
+          "writable, but it holds no rooms and no names &mdash; so this is a fresh " +
+          "board rather than a hidden one. If there was a roster, restore it with " +
+          "<strong>Open file</strong> from a <strong>Save file</strong> export.");
+      } else if (!res.people) {
+        board.setNotice("",
+          "No names on the roster yet. Choose <strong>Add names</strong> to paste the list.");
+      } else {
+        board.setNotice("");
+      }
+    });
 
     /* Live updates so a board open on two screens stays in step. Our own
        writes echo back through this channel, so skip while a write is in

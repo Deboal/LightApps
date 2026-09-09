@@ -63,6 +63,22 @@ function reshape(storedGroup, def, absorbed) {
   return out;
 }
 
+/* A read that never answers is the one failure that stays invisible: the board
+   sits on "Loading" forever while showing the blank starting layout, which
+   looks exactly like the real board with everyone missing. A timeout turns that
+   into an error we can say out loud. */
+function withTimeout(p, ms, what) {
+  return new Promise(function (resolve, reject) {
+    var t = setTimeout(function () {
+      reject(new Error(what + " within " + Math.round(ms / 1000) + " seconds"));
+    }, ms);
+    p.then(
+      function (v) { clearTimeout(t); resolve(v); },
+      function (e) { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
 /* Every room id the board can still resolve an assignment against. */
 function liveRoomIds(groups) {
   var ids = {};
@@ -118,11 +134,11 @@ export function createSync(opts) {
     status("saving", "Loading");
     var layout, people, assigns;
     try {
-      var results = await Promise.all([
+      var results = await withTimeout(Promise.all([
         db.get("layout", LAYOUT_DOC),
         db.list("people"),
         db.list("assignments"),
-      ]);
+      ]), 10000, "the database did not answer");
       layout = results[0]; people = results[1]; assigns = results[2];
     } catch (err) {
       // The board still works offline; Save file is the fallback.
@@ -245,9 +261,22 @@ export function createSync(opts) {
 
     // First run against an empty backend: seed the layout so the room table and
     // seat counts are shared rather than re-derived per browser.
+    //
+    // The seed doubles as the only honest test of whether this board can write
+    // at all. A read that returns nothing looks identical whether the table is
+    // empty or row-level security is filtering everything out -- both are 200
+    // with an empty array -- and that ambiguity is what let an inaccessible
+    // board masquerade as a lost roster for days. A write cannot be ambiguous.
     if (!layout) {
-      await enqueue("seed layout", function () { return writeLayout(); });
-      status("saved", "Saved " + clockTime());
+      status("saving", "Saving");
+      try {
+        await writeLayout();
+        status("saved", "Saved " + clockTime());
+      } catch (err) {
+        status("error", "Not saved");
+        console.error("[seating] seed layout failed:", err);
+        return { ok: true, denied: true, people: data.people.length, error: err };
+      }
     } else if (migrated.length || regeom.length || repaired.length) {
       await enqueue("layout migration", function () { return writeLayout(); });
       if (moved.length) {
@@ -271,7 +300,10 @@ export function createSync(opts) {
     } else {
       status("saved", "Loaded " + clockTime());
     }
-    return { ok: true, seeded: !layout, added: migrated.length, reshaped: regeom.length };
+    return {
+      ok: true, seeded: !layout, added: migrated.length, reshaped: regeom.length,
+      people: data.people.length,
+    };
   }
 
   /* ---------------- writes ---------------- */
@@ -333,26 +365,27 @@ export function createSync(opts) {
     });
   }
 
-  /* An imported save file replaces everything, so push the lot — and now that
-     people can be removed, that has to include removing whoever the file
-     doesn't have. Writing only what's in the file would leave the others on the
-     server, and the next load would bring them back. */
+  /* An imported save file writes what it contains and DELETES NOTHING.
+   *
+   * It used to delete every server row the file didn't have, to stop a person
+   * removed before the export reappearing on the next load. That was the wrong
+   * trade and it cost real data: "Open file" sits next to "Save file" in the
+   * toolbar, opening a stale export is exactly what someone does while
+   * troubleshooting, and the reward was silently deleting every name added
+   * since that export. Nobody asked to delete anything.
+   *
+   * Deletion has its own explicit, confirmed, one-person-at-a-time control on
+   * the roster now. That is the only thing that should ever remove somebody.
+   * The cost of this is that a stale import leaves extra people behind, which
+   * is visible, reversible, and enormously better than losing the roster. */
   function pushAll() {
     return enqueue("import", async function () {
       var s = board.state;
       await writeLayout();
-      var keep = {};
       for (var i = 0; i < s.people.length; i++) {
         var p = s.people[i];
-        keep[p.id] = true;
         await db.set("people", { name: p.name, dept: p.dept || "" }, p.id);
         await db.set("assignments", { roomId: p.roomId || null, at: new Date().toISOString(), by: whoami() }, p.id);
-      }
-      var rows = await db.list("people");
-      for (var j = 0; j < rows.length; j++) {
-        if (keep[rows[j].id]) continue;
-        await db.remove("assignments", rows[j].id);
-        await db.remove("people", rows[j].id);
       }
     });
   }
