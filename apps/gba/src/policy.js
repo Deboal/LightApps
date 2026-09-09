@@ -93,7 +93,7 @@ const firstMove = (mon) => {
  *  one it can keep using. A party where every move is a status move picks the
  *  one with PP anyway -- there is nothing better to do, and stopping on that
  *  alone would be wrong when Sing can still be the thing that ends a fight. */
-function bestMove(mon) {
+export function bestMove(mon) {
   const moves = movesOf(mon);
   if (!moves) return null;
   let best = null;
