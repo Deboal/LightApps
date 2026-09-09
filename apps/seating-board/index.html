@@ -26,6 +26,20 @@
   body{background:var(--concrete);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
   .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-mute)}
 
+  /* ---------- password gate ----------
+     Sits outside .board-root: it is what you see instead of the board. */
+  .gate{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .gate-card{background:var(--surface);border:1px solid var(--ink);padding:26px 24px;width:100%;max-width:390px}
+  .gate-card h1{font-family:var(--mono);font-size:17px;font-weight:600;letter-spacing:.02em;margin:4px 0 10px;text-transform:uppercase}
+  .gate-card p{color:var(--ink-mute);font-size:12.5px;margin:0 0 16px}
+  .gate-card label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-mute)}
+  .gate-card input{width:100%;font-family:var(--mono);font-size:16px;letter-spacing:.14em;padding:11px 10px;margin-top:6px;border:1px solid var(--hairline);background:#fff;color:var(--ink)}
+  .gate-card input:focus-visible{outline:2px solid var(--blueprint);outline-offset:2px}
+  .gate-card input[aria-invalid="true"]{border-color:var(--flag)}
+  .gate-msg{color:var(--flag);font-size:12.5px;margin:9px 0 0}
+  .gate-card button{width:100%;margin-top:16px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:12px 10px;background:var(--ink);color:#fff;border:1px solid var(--ink);border-radius:0;cursor:pointer}
+  .gate-card button:hover{background:var(--blueprint);border-color:var(--blueprint)}
+
   /* ---------- title block ---------- */
   .titleblock{background:var(--surface);border-bottom:1px solid var(--hairline);padding:12px 18px;display:flex;flex-wrap:wrap;gap:14px 26px;align-items:flex-end;justify-content:space-between;position:sticky;top:0;z-index:30}
   .titleblock h1{font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:.02em;margin:2px 0 0;text-transform:uppercase}
