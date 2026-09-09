@@ -32,7 +32,18 @@ const sameMap = (a, b) => a.map.mapGroup === b.mapGroup && a.map.mapNum === b.ma
  * Fighting is also the better trade on the way to somewhere: the trainers are
  * worth more experience than the wild Pokémon being walked past.
  */
-export function throughBattle(machine, { limit = 12000, runBelow = 0.3 } = {}) {
+export function throughBattle(machine, { limit = 60000, runBelow = 0.3, prefer = "fight" } = {}) {
+  // Running is free when it works and impossible when it does not: a wild
+  // Pokemon can be left, a trainer cannot. So "run" is a preference, not a
+  // plan -- try it, and once enough turns have gone by with the battle still
+  // going, this is a trainer and the only way out is through.
+  //
+  // It matters most on the way to a Pokemon Center, which is a walk taken
+  // because the lead is already hurt. Fighting everything along that walk is
+  // how a trip for a heal becomes the thing that needed one.
+  let asked = 0;
+  let running = prefer === "run";
+
   for (let waited = 0; waited < limit; waited++) {
     const state = machine.look();
     if (!state.inBattle) return { ok: true, waited };
@@ -43,18 +54,19 @@ export function throughBattle(machine, { limit = 12000, runBelow = 0.3 } = {}) {
     const fighter = (state.party && state.party[active]) || (state.party && state.party[0]);
     const share = fighter && fighter.maxHp ? fighter.hp / fighter.maxHp : 1;
     const want = fighter && bestMove(fighter);
-    const flee = share < runBelow || !want;
+    const flee = running || share < runBelow || !want;
 
     if (!battle || !battle.menu) {
-      machine.step(beat ? BTN.A : 0); // text, animations, the intro
+      machine.step(beat ? BTN.A : 0);
       continue;
     }
     if (battle.menu === "party") {
-      machine.step(beat ? BTN.A : 0); // a faint: send out the next one
+      machine.step(beat ? BTN.A : 0);
       continue;
     }
     if (battle.menu === "action") {
-      const target = flee ? 3 : 0; // RUN or FIGHT
+      if (running && ++asked > 6) running = false;
+      const target = flee ? 3 : 0;
       const differs = (battle.action ?? 0) ^ target;
       machine.step(beat ? (differs ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : BTN.A) : 0);
       continue;
@@ -97,7 +109,7 @@ export function walkPath(machine, tiles, { onMove = null, patience = 90 } = {}) 
   while (index < tiles.length) {
     const state = machine.look();
     if (state.inBattle) {
-      const out = throughBattle(machine);
+      const out = throughBattle(machine, { prefer: "run" });
       if (!out.ok) return out;
       tries = 0;
       continue;
