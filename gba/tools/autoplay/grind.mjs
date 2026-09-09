@@ -21,6 +21,7 @@ export async function grind(machine, {
   toLevel,
   spot,          // where to stand and fight
   centre,        // the tile outside the Pokémon Center door
+  allowed,       // the only maps this run may set foot on
   // Set off for a Centre while still strong enough to survive the walk.
   // Route 6 is lined with trainers who cannot be run from, so leaving at the
   // point of actually needing a heal means arriving in worse shape than when
@@ -58,7 +59,7 @@ export async function grind(machine, {
 
     if (hurt() || spent()) {
       onProgress({ what: "healing", mon: lead(), heals, battles });
-      const there = goTo(machine, { ...centre, toward: BTN.DOWN });
+      const there = goTo(machine, { ...centre, toward: BTN.DOWN }, { allowed });
       if (!there.ok) {
         // A failure on the way to a heal is the one worth a picture: the
         // reasons all read the same and look completely different.
@@ -68,7 +69,7 @@ export async function grind(machine, {
       const healed = await healHere(machine, { goTo });
       if (!healed.ok) return { ok: false, reason: healed.reason };
       heals++;
-      const back = goTo(machine, { ...spot, toward: BTN.UP });
+      const back = goTo(machine, { ...spot, toward: BTN.UP }, { allowed });
       if (!back.ok) return { ok: false, reason: `healed, but could not get back: ${back.reason}` };
       continue;
     }
@@ -93,7 +94,7 @@ export async function grind(machine, {
 
     if (stopped && /never moved|encounter|grass/.test(stopped)) {
       // Wandered off the grass. Put it back.
-      const back = goTo(machine, spot);
+      const back = goTo(machine, spot, { allowed });
       if (!back.ok) return { ok: false, reason: `lost the grind spot: ${back.reason}` };
     } else if (stopped && !/level|HP|PP|fainted/.test(stopped)) {
       return { ok: false, reason: stopped };

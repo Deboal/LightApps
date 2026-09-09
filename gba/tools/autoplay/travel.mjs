@@ -109,7 +109,12 @@ export function walkPath(machine, tiles, { onMove = null, patience = 90 } = {}) 
   while (index < tiles.length) {
     const state = machine.look();
     if (state.inBattle) {
-      const out = throughBattle(machine, { prefer: "run" });
+      // Fight rather than run. Running looks cheaper and is not: it is a
+      // different code path from the one the grind exercises thirty times a
+      // minute, and against a wild Pokemon a healthy lead wins faster than it
+      // escapes. Travelling now sets off at eight tenths health, which is
+      // what makes fighting the way there affordable.
+      const out = throughBattle(machine);
       if (!out.ok) return out;
       tries = 0;
       continue;
@@ -150,7 +155,15 @@ export function walkPath(machine, tiles, { onMove = null, patience = 90 } = {}) 
  * the only honest way to do it: the offsets between connected maps are real
  * but so are the ways a walk can go differently than planned.
  */
-export function goTo(machine, target, { hops = 12 } = {}) {
+export function goTo(machine, target, { hops = 12, allowed = null } = {}) {
+  // Maps this walk is permitted to be on. Without it a trip is free to
+  // wander: stepping onto an unnoticed warp puts the player somewhere the
+  // plan knows nothing about, and the next hop heads for *that* map's edge,
+  // and twelve hops later a walk to the Pokémon Center two screens away has
+  // ended inside a house in Pallet Town. That happened. Straying is a thing
+  // to stop on, because the alternative is a save left somewhere strange.
+  const permitted = (here) =>
+    !allowed || allowed.some((m) => m.mapGroup === here.map.mapGroup && m.mapNum === here.map.mapNum);
   // Tiles the map calls open and the game refuses. People stand in the way,
   // and they are not in any layout file. Re-planning around a refusal is the
   // difference between a walk that arrives and a walk that leans on someone.
@@ -160,6 +173,23 @@ export function goTo(machine, target, { hops = 12 } = {}) {
   for (let hop = 0; hop < hops; hop++) {
     const here = machine.look().position;
     if (!here) return { ok: false, reason: "no position" };
+    if (!permitted(here)) {
+      // One reading is not evidence. Crossing between maps rewrites the very
+      // field this is read from, so a sample taken during the transition can
+      // be anything -- and a trip that aborts on a single frame of nonsense
+      // is a trip that aborts. Look again, a few times, before believing it.
+      let strayed = true;
+      for (let look = 0; look < 12 && strayed; look++) {
+        for (let i = 0; i < 20; i++) machine.step(0);
+        const again = machine.look().position;
+        if (again && permitted(again)) strayed = false;
+      }
+      if (strayed) {
+        const at = machine.look().position;
+        return { ok: false, reason: `strayed onto map ${at.map.mapGroup}/${at.map.mapNum}`, at };
+      }
+      continue;
+    }
     const onTarget =
       here.map.mapGroup === target.mapGroup && here.map.mapNum === target.mapNum;
     if (onTarget && here.x === target.x && here.y === target.y) {
@@ -168,15 +198,40 @@ export function goTo(machine, target, { hops = 12 } = {}) {
 
     const layout = layoutOf(here.map.mapGroup, here.map.mapNum);
     const base = grid(layout.layout);
+
+    // Doors are walkable and they are not passable: step on one and you are
+    // somewhere else. The collision grid has no idea -- a path across
+    // Vermilion happily routes through the front door of a house, and the
+    // walk that follows ends up planning its way out of somebody's kitchen.
+    // The map's own warp list is right there, so every warp is a wall, except
+    // one we are deliberately aiming at.
+    const doors = new Set(
+      (layout.json.warp_events || [])
+        .filter((w) => !(onTargetTile(target, here, w)))
+        .map((w) => `${w.x},${w.y}`)
+    );
     const map = {
       ...base,
-      at: (x, y) => base.at(x, y) && !refused.has(key(layout.layout, { x, y })),
+      at: (x, y) =>
+        base.at(x, y) &&
+        !refused.has(key(layout.layout, { x, y })) &&
+        !doors.has(`${x},${y}`),
     };
 
     let plan;
     if (onTarget) {
       const tiles = planPath(map, here, { x: target.x, y: target.y });
-      if (!tiles) return { ok: false, reason: `no path to ${target.x},${target.y} on ${layout.name}`, at: here };
+      if (!tiles) {
+        // The tiles this walk has been refused are people, and people move.
+        // Enough of them along a three-tile corridor severs it, and the
+        // planner then reports no path through ground it crossed a minute
+        // ago. Forget them and look again before giving up.
+        if (refused.size) {
+          refused.clear();
+          continue;
+        }
+        return { ok: false, reason: `no path to ${target.x},${target.y} on ${layout.name}`, at: here };
+      }
       plan = tiles;
     } else {
       // Off this map: head for the edge the connection lies on. Every open
@@ -217,4 +272,15 @@ export function goTo(machine, target, { hops = 12 } = {}) {
     }
   }
   return { ok: false, reason: "too many attempts", at: machine.look().position };
+}
+
+/** Whether a warp is the very tile being walked to, in which case it is not a
+ *  hazard but the destination. */
+function onTargetTile(target, here, warp) {
+  return (
+    target.mapGroup === here.map.mapGroup &&
+    target.mapNum === here.map.mapNum &&
+    warp.x === target.x &&
+    warp.y === target.y
+  );
 }
