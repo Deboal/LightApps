@@ -25,6 +25,39 @@ create policy "anon write hub-files"  on storage.objects for insert to anon with
 create policy "anon update hub-files" on storage.objects for update to anon using (bucket_id = 'hub-files');
 create policy "anon delete hub-files" on storage.objects for delete to anon using (bucket_id = 'hub-files');
 
+-- Signed-in visitors are the other half of this, and the half that bit us. A
+-- request carrying a session arrives as `authenticated`, NOT `anon`, so the
+-- policy above does not apply to it at all. If the authenticated policies are
+-- missing, such a request matches nothing and reads zero rows -- which is why
+-- one person saw the roster and the next, who had signed in to another app on
+-- the hub, saw an empty board and signing in again could not fix it.
+--
+-- The app-side fix is that the board now always talks as anon. These are here
+-- so a signed-in visitor is never left matching no policy, on any app.
+
+alter table public.app_data add column if not exists owner uuid default auth.uid();
+alter table public.app_data add column if not exists visibility text not null default 'private';
+
+drop policy if exists "auth read app_data" on public.app_data;
+create policy "auth read app_data" on public.app_data for select to authenticated
+  using (owner = auth.uid() or visibility = 'shared');
+
+drop policy if exists "auth insert app_data" on public.app_data;
+create policy "auth insert app_data" on public.app_data for insert to authenticated
+  with check (owner = auth.uid());
+
+drop policy if exists "auth update app_data" on public.app_data;
+create policy "auth update app_data" on public.app_data for update to authenticated
+  using (owner = auth.uid() or visibility = 'shared') with check (true);
+
+drop policy if exists "auth delete app_data" on public.app_data;
+create policy "auth delete app_data" on public.app_data for delete to authenticated
+  using (owner = auth.uid() or visibility = 'shared');
+
+drop policy if exists "auth all hub-files" on storage.objects;
+create policy "auth all hub-files" on storage.objects for all to authenticated
+  using (bucket_id = 'hub-files') with check (bucket_id = 'hub-files');
+
 -- Rows written before `visibility` existed default to 'private', which hides
 -- them from every signed-in user (they match neither owner = auth.uid(), since
 -- an anonymous write leaves owner null, nor visibility = 'shared'). The board's

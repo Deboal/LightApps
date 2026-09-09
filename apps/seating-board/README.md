@@ -291,21 +291,59 @@ from a name the user sets via the **Who am I?** button, kept in `localStorage`.
 It's a courtesy label so changes are readable later — nothing verifies it, and
 it is not a credential. Rows written anonymously have a null `owner`.
 
+### The signed-in-visitor trap — fixed, and worth understanding
+
+**One person saw the full roster and the next saw an empty board.** The
+difference was whether they had signed in — to *any* app on this hub, not to
+this one, which has no sign-in at all.
+
+`shared/client.js` keeps one Supabase client for the whole hub and says so:
+*"the session is shared across every app on this origin."* That is a feature for
+apps that want it and a trap for an app that doesn't. A visitor carrying a
+session sends it, so their requests arrive as the Postgres role `authenticated`
+rather than `anon` — a different role, evaluated against a different set of
+policies. `anon all app_data` does not apply to them. If the `authenticated`
+policies are missing or don't match, they match nothing and read **zero rows**.
+
+The failure gives no hint of any of this: the board draws, the roster is empty,
+and signing in again cannot fix it because the board never asked them to sign in
+in the first place.
+
+The fix is `store("b100-seating", { shared: true, anon: true })` — the board
+always talks as `anon`, so every visitor gets the same board whatever they are
+signed in to elsewhere. `sbAnon` in `shared/client.js` is a second, deliberately
+session-blind client; the hub's own session is untouched, so signing in to
+`endure` or `gear-tracker` keeps working exactly as before.
+
+Two words are all that stand between working and not, so
+`checks/session-blind.mjs` asserts the header the board actually sends. It fails
+if `anon: true` is ever dropped:
+
+```
+node apps/seating-board/checks/session-blind.mjs
+session-blind ok — 4 requests, all as anon; roster rendered
+```
+
 ### If people report an empty or stale board
 
 In order of likelihood:
 
-1. **Anonymous access was revoked** — someone ran `schema-auth-enforce.sql`.
-   Symptom: the sync badge reads *Offline — not saved* or *Not saved*. Fix:
-   run `schema-anon-restore.sql`.
-2. **The rows aren't marked shared.** Rows written before the `visibility`
+1. **A signed-in visitor on an old bundle** — the trap above. Fix: they reload
+   to pick up the current bundle. Signing *out* also works, which is the tell.
+2. **Anonymous access was revoked** — someone ran `schema-auth-enforce.sql`.
+   Symptom: *everybody* sees an empty board, and the sync badge reads
+   *Offline — not saved* or *Not saved*. Fix: run `schema-anon-restore.sql`.
+3. **The rows aren't marked shared.** Rows written before the `visibility`
    column existed default to `'private'`, which matches neither
    `owner = auth.uid()` (an anonymous write leaves `owner` null) nor
    `visibility = 'shared'`. The restore script also repairs the board's own
    rows.
-3. **They're on a different app.** `endure`, `gear-tracker`, `cocodona-coach`
+4. **They're on a different app.** `endure`, `gear-tracker`, `cocodona-coach`
    and `gba` do use `AuthGate` and will ask for sign-in. That is correct for
    them and unrelated to this board.
+
+The distinguishing question is **"does an incognito window show the roster?"**
+Yes means it's the session trap (1); no means it's the database (2 or 3).
 
 ## Room and person ids
 
