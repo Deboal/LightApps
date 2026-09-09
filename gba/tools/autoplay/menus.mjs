@@ -153,23 +153,36 @@ export async function healHere(machine, { goTo, BTN: B = BTN } = {}) {
   }
   if (!whole()) return { ok: false, reason: "stood at the counter and was never healed" };
 
-  // Getting out again is where this went wrong twice, for the same reason
-  // both times: the party reads full *before* the nurse is done. The heal is
-  // written to memory at "I'll take your POKéMON for a few seconds", and for
-  // several seconds after that the game ignores every button. So neither
-  // mashing A nor walking south does anything, and both look like being
-  // stuck.
+  // Getting out again is the fiddly part, and the trap is symmetric. The
+  // party reads full while the nurse still has three boxes of text to go, so
+  // stopping there leaves the game sitting on a "▼" forever. But mashing A
+  // past the last box talks to her again — the player is standing at the
+  // counter facing her — and starts the whole conversation over. Either
+  // mistake looks exactly like a frozen game, and I diagnosed it as one.
   //
-  // The answer is not a longer wait, which would be a guess. It is to
-  // alternate — clear text, try a step, look — until the machine moves, and
-  // to say so if it never does.
+  // The way out is to try leaving *before* pressing anything. A step that
+  // works means the dialogue is over; a step that does not means a box is up,
+  // and only then is A the right answer. So A is never pressed at a nurse who
+  // has finished talking.
   let left = false;
-  for (let attempt = 0; attempt < 40 && !left; attempt++) {
-    for (let i = 0; i < 60; i++) machine.step(i % 14 < 5 ? B.A : 0);
+  for (let attempt = 0; attempt < 60 && !left; attempt++) {
+    const before = machine.look().position;
     for (let i = 0; i < 40; i++) machine.step(B.DOWN);
     for (let i = 0; i < 10; i++) machine.step(0);
-    const where = machine.look().position;
-    if (where && where.map.mapNum !== inside.map.mapNum) left = true;
+    const after = machine.look().position;
+    if (!after) continue;
+    if (after.map.mapNum !== inside.map.mapNum) { left = true; break; }
+    if (!game.sameTile(before, after)) {
+      // Free to walk. Straight south, out of the door.
+      for (let i = 0; i < 400; i++) {
+        const where = machine.look().position;
+        if (!where || where.map.mapNum !== inside.map.mapNum) { left = true; break; }
+        machine.step(B.DOWN);
+      }
+      break;
+    }
+    // Still boxed in: one press to advance the text, and look again.
+    machine.press(B.A, { hold: 4, then: 30 });
   }
   for (let i = 0; i < 60; i++) machine.step(0);
   const back = machine.look().position;
