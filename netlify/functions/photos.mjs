@@ -61,10 +61,24 @@ const MAX_BYTES = 5_000_000;
 const MAX_PHOTOS = 500;
 const MAX_CAPTION = 280;
 
+// Cross-origin is allowed on purpose. The cull tool is meant to be run as a
+// local file with the network off — origin "null" — and to reach out only at
+// the end, to post the set you approved. Nothing is given away by allowing it:
+// reading was already public, and writing is gated by a password checked on
+// this side, which a cross-origin page cannot read and which curl never needed
+// CORS to try. Credentials are deliberately not allowed, so no browser will
+// attach a cookie to one of these requests.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
+
 const json = (obj, status = 200, extra = {}) =>
   new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extra },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS, ...extra },
   });
 
 // Length-independent comparison, so a wrong password cannot be narrowed down by
@@ -128,6 +142,11 @@ export default async (req) => {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
 
+  // The preflight has to be answered before anything below it. A browser sends
+  // it with no body and no password, so letting it fall through to the upload
+  // path would refuse every cross-origin post before it was ever made.
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+
   let store;
   try {
     store = getStore(STORE);
@@ -152,6 +171,7 @@ export default async (req) => {
         "Content-Type": "image/jpeg",
         // Content at a given id never changes, so it can be cached hard.
         "Cache-Control": "public, max-age=31536000, immutable",
+        ...CORS,
       },
     });
   }

@@ -182,6 +182,8 @@
       near-duplicates, soft frames — are made here for free. The one judgement a
       machine is actually needed for, <em>is this a good picture of us</em>, gets a
       short list handed to a vision model, and then you get the last word.
+      Save this page to disk and it works the same way with the radio off; only
+      the last step goes near a network.
     </p>
 
     <div class="steps" id="steps">
@@ -262,24 +264,29 @@
     <section class="card" id="c4" hidden>
       <h2>4 · Hand the short list to a vision model</h2>
       <p class="why">
-        Download the contact sheets and the manifest, then start a Claude chat,
-        attach the sheets, and paste the prompt below. Twenty-five frames ride on
-        one sheet, so a 250-frame short list is ten images rather than 250 — which
-        is the difference between a scoring pass that costs pennies and one that
-        does not happen. Paste the JSON it returns into the box and the review
-        grid picks it up.
+        Twenty-five frames ride on one sheet, so a 250-frame short list becomes
+        ten images rather than 250. That is the whole reason this step is cheap
+        enough to actually run — and it is the only step that wants a model at
+        all. Save the sheets next to the photos, hand the folder to Claude with
+        the prompt below, and bring back a <code>verdict.json</code>.
       </p>
       <div class="tools">
-        <button class="btn" id="dlSheets" type="button">Download sheets</button>
-        <button class="btn" id="dlManifest" type="button">Download manifest.json</button>
+        <button class="btn" id="dlSheets" type="button">Save sheets</button>
+        <button class="btn" id="dlManifest" type="button">Save manifest.json</button>
         <button class="btn" id="copyPrompt" type="button">Copy the prompt</button>
         <span class="sp"></span>
         <button class="btn small" id="skipAi" type="button">Skip — review without it</button>
       </div>
       <p class="note" id="n4"></p>
-      <div class="field" style="margin-top:14px">
-        <label for="verdict">Paste the model's JSON here</label>
-        <textarea id="verdict" placeholder='[{"id":"A01","us":2,"people":2,"quality":4,"keep":5,"why":"both of you on the crater rim, faces clear"}]'></textarea>
+      <div class="rowN" style="margin-top:14px">
+        <div class="field">
+          <label for="verdictFile">Load verdict.json</label>
+          <input type="file" id="verdictFile" accept="application/json,.json" />
+        </div>
+        <div class="field">
+          <label for="verdict">…or paste the JSON</label>
+          <textarea id="verdict" placeholder='[{"id":"A01","us":2,"people":2,"quality":4,"keep":5,"why":"both of you on the crater rim, faces clear"}]'></textarea>
+        </div>
       </div>
       <button class="btn primary" id="applyVerdict" type="button">Apply scores</button>
       <p class="note" id="n4b"></p>
@@ -315,7 +322,15 @@
         open page. Uploads run newest-day-first so the gallery, which shows newest
         first, reads day one at the top. Captions are prefilled from the itinerary;
         the model's line is used where you accepted one.
+        <span id="offlineWhy" hidden>
+          This is the first and only step that needs a connection — everything
+          before it ran on your own machine.
+        </span>
       </p>
+      <div class="field" id="siteField" hidden>
+        <label for="siteUrl">Site address</label>
+        <input type="text" id="siteUrl" placeholder="https://lightappsad.netlify.app" />
+      </div>
       <div class="rowN">
         <div class="field"><label for="pw">Upload password</label><input type="password" id="pw" autocomplete="current-password" /></div>
         <div class="field"><label for="by">Posted by</label><input type="text" id="by" placeholder="Alex" /></div>
@@ -361,7 +376,21 @@
     "2026-09-01": "PDL → Newark → SFO",
   };
 
-  const API = "/api/photos";
+  // This page is meant to be usable as a plain file on a laptop with the radio
+  // off — everything up to the last step is local anyway. Served from the site
+  // the endpoint is same-origin; opened as a file there is no origin to be the
+  // same as, so the site gets named once and remembered.
+  const OFFLINE = location.protocol === "file:";
+  const SITE_KEY = "azores-cull-site";
+  const DEFAULT_SITE = "https://lightappsad.netlify.app";
+  // Guarded because a file:// page is exactly where storage is most likely to
+  // be refused outright, and being unable to remember the address is not a
+  // reason to take the tool down.
+  const remembered = () => { try { return localStorage.getItem(SITE_KEY); } catch { return null; } };
+  const remember = (v) => { try { localStorage.setItem(SITE_KEY, v); } catch { /* fine */ } };
+  const site = () => (remembered() || DEFAULT_SITE).replace(/\/+$/, "");
+  const API = () => (OFFLINE ? site() + "/api/photos" : "/api/photos");
+
   const SUPABASE_URL = "https://fycvuanvyjujtyjsmyaf.supabase.co";
   const SUPABASE_KEY = "sb_publishable_fqukDTDrWlTU_w-ZLXyyPw_p2rSiiYW";
   const BUCKET = "hub-files";
@@ -916,6 +945,9 @@
     "",
     "Cover every ID on every sheet. If a cell is unreadable, still emit it with",
     'keep 1 and why "unreadable".',
+    "",
+    "If you can write files, save the array as verdict.json next to the sheets.",
+    "Otherwise print it and I will paste it.",
   ].join("\n");
 
   // ---- The model's verdict ------------------------------------------------
@@ -1202,6 +1234,14 @@
   };
 
   async function upload() {
+    if (OFFLINE) {
+      const v = $("siteUrl").value.trim();
+      if (!/^https?:\/\/.+/i.test(v)) {
+        $("n6").innerHTML = '<span class="bad">Name the site to post to, e.g. ' + DEFAULT_SITE + "</span>";
+        return;
+      }
+      remember(v);
+    }
     const pw = $("pw").value;
     if (!pw) { $("n6").innerHTML = '<span class="bad">The upload password is needed.</span>'; return; }
     const by = $("by").value.trim();
@@ -1229,7 +1269,7 @@
           await putVideo(VIDEO_PREFIX + "/" + tk + "." + ext, it.file, (frac) => {
             prog("p6", Math.round(((done + frac) / queue.length) * 100));
           });
-          const r = await fetch(API, {
+          const r = await fetch(API(), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1242,7 +1282,7 @@
           if (!d.ok) throw new Error(d.error || "the server refused it");
         } else {
           const { full, thumb } = await shrink(it.file);
-          const r = await fetch(API, {
+          const r = await fetch(API(), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1325,6 +1365,16 @@
   $("skipAi").addEventListener("click", skipAi);
   $("applyVerdict").addEventListener("click", applyVerdict);
 
+  // Loading the file beats pasting it: the scoring pass is likely to have been
+  // run by something with a filesystem, which can just write verdict.json into
+  // the folder rather than print a few hundred lines for you to select.
+  $("verdictFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    $("verdict").value = await f.text();
+    applyVerdict();
+  });
+
   $("fOnlyUs").addEventListener("click", () => { filterUs = true; render(); });
   $("fAll").addEventListener("click", () => { filterUs = false; render(); });
   $("autoPick").addEventListener("click", () => { autoPick(); render(); });
@@ -1342,6 +1392,12 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") $("lb").classList.remove("open");
   });
+
+  if (OFFLINE) {
+    $("siteField").hidden = false;
+    $("offlineWhy").hidden = false;
+    $("siteUrl").value = site();
+  }
 
   $("startUp").addEventListener("click", upload);
   $("stopUp").addEventListener("click", () => { stopping = true; });
