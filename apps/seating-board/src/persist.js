@@ -6,7 +6,7 @@
  *
  *   collection     doc_id        data                        written
  *   layout         <LAYOUT_DOC>  {groups, basis, version, rev} rooms/seat changes (rare)
- *   people         <person_id>   {name, dept}                  roster add
+ *   people         <person_id>   {name, dept}                  roster add, rename
  *   assignments    <person_id>   {roomId, at, by}              every placement
  *
  * Two guards that matter:
@@ -316,15 +316,43 @@ export function createSync(opts) {
     });
   }
 
-  /* An imported save file replaces everything, so push the lot. */
+  function pushPerson(person) {
+    return enqueue("person", function () {
+      return db.set("people", { name: person.name, dept: person.dept || "" }, person.id);
+    });
+  }
+
+  /* Removal is permanent by decision — no archive flag to keep straight — so
+     BOTH rows go. Leaving the assignment behind would seat a person who no
+     longer exists: harmless today, but the next load would count them and the
+     room would read as occupied by nobody. */
+  function pushRemove(person) {
+    return enqueue("remove", async function () {
+      await db.remove("assignments", person.id);
+      await db.remove("people", person.id);
+    });
+  }
+
+  /* An imported save file replaces everything, so push the lot — and now that
+     people can be removed, that has to include removing whoever the file
+     doesn't have. Writing only what's in the file would leave the others on the
+     server, and the next load would bring them back. */
   function pushAll() {
     return enqueue("import", async function () {
       var s = board.state;
       await writeLayout();
+      var keep = {};
       for (var i = 0; i < s.people.length; i++) {
         var p = s.people[i];
+        keep[p.id] = true;
         await db.set("people", { name: p.name, dept: p.dept || "" }, p.id);
         await db.set("assignments", { roomId: p.roomId || null, at: new Date().toISOString(), by: whoami() }, p.id);
+      }
+      var rows = await db.list("people");
+      for (var j = 0; j < rows.length; j++) {
+        if (keep[rows[j].id]) continue;
+        await db.remove("assignments", rows[j].id);
+        await db.remove("people", rows[j].id);
       }
     });
   }
@@ -334,6 +362,8 @@ export function createSync(opts) {
     if (!ready) return;
     if (ev.kind === "assignment") return pushAssignment(ev.person);
     if (ev.kind === "people") return pushPeople(ev.people);
+    if (ev.kind === "person") return pushPerson(ev.person);
+    if (ev.kind === "remove") return pushRemove(ev.person);
     if (ev.kind === "layout") return pushLayout();
     if (ev.kind === "import") return pushAll();
   }

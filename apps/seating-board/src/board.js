@@ -18,7 +18,7 @@ var MARKUP = [
   '  <div>',
   '    <div class="eyebrow" data-el="eyebrow"></div>',
   '    <h1 data-el="title">B100 Office Infill &mdash; Seating</h1>',
-  '    <div class="sub">Drawn to scale from the plan set. Drag a name into a room, or click a name then click a room.</div>',
+  '    <div class="sub">Drawn to scale from the plan set. Drag a name into a room, or click a name then click a room. Use &#9998; beside a name to rename or remove them.</div>',
   '  </div>',
   '  <div class="tally" data-el="tally"></div>',
   '  <div class="toolbar">',
@@ -62,6 +62,23 @@ var MARKUP = [
   '  <div class="dlg-foot">',
   '    <button value="cancel" data-close="dlg-names">Cancel</button>',
   '    <button class="primary" data-el="names-save">Add to roster</button>',
+  '  </div>',
+  '</dialog>',
+  '<dialog data-el="dlg-person">',
+  '  <form method="dialog" class="dlg-body">',
+  '    <h4 data-el="pe-title">Edit name</h4>',
+  '    <p>Fix a spelling, set a department, or take someone off the roster. <strong>Removing is permanent</strong> &mdash; it deletes them and their desk for everyone, and there is no archive to restore from.</p>',
+  '    <div class="dlg-row">',
+  '      <label>Name<input type="text" data-el="pe-name"></label>',
+  '      <label>Department<input type="text" data-el="pe-dept" placeholder="Optional"></label>',
+  '    </div>',
+  '    <p class="dlg-msg" data-el="pe-msg" hidden></p>',
+  '  </form>',
+  '  <div class="dlg-foot">',
+  '    <button class="danger" data-el="pe-remove">Remove from roster</button>',
+  '    <span class="foot-gap"></span>',
+  '    <button value="cancel" data-close="dlg-person">Cancel</button>',
+  '    <button class="primary" data-el="pe-save">Save</button>',
   '  </div>',
   '</dialog>',
   '<dialog data-el="dlg-space">',
@@ -194,6 +211,12 @@ export function mountBoard(container, hooks) {
     return "hsl(" + h + ",52%,42%)";
   }
 
+  function personById(id) {
+    var hit = null;
+    state.people.forEach(function (p) { if (p.id === id) hit = p; });
+    return hit;
+  }
+
   function place(personId, roomId) {
     var hit = null;
     state.people.forEach(function (p) { if (p.id === personId) { p.roomId = roomId; hit = p; } });
@@ -244,10 +267,23 @@ export function mountBoard(container, hooks) {
       d.className = "dept"; d.textContent = p.dept;
       el.appendChild(d);
     }
+    /* Trailing controls are right-aligned as a group by one spacer, rather than
+       each claiming margin-left:auto — two of those would split the free space
+       and strand the room label in the middle of the chip. */
+    var trail = [];
     if (opts.showWhere && p.roomId) {
       var w = document.createElement("span");
       w.className = "where"; w.textContent = labelFor(p.roomId);
-      el.appendChild(w);
+      trail.push(w);
+    }
+    if (opts.editable) {
+      var e = document.createElement("button");
+      e.className = "edit-p"; e.type = "button";
+      e.setAttribute("aria-label", "Rename or remove " + p.name);
+      e.title = "Rename or remove";
+      e.textContent = "\u270E";
+      e.addEventListener("click", function (ev) { ev.stopPropagation(); openPerson(p); });
+      trail.push(e);
     }
     if (opts.removable) {
       var x = document.createElement("button");
@@ -255,7 +291,13 @@ export function mountBoard(container, hooks) {
       x.setAttribute("aria-label", "Take " + p.name + " out of this room");
       x.textContent = "×";
       x.addEventListener("click", function (ev) { ev.stopPropagation(); place(p.id, null); });
-      el.appendChild(x);
+      trail.push(x);
+    }
+    if (trail.length) {
+      var gap = document.createElement("span");
+      gap.className = "gap";
+      el.appendChild(gap);
+      trail.forEach(function (t) { el.appendChild(t); });
     }
     el.addEventListener("dragstart", function (ev) {
       ev.dataTransfer.setData("text/plain", p.id);
@@ -266,6 +308,10 @@ export function mountBoard(container, hooks) {
       render();
     });
     el.addEventListener("keydown", function (ev) {
+      /* Only when the chip itself has focus. Without the guard, Enter on a
+         trailing button fires that button and then bubbles up to select the
+         chip as well. */
+      if (ev.target !== el) return;
       if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); el.click(); }
     });
     return el;
@@ -295,7 +341,9 @@ export function mountBoard(container, hooks) {
       return;
     }
     list.forEach(function (p) {
-      pool.appendChild(personChip(p, { showWhere: state.view === "all", showDept: true, removable: false }));
+      pool.appendChild(personChip(p, {
+        showWhere: state.view === "all", showDept: true, removable: false, editable: true,
+      }));
     });
   }
 
@@ -746,6 +794,65 @@ export function mountBoard(container, hooks) {
     render();
     notify({ kind: "people", people: res.added });
   });
+  /* ---- rename / remove ----
+     Both live on the roster, which is where people are managed; a room card is
+     for seating, and a delete button an inch from a seat is a delete button
+     someone hits by accident. */
+  var editing = null;
+  function openPerson(p) {
+    editing = p.id;
+    $("pe-title").textContent = p.name;
+    $("pe-name").value = p.name;
+    $("pe-dept").value = p.dept || "";
+    $("pe-msg").hidden = true;
+    $("dlg-person").showModal();
+    $("pe-name").focus();
+    $("pe-name").select();
+  }
+
+  $("pe-save").addEventListener("click", function () {
+    var p = personById(editing);
+    if (!p) { $("dlg-person").close(); return; }
+    var name = $("pe-name").value.trim().replace(/\s+/g, " ");
+    var dept = $("pe-dept").value.trim().replace(/\s+/g, " ");
+    var msg = $("pe-msg");
+    if (!name) {
+      msg.hidden = false; msg.textContent = "A name is needed. Use Remove to take them off the roster.";
+      return;
+    }
+    /* The roster is keyed on names being distinct — Add names skips duplicates —
+       so renaming has to hold the same line, or two chips become indistinguishable. */
+    var clash = state.people.some(function (o) {
+      return o.id !== p.id && (o.name || "").toLowerCase() === name.toLowerCase();
+    });
+    if (clash) { msg.hidden = false; msg.textContent = name + " is already on the roster."; return; }
+    if (name === p.name && dept === (p.dept || "")) { $("dlg-person").close(); return; }
+    p.name = name; p.dept = dept;
+    $("dlg-person").close();
+    render();
+    notify({ kind: "person", person: p });
+  });
+
+  $("pe-remove").addEventListener("click", function () {
+    var p = personById(editing);
+    if (!p) { $("dlg-person").close(); return; }
+    /* Permanent and shared, so it gets a confirm. No archive flag, by decision:
+       a hidden-but-present roster is a second state to keep straight, and the
+       board has enough of those. */
+    var seat = p.roomId ? labelFor(p.roomId) : "";
+    if (!window.confirm(
+      "Remove " + p.name + " from the roster?" +
+      (seat ? "\n\nThis also frees their desk in " + seat + "." : "") +
+      "\n\nIt applies to everyone using the board and cannot be undone."
+    )) return;
+    state.people = state.people.filter(function (o) { return o.id !== p.id; });
+    if (state.selected === p.id) state.selected = null;
+    editing = null;
+    $("dlg-person").close();
+    render();
+    notify({ kind: "remove", person: p });
+  });
+
   $("btn-space").addEventListener("click", function () { $("dlg-space").showModal(); });
   $("space-save").addEventListener("click", function () {
     var site = $("sp-site").value.trim();
