@@ -42,6 +42,9 @@
   .board-root button:hover{border-color:var(--ink)}
   .board-root button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
   .board-root button.primary:hover{background:var(--blueprint);border-color:var(--blueprint)}
+  /* Irreversible, so it must not read as just another footer button. */
+  .board-root button.danger{color:var(--flag);border-color:var(--flag);background:var(--flag-wash)}
+  .board-root button.danger:hover{background:var(--flag);color:#fff}
   .board-root button:focus-visible,.board-root [tabindex]:focus-visible,.board-root input:focus-visible,.board-root textarea:focus-visible,.board-root select:focus-visible{outline:2px solid var(--blueprint);outline-offset:2px}
   .zoom{display:flex;align-items:center;gap:7px;border:1px solid var(--hairline);padding:4px 9px;background:var(--surface)}
   .zoom input[type=range]{width:88px;accent-color:var(--blueprint)}
@@ -77,9 +80,15 @@
   .chip.is-selected{border-color:var(--blueprint);background:var(--wash-1);border-left-color:var(--blueprint)}
   .chip .nm{overflow-wrap:anywhere}
   .chip .dept{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-mute);flex:0 0 auto}
-  .chip .where{font-family:var(--mono);font-size:10px;color:var(--blueprint);margin-left:auto;flex:0 0 auto}
-  .chip .drop-x{font-family:var(--mono);font-size:12px;color:var(--ink-mute);background:none;border:0;padding:0 1px;cursor:pointer;letter-spacing:0;margin-left:auto;flex:0 0 auto}
+  /* One spacer right-aligns every trailing control as a group. Giving each of
+     them margin-left:auto instead would split the free space between them and
+     leave the room label stranded mid-chip. */
+  .chip .gap{margin-left:auto}
+  .chip .where{font-family:var(--mono);font-size:10px;color:var(--blueprint);flex:0 0 auto}
+  .chip .drop-x{font-family:var(--mono);font-size:12px;color:var(--ink-mute);background:none;border:0;padding:0 1px;cursor:pointer;letter-spacing:0;flex:0 0 auto}
   .chip .drop-x:hover{color:var(--flag)}
+  .chip .edit-p{font-size:13px;color:var(--ink-mute);background:none;border:0;padding:0 2px;cursor:pointer;letter-spacing:0;line-height:1;flex:0 0 auto}
+  .chip .edit-p:hover{color:var(--blueprint)}
 
   /* ---------- plan ---------- */
   .plan{padding:14px 0 46px;overflow-x:auto}
@@ -188,6 +197,8 @@
   .dlg-row label{flex:1;font-size:12px;color:var(--ink-mute)}
   .dlg-msg{margin:9px 0 0;padding:7px 9px;border-left:3px solid var(--flag);background:var(--flag-wash);color:var(--ink);font-size:12.5px}
   .dlg-foot{display:flex;justify-content:flex-end;gap:6px;padding:11px 17px;border-top:1px solid var(--hairline);background:#F5F6F8}
+  /* Keeps the destructive action away from Cancel and Save. */
+  .dlg-foot .foot-gap{flex:1 1 auto}
 
   /* Alex reviews this on a tablet. The seat steppers are 16px on a mouse,
      which is fine to click and not fine to tap, so give them a real target
@@ -196,6 +207,7 @@
     .board-root .room-foot{padding:4px 5px;gap:8px}
     .board-root .room-foot button{min-width:30px;min-height:30px;font-size:15px}
     .board-root .chip .drop-x{min-width:28px;min-height:24px;font-size:16px}
+    .board-root .chip .edit-p{min-width:28px;min-height:24px;font-size:15px}
     .board-root .toolbar button{padding:11px 13px}
     .board-root .tabs button{padding:11px 10px}
   }

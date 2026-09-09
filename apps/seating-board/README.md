@@ -218,6 +218,28 @@ everyone else as their department — and re-adding any of them did nothing
 visible, because a duplicate name is skipped. Adding nothing now says so instead
 of closing as though it worked.
 
+### Renaming and removing
+
+The **✎** beside a name in the roster opens the person editor. Both actions live
+there and nowhere else: a room card is for seating, and a delete control an inch
+from a seat is one somebody hits by accident. Placed people are reachable through
+the **Everyone** tab.
+
+- **Rename** also sets the department. It refuses a blank name, and refuses a
+  name already on the roster — `Add names` skips duplicates, so renaming has to
+  hold the same line or two chips become indistinguishable.
+- **Remove is permanent and shared.** There is no archive, by decision: a
+  hidden-but-present roster is a second state to keep straight. It takes a
+  confirm, and the confirm names the desk being freed.
+
+Removal deletes **both** rows — `people` and `assignments`. Leaving the
+assignment would seat somebody who no longer exists, and the next load would
+count them against the room.
+
+The `Open file` import had to learn the same lesson. It writes every person in
+the file, and now also removes any server row the file doesn't have; writing only
+what's in the file would leave the rest behind for the next load to restore.
+
 ## Files
 
 | File | Role |
@@ -291,7 +313,7 @@ other's work.
 | collection | doc_id | data | written |
 |---|---|---|---|
 | `layout` | `b100` | `{groups, basis, version, rev}` | Rooms / seat-count changes (rare) |
-| `people` | `<person_id>` | `{name, dept}` | Roster add |
+| `people` | `<person_id>` | `{name, dept}` | Roster add, rename (deleted on remove) |
 | `assignments` | `<person_id>` | `{roomId, at, by}` | Every placement |
 
 One row per person means concurrent placements never collide. Two guards:
