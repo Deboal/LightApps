@@ -1,0 +1,1357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alex &amp; Jackie · Azores · Cull</title>
+<meta name="robots" content="noindex" />
+<meta name="description" content="Local-first triage for the trip camera roll: date filter, near-duplicate collapse, quality score, review, then load." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #0b1320; --bg-2: #0e1828; --panel: #13202f; --panel-2: #16263a;
+    --line: #22344a; --ice: #e9eef5; --steel: #8a9cb1; --steel-dim: #58697e;
+    --glacier: #5fd0e6; --laurel: #4fd39a; --ember: #ff8a52; --sos: #ff4d4d;
+    --bar-h: 56px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 480px at 80% -10%, rgba(255,138,82,0.08), transparent 60%),
+      radial-gradient(820px 520px at 0% 0%, rgba(79,211,154,0.07), transparent 55%),
+      var(--bg);
+    color: var(--ice);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
+  .bar {
+    height: var(--bar-h);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 0 18px;
+    background: linear-gradient(180deg, var(--bg-2), rgba(11,19,32,0.85));
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 50; backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 14px var(--ember); align-self: center; flex: 0 0 auto; }
+  .brand-name { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav { display: flex; gap: 16px; }
+  .nav a { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel); text-decoration: none; padding: 4px 0; border-bottom: 1px solid transparent; }
+  .nav a:hover { color: var(--ice); }
+  .nav a.nav-on { color: var(--ice); border-bottom-color: var(--ember); }
+  .nav a .s { display: none; }
+  @media (max-width: 600px) {
+    .brand-name .pre { display: none; }
+    .brand { flex: 0 0 auto; gap: 9px; }
+    .brand-name { font-size: 13px; letter-spacing: 0.08em; }
+    .nav a .l { display: none; }
+    .nav a .s { display: inline; }
+    .nav { gap: 8px; }
+    .nav a { font-size: 10.5px; letter-spacing: 0.02em; }
+    .bar { padding: 0 14px; gap: 10px; }
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 30px 20px 90px; }
+  .eyebrow { font-family: "Space Mono", monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ember); margin: 0 0 10px; }
+  h1 { font-size: clamp(26px, 4.6vw, 40px); line-height: 1.05; margin: 0; letter-spacing: -0.02em; font-weight: 700; }
+  .lede { font-size: 15px; line-height: 1.6; color: var(--steel); max-width: 62ch; margin: 14px 0 0; }
+
+  .btn {
+    font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    background: var(--panel-2); color: var(--ice); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 15px;
+  }
+  .btn:hover { background: #1b2c42; }
+  .btn:focus-visible { outline: 2px solid var(--glacier); outline-offset: 2px; }
+  .btn.primary { background: var(--ember); color: #2a1206; border-color: var(--ember); }
+  .btn.primary:hover { background: #ff9a68; }
+  .btn.go { background: var(--laurel); color: #06251a; border-color: var(--laurel); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .btn.small { font-size: 12.5px; padding: 7px 11px; }
+
+  /* Stages ---------------------------------------------------------------- */
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 26px 0 20px; font-family: "Space Mono", monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .steps span { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--steel-dim); }
+  .steps span.on { color: var(--ember); border-color: var(--ember); }
+  .steps span.done { color: var(--laurel); border-color: rgba(79,211,154,0.4); }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 18px; }
+  .card h2 { font-size: 14px; letter-spacing: 0.06em; margin: 0 0 6px; font-weight: 700; }
+  .card .why { font-size: 13px; line-height: 1.6; color: var(--steel); margin: 0 0 16px; max-width: 70ch; }
+  .card[hidden] { display: none; }
+
+  .drop { border: 1px dashed var(--line); border-radius: 12px; padding: 26px 18px; text-align: center; background: var(--panel-2); }
+  .drop.hot { border-color: var(--laurel); background: rgba(79,211,154,0.07); }
+  .drop p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.5; }
+  .drop small { display: block; margin-top: 12px; font-size: 11.5px; color: var(--steel-dim); line-height: 1.6; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .field label { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel-dim); }
+  .field input, .field textarea, .field select {
+    font: inherit; font-size: 14px; background: var(--bg-2); color: var(--ice);
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+  }
+  .field textarea { min-height: 110px; font-family: "Space Mono", monospace; font-size: 12px; line-height: 1.5; }
+  .field input:focus, .field textarea:focus { outline: 2px solid var(--glacier); outline-offset: 1px; }
+  .rowN { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+
+  /* Funnel readout -------------------------------------------------------- */
+  .funnel { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; margin: 4px 0 0; }
+  .fq { background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 12px 13px; }
+  .fq b { display: block; font-family: "Space Mono", monospace; font-size: 22px; font-weight: 700; line-height: 1.1; }
+  .fq span { display: block; font-size: 10.5px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--steel-dim); margin-top: 5px; }
+  .fq.cut b { color: var(--steel-dim); }
+  .fq.keep b { color: var(--laurel); }
+  .fq.us b { color: var(--glacier); }
+
+  .prog { height: 6px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 14px 0 8px; }
+  .prog i { display: block; height: 100%; width: 0; background: var(--ember); transition: width 0.2s; }
+  .note { font-size: 12.5px; line-height: 1.6; color: var(--steel); font-family: "Space Mono", monospace; }
+  .warn { color: var(--ember); }
+  .bad { color: var(--sos); }
+  .good { color: var(--laurel); }
+
+  /* Review grid ----------------------------------------------------------- */
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .tools .sp { flex: 1 1 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 10px; }
+  @media (max-width: 520px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
+  .tile { position: relative; margin: 0; aspect-ratio: 1/1; border-radius: 11px; overflow: hidden; background: var(--panel-2); border: 2px solid transparent; cursor: pointer; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile.keep { border-color: var(--laurel); }
+  .tile.cut img { opacity: 0.3; filter: grayscale(1); }
+  .tile figcaption {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 8px 6px;
+    background: linear-gradient(180deg, transparent, rgba(6,11,19,0.92));
+    font-size: 10.5px; line-height: 1.35; color: var(--ice);
+    font-family: "Space Mono", monospace;
+  }
+  .tile .badges { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .pill { font-family: "Space Mono", monospace; font-size: 9.5px; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 999px; background: rgba(6,11,19,0.78); border: 1px solid var(--line); color: var(--steel); }
+  .pill.us { color: #06251a; background: var(--glacier); border-color: var(--glacier); font-weight: 700; }
+  .pill.dup { color: var(--ember); border-color: rgba(255,138,82,0.5); }
+  .pill.vid { color: var(--ice); }
+  .pill.sc { color: var(--laurel); }
+  .tile .kb { position: absolute; bottom: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(6,11,19,0.8); border: 1px solid var(--line); }
+  .tile.keep .kb { background: var(--laurel); color: #06251a; border-color: var(--laurel); }
+
+  .dayrow { display: flex; align-items: baseline; gap: 10px; margin: 22px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .dayrow h3 { margin: 0; font-size: 13px; letter-spacing: 0.06em; }
+  .dayrow .m { font-family: "Space Mono", monospace; font-size: 11px; color: var(--steel-dim); letter-spacing: 0.08em; }
+  .dayrow .m.zero { color: var(--sos); }
+
+  /* Cluster / lightbox ---------------------------------------------------- */
+  .lb { position: fixed; inset: 0; background: rgba(5,9,16,0.95); display: none; z-index: 90; padding: 20px; overflow: auto; }
+  .lb.open { display: block; }
+  .lb .inner { max-width: 1000px; margin: 0 auto; }
+  .lb .big { max-width: 100%; max-height: 62vh; display: block; margin: 0 auto 14px; border-radius: 10px; }
+  .lb .strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+  .lb .strip img { height: 82px; border-radius: 7px; cursor: pointer; border: 2px solid transparent; }
+  .lb .strip img.on { border-color: var(--glacier); }
+  .lb .strip img.keep { border-color: var(--laurel); }
+  .lb .cx { position: fixed; top: 14px; right: 16px; }
+  .lb .meta { font-family: "Space Mono", monospace; font-size: 12px; color: var(--steel); line-height: 1.7; margin: 0 0 12px; }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name"><span class="pre">Alex &amp; Jackie · </span>Azores</span>
+    </div>
+    <nav class="nav">
+      <a href="./"><span class="l">Live map</span><span class="s">Map</span></a>
+      <a href="./itinerary.html"><span class="l">Itinerary</span><span class="s">Plan</span></a>
+      <a href="./photos.html"><span class="l">Photos</span><span class="s">Pic</span></a>
+      <a href="./cull.html" class="nav-on"><span class="l">Cull</span><span class="s">Cull</span></a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+    <p class="eyebrow">Camera roll → gallery</p>
+    <h1>Cull</h1>
+    <p class="lede">
+      Everything up to the last step happens in this browser: no photo leaves the
+      machine until you press upload. The mechanical cuts — wrong dates, bursts,
+      near-duplicates, soft frames — are made here for free. The one judgement a
+      machine is actually needed for, <em>is this a good picture of us</em>, gets a
+      short list handed to a vision model, and then you get the last word.
+    </p>
+
+    <div class="steps" id="steps">
+      <span data-step="1" class="on">1 · Load folder</span>
+      <span data-step="2">2 · Trip window</span>
+      <span data-step="3">3 · Collapse</span>
+      <span data-step="4">4 · Sheets for AI</span>
+      <span data-step="5">5 · Review</span>
+      <span data-step="6">6 · Upload</span>
+    </div>
+
+    <!-- 1 ------------------------------------------------------------------ -->
+    <section class="card" id="c1">
+      <h2>1 · Point it at the camera roll</h2>
+      <p class="why">
+        Drop the whole export folder in. Nothing is uploaded and nothing is
+        modified — the page reads each file, measures it, and forgets it when you
+        close the tab.
+      </p>
+      <div class="drop" id="drop">
+        <p>Drag a folder here, or</p>
+        <button class="btn" id="pickBtn" type="button">Choose a folder</button>
+        <button class="btn" id="pickFilesBtn" type="button">Choose files</button>
+        <input type="file" id="pickDir" webkitdirectory directory multiple hidden />
+        <input type="file" id="pickFiles" accept="image/*,video/*" multiple hidden />
+        <small id="dropNote">
+          JPEG, PNG, WebP and MP4/MOV read everywhere. <b>HEIC only decodes in
+          Safari on a Mac</b> — in Chrome those files are counted and skipped, so
+          either run this page in Safari or convert first:
+          <code>sips -s format jpeg *.HEIC --out jpg/</code>
+        </small>
+      </div>
+      <div class="prog" id="p1" hidden><i></i></div>
+      <p class="note" id="n1"></p>
+    </section>
+
+    <!-- 2 ------------------------------------------------------------------ -->
+    <section class="card" id="c2" hidden>
+      <h2>2 · Trip window</h2>
+      <p class="why">
+        Prefilled from the itinerary. Capture time comes from EXIF where the file
+        has it, the MP4/MOV header for video, and the file's own date only as a
+        last resort — copying a camera roll around often rewrites that, so
+        anything falling back is flagged rather than trusted.
+      </p>
+      <div class="rowN">
+        <div class="field"><label for="from">First day</label><input type="date" id="from" value="2026-08-23" /></div>
+        <div class="field"><label for="to">Last day</label><input type="date" id="to" value="2026-09-01" /></div>
+      </div>
+      <button class="btn primary" id="applyWindow" type="button">Apply window</button>
+      <div class="funnel" id="f2" style="margin-top:16px"></div>
+      <p class="note" id="n2"></p>
+    </section>
+
+    <!-- 3 ------------------------------------------------------------------ -->
+    <section class="card" id="c3" hidden>
+      <h2>3 · Collapse the bursts and duplicates</h2>
+      <p class="why">
+        Frames are grouped when they were taken close together <em>and</em> look
+        alike (a 64-bit perceptual hash, so a re-crop or a slight pan still
+        matches). Within each group the sharpest, best-exposed frame wins.
+        Sharpness is the variance of a Laplacian — the honest version of "is it in
+        focus" — and clipping is the share of pixels crushed to pure black or
+        blown to pure white.
+      </p>
+      <div class="rowN">
+        <div class="field"><label for="gap">Burst window (seconds)</label><input type="number" id="gap" value="120" min="0" max="900" /></div>
+        <div class="field"><label for="ham">Look-alike tolerance (0–20)</label><input type="number" id="ham" value="12" min="0" max="24" /></div>
+        <div class="field"><label for="target">Shortlist size</label><input type="number" id="target" value="250" min="40" max="500" /></div>
+      </div>
+      <button class="btn primary" id="collapse" type="button">Collapse</button>
+      <div class="prog" id="p3" hidden><i></i></div>
+      <div class="funnel" id="f3" style="margin-top:16px"></div>
+      <p class="note" id="n3"></p>
+    </section>
+
+    <!-- 4 ------------------------------------------------------------------ -->
+    <section class="card" id="c4" hidden>
+      <h2>4 · Hand the short list to a vision model</h2>
+      <p class="why">
+        Download the contact sheets and the manifest, then start a Claude chat,
+        attach the sheets, and paste the prompt below. Twenty-five frames ride on
+        one sheet, so a 250-frame short list is ten images rather than 250 — which
+        is the difference between a scoring pass that costs pennies and one that
+        does not happen. Paste the JSON it returns into the box and the review
+        grid picks it up.
+      </p>
+      <div class="tools">
+        <button class="btn" id="dlSheets" type="button">Download sheets</button>
+        <button class="btn" id="dlManifest" type="button">Download manifest.json</button>
+        <button class="btn" id="copyPrompt" type="button">Copy the prompt</button>
+        <span class="sp"></span>
+        <button class="btn small" id="skipAi" type="button">Skip — review without it</button>
+      </div>
+      <p class="note" id="n4"></p>
+      <div class="field" style="margin-top:14px">
+        <label for="verdict">Paste the model's JSON here</label>
+        <textarea id="verdict" placeholder='[{"id":"A01","us":2,"people":2,"quality":4,"keep":5,"why":"both of you on the crater rim, faces clear"}]'></textarea>
+      </div>
+      <button class="btn primary" id="applyVerdict" type="button">Apply scores</button>
+      <p class="note" id="n4b"></p>
+    </section>
+
+    <!-- 5 ------------------------------------------------------------------ -->
+    <section class="card" id="c5" hidden>
+      <h2>5 · Your review — nothing is loaded until you say so</h2>
+      <p class="why">
+        Click a tile to keep or cut it. Click the duplicate badge to see everything
+        that was collapsed behind it, in case the machine kept the wrong one. The
+        day counters go red when a day of the trip has nothing in it.
+      </p>
+      <div class="funnel" id="f5"></div>
+      <div class="tools" style="margin-top:16px">
+        <button class="btn small" id="fOnlyUs" type="button">Only us</button>
+        <button class="btn small" id="fAll" type="button">All</button>
+        <button class="btn small" id="autoPick" type="button">Auto-pick a balanced set</button>
+        <span class="sp"></span>
+        <button class="btn small" id="cutAll" type="button">Cut all</button>
+        <button class="btn go" id="toUpload" type="button">Continue to upload</button>
+      </div>
+      <p class="note" id="n5"></p>
+      <div id="days"></div>
+    </section>
+
+    <!-- 6 ------------------------------------------------------------------ -->
+    <section class="card" id="c6" hidden>
+      <h2>6 · Load them into the gallery</h2>
+      <p class="why">
+        Each photo is resized to 2000px in the browser before it goes, which also
+        strips EXIF — including the GPS tag, which should not be published on an
+        open page. Uploads run newest-day-first so the gallery, which shows newest
+        first, reads day one at the top. Captions are prefilled from the itinerary;
+        the model's line is used where you accepted one.
+      </p>
+      <div class="rowN">
+        <div class="field"><label for="pw">Upload password</label><input type="password" id="pw" autocomplete="current-password" /></div>
+        <div class="field"><label for="by">Posted by</label><input type="text" id="by" placeholder="Alex" /></div>
+      </div>
+      <div class="tools">
+        <button class="btn go" id="startUp" type="button">Upload the kept set</button>
+        <button class="btn small" id="stopUp" type="button" hidden>Stop</button>
+      </div>
+      <div class="prog" id="p6" hidden><i></i></div>
+      <p class="note" id="n6"></p>
+    </section>
+  </div>
+
+  <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Compare">
+    <button class="btn cx" id="lbClose" type="button">Close</button>
+    <div class="inner">
+      <img class="big" id="lbBig" alt="" />
+      <p class="meta" id="lbMeta"></p>
+      <div class="tools">
+        <button class="btn small" id="lbKeep" type="button">Keep this one instead</button>
+      </div>
+      <div class="strip" id="lbStrip"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---- Trip shape, lifted from itinerary.html -----------------------------
+  // The day a frame lands on is worth more than its filename: it is what tells
+  // you a day of the trip is about to go unrepresented.
+  const DAYS = {
+    "2026-08-23": "SFO → Newark → overnight",
+    "2026-08-24": "Ponta Delgada",
+    "2026-08-25": "Sete Cidades → Mosteiros",
+    "2026-08-26": "Whale watching → Vila Franca islet",
+    "2026-08-27": "Lagoa do Fogo → Caldeira Velha",
+    "2026-08-28": "Coast road → Furnas",
+    "2026-08-29": "Nordeste → Poça da Dona Beija",
+    "2026-08-30": "Lagoa das Furnas → north coast",
+    "2026-08-31": "Gorreana → Ribeira Grande",
+    "2026-09-01": "PDL → Newark → SFO",
+  };
+
+  const API = "/api/photos";
+  const SUPABASE_URL = "https://fycvuanvyjujtyjsmyaf.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_fqukDTDrWlTU_w-ZLXyyPw_p2rSiiYW";
+  const BUCKET = "hub-files";
+  const VIDEO_PREFIX = "azores-video";
+  const VIDEO_EXT = { mp4: "mp4", mov: "mov", m4v: "m4v", webm: "webm" };
+  const MAX_EDGE = 2000, THUMB_EDGE = 640, QUALITY = 0.82;
+  const CELL = 300, PER_SHEET = 25, SHEET_COLS = 5, LABEL_H = 20;
+  const GALLERY_CAP = 500;
+
+  const $ = (id) => document.getElementById(id);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const dayKey = (d) => d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  const clock = (d) => pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  const isVid = (f) => /^video\//.test(f.type) || /\.(mp4|mov|m4v|webm)$/i.test(f.name);
+  const isImg = (f) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif|tiff?)$/i.test(f.name);
+  const heicish = (f) => /heic|heif/i.test(f.type + " " + f.name);
+
+  let items = [];      // everything read off disk
+  let win = [];        // inside the trip window
+  let shortlist = [];  // one per cluster, capped
+  let filterUs = false;
+  let sheets = [];     // {name, dataUrl}
+  let stopping = false;
+
+  const setStep = (n) => {
+    document.querySelectorAll(".steps span").forEach((s) => {
+      const i = Number(s.dataset.step);
+      s.className = i === n ? "on" : i < n ? "done" : "";
+    });
+  };
+  const show = (id) => { $(id).hidden = false; };
+  const prog = (id, pct) => { const p = $(id); p.hidden = false; p.firstElementChild.style.width = pct + "%"; };
+  const funnel = (id, cells) => {
+    $(id).innerHTML = cells.map((c) =>
+      '<div class="fq ' + (c.cls || "") + '"><b>' + c.n + '</b><span>' + c.label + '</span></div>').join("");
+  };
+
+  // ---- Capture time -------------------------------------------------------
+  // Read from the file's own header, not its filesystem date. Copying a camera
+  // roll between machines rewrites the filesystem date routinely, and a whole
+  // trip landing on the day you copied it is the failure that quietly ruins
+  // every step downstream. Anything that has to fall back is marked so.
+
+  function exifDate(buf) {
+    const v = new DataView(buf);
+    if (v.byteLength < 12 || v.getUint16(0) !== 0xffd8) return null;
+    let off = 2;
+    while (off + 4 < v.byteLength) {
+      if (v.getUint8(off) !== 0xff) return null;
+      const marker = v.getUint8(off + 1);
+      const size = v.getUint16(off + 2);
+      if (marker === 0xe1 && off + 10 < v.byteLength) {
+        let s = "";
+        for (let i = 0; i < 4; i++) s += String.fromCharCode(v.getUint8(off + 4 + i));
+        if (s === "Exif") return tiffDate(v, off + 10);
+      }
+      if (marker === 0xda) return null;       // start of scan: no more headers
+      off += 2 + size;
+    }
+    return null;
+  }
+
+  function tiffDate(v, base) {
+    if (base + 8 > v.byteLength) return null;
+    const le = v.getUint16(base) === 0x4949;
+    const u16 = (o) => v.getUint16(o, le);
+    const u32 = (o) => v.getUint32(o, le);
+    if (u16(base + 2) !== 42) return null;
+
+    const readIfd = (ifd, want) => {
+      if (ifd + 2 > v.byteLength) return null;
+      const n = u16(ifd);
+      for (let i = 0; i < n; i++) {
+        const e = ifd + 2 + i * 12;
+        if (e + 12 > v.byteLength) break;
+        if (u16(e) === want) return { type: u16(e + 2), count: u32(e + 4), val: u32(e + 8), at: e + 8 };
+      }
+      return null;
+    };
+    const ascii = (ent) => {
+      // 20-byte "YYYY:MM:DD HH:MM:SS\0" never fits the inline 4 bytes, so the
+      // entry always holds an offset here.
+      const at = base + ent.val;
+      if (at + 19 > v.byteLength) return null;
+      let s = "";
+      for (let i = 0; i < 19; i++) s += String.fromCharCode(v.getUint8(at + i));
+      return s;
+    };
+
+    const ifd0 = base + u32(base + 4);
+    const exifPtr = readIfd(ifd0, 0x8769);
+    let ent = exifPtr ? readIfd(base + exifPtr.val, 0x9003) : null;   // DateTimeOriginal
+    if (!ent) ent = readIfd(ifd0, 0x0132);                            // DateTime
+    if (!ent || ent.type !== 2) return null;
+
+    const s = ascii(ent);
+    const m = s && s.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return null;
+    // Built from the local components deliberately. EXIF records the wall clock
+    // where the shutter fired; for bucketing a São Miguel morning into "day 3"
+    // that is exactly the number wanted, and converting it through a timezone
+    // is how a sunrise ends up on the previous day.
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  }
+
+  function mp4Date(buf) {
+    const b = new Uint8Array(buf);
+    for (let i = 0; i + 20 < b.length; i++) {
+      if (b[i] === 0x6d && b[i + 1] === 0x76 && b[i + 2] === 0x68 && b[i + 3] === 0x64) {
+        const v = new DataView(buf);
+        const version = v.getUint8(i + 4);
+        let secs;
+        if (version === 1) {
+          const hi = v.getUint32(i + 8), lo = v.getUint32(i + 12);
+          secs = hi * 4294967296 + lo;
+        } else {
+          secs = v.getUint32(i + 8);
+        }
+        if (!secs) return null;
+        // The MP4 epoch is 1904-01-01, and phones write the local wall clock
+        // into it as though it were UTC — so read it back as UTC and rebuild it
+        // as local, which lands on the same wall clock it was recorded with.
+        const d = new Date((secs - 2082844800) * 1000);
+        if (isNaN(d) || d.getUTCFullYear() < 1990 || d.getUTCFullYear() > 2100) return null;
+        return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+                        d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds());
+      }
+    }
+    return null;
+  }
+
+  async function captureTime(file) {
+    const head = await file.slice(0, isVid(file) ? 1_000_000 : 256_000).arrayBuffer();
+    let d = isVid(file) ? mp4Date(head) : exifDate(head);
+    if (d && !isNaN(d)) return { at: d, exact: true };
+    return { at: new Date(file.lastModified), exact: false };
+  }
+
+  // ---- Measuring a frame --------------------------------------------------
+  // Three numbers, all cheap, all computed from one decode:
+  //   hash      a 64-bit difference hash, for "these are the same picture"
+  //   sharp     variance of the Laplacian, the standard stand-in for focus
+  //   clip      share of pixels crushed black or blown white
+  // None of them need a model, and a model asked to do them would be slower,
+  // dearer and worse.
+
+  function fitTo(w, h, edge) {
+    if (w <= edge && h <= edge) return [w, h];
+    return w >= h ? [edge, Math.round((h / w) * edge)] : [Math.round((w / h) * edge), edge];
+  }
+
+  function grayFrom(ctx, w, h) {
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const g = new Float32Array(w * h);
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      g[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    }
+    return g;
+  }
+
+  function dhash(bitmap) {
+    const w = 9, h = 8;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const g = grayFrom(ctx, w, h);
+    const bits = new Uint8Array(8);
+    for (let y = 0; y < 8; y++) {
+      let byte = 0;
+      for (let x = 0; x < 8; x++) if (g[y * w + x] < g[y * w + x + 1]) byte |= 1 << x;
+      bits[y] = byte;
+    }
+    return bits;
+  }
+
+  const POP = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) POP[i] = (i & 1) + POP[i >> 1];
+  const hamming = (a, b) => { let n = 0; for (let i = 0; i < 8; i++) n += POP[a[i] ^ b[i]]; return n; };
+
+  function quality(bitmap) {
+    const [w, h] = fitTo(bitmap.width, bitmap.height, 192);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const g = grayFrom(ctx, w, h);
+
+    let dark = 0, blown = 0;
+    for (let i = 0; i < g.length; i++) { if (g[i] < 6) dark++; else if (g[i] > 249) blown++; }
+
+    let sum = 0, sum2 = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const L = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w];
+        sum += L; sum2 += L * L; n++;
+      }
+    }
+    const mean = n ? sum / n : 0;
+    return {
+      sharp: n ? sum2 / n - mean * mean : 0,
+      clip: (dark + blown) / g.length,
+    };
+  }
+
+  function thumbUrl(bitmap, edge, q) {
+    const [w, h] = fitTo(bitmap.width, bitmap.height, edge);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+    return c.toDataURL("image/jpeg", q);
+  }
+
+  // A video is judged on a frame a tenth of the way in — far enough past the
+  // black frame most phone clips open on to be worth looking at.
+  function videoFrame(file) {
+    return new Promise((resolve) => {
+      const v = document.createElement("video");
+      v.preload = "metadata"; v.muted = true; v.playsInline = true;
+      const url = URL.createObjectURL(file);
+      let settled = false, dur = null;
+      const done = (bmp, w, h) => {
+        if (settled) return; settled = true;
+        URL.revokeObjectURL(url); v.removeAttribute("src");
+        resolve(bmp ? { bmp, w, h, dur } : null);
+      };
+      const grab = async () => {
+        if (settled) return;
+        if (!v.videoWidth) return done(null);
+        try { done(await createImageBitmap(v), v.videoWidth, v.videoHeight); }
+        catch { done(null); }
+      };
+      v.onerror = () => done(null);
+      v.onloadedmetadata = () => {
+        dur = isFinite(v.duration) && v.duration > 0 ? v.duration : null;
+        v.currentTime = dur ? Math.min(dur * 0.1, 2) : 0.1;
+      };
+      v.onseeked = grab;
+      setTimeout(() => { if (!settled) (v.readyState >= 2 ? grab() : done(null)); }, 6000);
+      v.src = url;
+    });
+  }
+
+  async function measure(it) {
+    let bmp = null, w = 0, h = 0, dur = null;
+    if (it.video) {
+      const r = await videoFrame(it.file);
+      if (!r) { it.unreadable = "video would not decode"; return; }
+      bmp = r.bmp; w = r.w; h = r.h; dur = r.dur;
+    } else {
+      try {
+        bmp = await createImageBitmap(it.file, { imageOrientation: "from-image" });
+        w = bmp.width; h = bmp.height;
+      } catch {
+        it.unreadable = heicish(it.file)
+          ? "HEIC — this browser has no decoder for it"
+          : "could not be decoded";
+        return;
+      }
+    }
+    it.w = w; it.h = h; it.dur = dur;
+    it.hash = dhash(bmp);
+    const q = quality(bmp);
+    it.sharp = q.sharp; it.clip = q.clip;
+    it.thumb = thumbUrl(bmp, CELL, 0.72);
+    bmp.close && bmp.close();
+  }
+
+  // ---- Reading the folder -------------------------------------------------
+  async function walkEntry(entry, out) {
+    if (entry.isFile) {
+      const f = await new Promise((res) => entry.file(res, () => res(null)));
+      if (f) out.push(f);
+      return;
+    }
+    const reader = entry.createReader();
+    for (;;) {
+      const batch = await new Promise((res) => reader.readEntries(res, () => res([])));
+      if (!batch.length) break;
+      for (const e of batch) await walkEntry(e, out);
+    }
+  }
+
+  async function ingest(files) {
+    const media = files.filter((f) => (isImg(f) || isVid(f)) && f.size > 0);
+    const skipped = files.length - media.length;
+    items = [];
+    let guessed = 0, heic = 0;
+
+    for (let i = 0; i < media.length; i++) {
+      const f = media[i];
+      const t = await captureTime(f);
+      if (!t.exact) guessed++;
+      if (heicish(f)) heic++;
+      items.push({
+        i, file: f, name: f.name, size: f.size, video: isVid(f),
+        at: t.at, exact: t.exact, keep: false, cluster: null, members: [],
+      });
+      if (i % 25 === 0 || i === media.length - 1) {
+        prog("p1", Math.round(((i + 1) / media.length) * 100));
+        $("n1").textContent = "Reading headers… " + (i + 1) + " of " + media.length;
+        await new Promise((r) => setTimeout(r));
+      }
+    }
+    items.sort((a, b) => a.at - b.at);
+
+    const heicNote = heic
+      ? ' <span class="warn">' + heic + " HEIC file" + (heic === 1 ? "" : "s") +
+        " — Safari on a Mac will decode these; Chrome will not.</span>"
+      : "";
+    $("n1").innerHTML =
+      "Read <b>" + items.length + "</b> photos and clips" +
+      (skipped ? " (" + skipped + " non-media files ignored)" : "") + ". " +
+      (guessed
+        ? '<span class="warn">' + guessed + " had no capture time in the file and fell back to the filesystem date.</span>"
+        : '<span class="good">Every one carried its own capture time.</span>') + heicNote;
+    show("c2"); setStep(2);
+    $("c2").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---- Trip window --------------------------------------------------------
+  function applyWindow() {
+    const from = new Date($("from").value + "T00:00:00");
+    const to = new Date($("to").value + "T23:59:59");
+    win = items.filter((it) => it.at >= from && it.at <= to);
+    const shaky = win.filter((it) => !it.exact).length;
+    const vids = win.filter((it) => it.video).length;
+
+    funnel("f2", [
+      { n: items.length, label: "on disk" },
+      { n: items.length - win.length, label: "outside the trip", cls: "cut" },
+      { n: win.length, label: "in the window", cls: "keep" },
+      { n: vids, label: "of those, video" },
+    ]);
+    const days = new Set(win.map((it) => dayKey(it.at)));
+    $("n2").innerHTML =
+      "Spread over <b>" + days.size + "</b> of the " + Object.keys(DAYS).length + " trip days." +
+      (shaky ? ' <span class="warn">' + shaky + " of these are here on a filesystem date, so check them in review.</span>" : "");
+    if (!win.length) { $("n2").innerHTML = '<span class="bad">Nothing falls inside that window. Widen it.</span>'; return; }
+    show("c3"); setStep(3);
+    $("c3").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---- Collapse -----------------------------------------------------------
+  async function collapse() {
+    const btn = $("collapse");
+    btn.disabled = true;
+    const gapS = Math.max(0, Number($("gap").value) || 0) * 1000;
+    const tol = Math.max(0, Number($("ham").value) || 0);
+    const target = Math.max(20, Number($("target").value) || 250);
+
+    for (let i = 0; i < win.length; i++) {
+      await measure(win[i]);
+      if (i % 5 === 0 || i === win.length - 1) {
+        prog("p3", Math.round(((i + 1) / win.length) * 100));
+        $("n3").textContent = "Measuring… " + (i + 1) + " of " + win.length;
+        await new Promise((r) => setTimeout(r));
+      }
+    }
+    const ok = win.filter((it) => !it.unreadable && it.hash);
+    const dead = win.length - ok.length;
+
+    // Union-find over a sliding window. Comparing every frame with every other
+    // is O(n²) and pointless — near-duplicates are, almost without exception,
+    // neighbours in time. Forty back covers a long burst without the quadratic.
+    const parent = ok.map((_, i) => i);
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    // The lower index always wins, so a group's root is its earliest frame and
+    // stays put — which is what makes it usable as the group's seed below.
+    const union = (a, b) => {
+      a = find(a); b = find(b);
+      if (a === b) return;
+      if (a < b) parent[b] = a; else parent[a] = b;
+    };
+
+    const tight = Math.min(6, tol);
+    for (let i = 0; i < ok.length; i++) {
+      for (let j = Math.max(0, i - 40); j < i; j++) {
+        const dt = ok[i].at - ok[j].at;
+        const hd = hamming(ok[i].hash, ok[j].hash);
+        // Two ways in: shot back-to-back and broadly alike (a burst, where the
+        // frames differ more than you would think), or near-identical earlier
+        // the same day (the same view shot again on the way back down). The
+        // second rule is held to one day on purpose — two frames that hash
+        // alike a week apart are a coincidence, not a duplicate.
+        const near = (dt <= gapS && hd <= tol) ||
+                     (hd <= tight && dayKey(ok[i].at) === dayKey(ok[j].at));
+        if (!near) continue;
+        // Chain guard. Without it A~B, B~C, C~D merges A with D even when the
+        // two have nothing in common, and one slow pan swallows an afternoon:
+        // a new frame has to resemble the frame the group formed around, not
+        // merely the neighbour that let it in.
+        if (hamming(ok[i].hash, ok[find(j)].hash) > tol + 4) continue;
+        union(i, j);
+      }
+    }
+
+    const groups = new Map();
+    ok.forEach((it, i) => {
+      const r = find(i);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(it);
+    });
+
+    // Sharpness is scale-dependent, so it is ranked within its own group rather
+    // than compared across the trip: the sharpest frame of a dim caldera is
+    // still the one to keep, even if every beach shot beats it outright.
+    const keepers = [];
+    for (const g of groups.values()) {
+      g.sort((a, b) => score(b) - score(a));
+      const best = g[0];
+      best.members = g;
+      best.dupes = g.length - 1;
+      keepers.push(best);
+    }
+    keepers.sort((a, b) => a.at - b.at);
+
+    // Cap by day rather than globally, so a photogenic afternoon cannot eat the
+    // whole short list and leave a travel day with nothing.
+    const byDay = new Map();
+    keepers.forEach((k) => {
+      const d = dayKey(k.at);
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(k);
+    });
+    const perDay = Math.max(6, Math.ceil(target / Math.max(1, byDay.size)));
+    shortlist = [];
+    for (const [, list] of byDay) {
+      const ranked = list.slice().sort((a, b) => score(b) - score(a)).slice(0, perDay);
+      shortlist.push(...ranked);
+    }
+    shortlist.sort((a, b) => a.at - b.at);
+    shortlist.forEach((it, i) => { it.sid = sheetId(i); });
+
+    funnel("f3", [
+      { n: win.length, label: "in the window" },
+      { n: dead, label: "unreadable", cls: dead ? "cut" : "" },
+      { n: ok.length - keepers.length, label: "duplicate frames", cls: "cut" },
+      { n: keepers.length, label: "distinct moments" },
+      { n: shortlist.length, label: "short list", cls: "keep" },
+    ]);
+    const biggest = keepers.reduce((m, k) => Math.max(m, k.dupes), 0);
+    $("n3").innerHTML =
+      "Collapsed to <b>" + keepers.length + "</b> distinct moments" +
+      (biggest ? " — the largest burst was " + (biggest + 1) + " frames" : "") + ". " +
+      "Capped at " + perDay + " per day for the short list." +
+      (dead ? ' <span class="warn">' + dead + " could not be decoded here.</span>" : "");
+
+    btn.disabled = false;
+    buildSheets();
+    show("c4"); setStep(4);
+    $("c4").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Deliberately blunt: focus first, then don't reward a frame that is half
+  // blown sky, then break ties toward more pixels. Video gets a small nudge so
+  // a clip is not knocked out by a marginally sharper still of the same thing.
+  function score(it) {
+    const s = Math.log10(1 + (it.sharp || 0)) * 20;
+    const c = (it.clip || 0) * 60;
+    const px = Math.log10(1 + (it.w || 0) * (it.h || 0)) * 2;
+    return s - c + px + (it.video ? 4 : 0);
+  }
+
+  const sheetId = (i) =>
+    String.fromCharCode(65 + Math.floor(i / PER_SHEET)) + pad2((i % PER_SHEET) + 1);
+
+  // ---- Contact sheets -----------------------------------------------------
+  // Twenty-five frames to a sheet. A vision model reads a labelled grid as
+  // happily as it reads 25 separate uploads, and a 250-frame short list becomes
+  // ten images instead of 250 — which is the whole reason this pass is cheap
+  // enough to actually run.
+  function buildSheets() {
+    sheets = [];
+    const n = Math.ceil(shortlist.length / PER_SHEET);
+    for (let s = 0; s < n; s++) {
+      const rows = Math.ceil(Math.min(PER_SHEET, shortlist.length - s * PER_SHEET) / SHEET_COLS);
+      const c = document.createElement("canvas");
+      c.width = SHEET_COLS * CELL;
+      c.height = rows * (CELL + LABEL_H);
+      sheets.push({ name: "sheet-" + String.fromCharCode(65 + s) + ".jpg", canvas: c });
+    }
+    $("n4").innerHTML =
+      "<b>" + shortlist.length + "</b> frames on <b>" + sheets.length + "</b> sheet" +
+      (sheets.length === 1 ? "" : "s") + ", labelled " + (shortlist[0] || {}).sid +
+      " to " + (shortlist[shortlist.length - 1] || {}).sid + ".";
+  }
+
+  // Centre-crop rather than stretch. A squashed frame is a frame the model is
+  // asked to judge the composition of after someone else has changed it.
+  function drawCover(ctx, img, x, y, size) {
+    const side = Math.min(img.width, img.height);
+    ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, x, y, size, size);
+  }
+
+  // The cells are drawn from thumbnails that are already decoded, but an <img>
+  // assigned a data URL is not paintable on the tick it is assigned — so the
+  // export waits for every one of them rather than shipping empty boxes.
+  async function renderSheets() {
+    const loaded = await Promise.all(shortlist.map((it) => new Promise((res) => {
+      const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = it.thumb;
+    })));
+    sheets.forEach((sh, s) => {
+      const ctx = sh.canvas.getContext("2d");
+      ctx.fillStyle = "#0b1320";
+      ctx.fillRect(0, 0, sh.canvas.width, sh.canvas.height);
+      for (let i = 0; i < PER_SHEET; i++) {
+        const idx = s * PER_SHEET + i;
+        const it = shortlist[idx];
+        if (!it) break;
+        const x = (i % SHEET_COLS) * CELL, y = Math.floor(i / SHEET_COLS) * (CELL + LABEL_H);
+        if (loaded[idx]) drawCover(ctx, loaded[idx], x, y, CELL);
+        ctx.fillStyle = "#0b1320";
+        ctx.fillRect(x, y + CELL, CELL, LABEL_H);
+        ctx.fillStyle = "#ff8a52";
+        ctx.font = "bold 15px monospace";
+        ctx.fillText(it.sid + "  " + clock(it.at) + (it.video ? "  VID" : ""), x + 6, y + CELL + 15);
+      }
+    });
+  }
+
+  function download(name, url) {
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  const PROMPT = [
+    "I am culling photos from a trip to São Miguel in the Azores. The attached",
+    "contact sheets each hold 25 frames in a 5-across grid, labelled underneath",
+    "with an ID and the time it was taken.",
+    "",
+    "I have also attached reference photos: the first is Alex, the second is",
+    "Jackie. Use them to tell whether either of us is in a frame.",
+    "",
+    "Score every labelled frame. Return ONLY a JSON array, no prose, one object",
+    "per frame:",
+    "",
+    '  {"id":"A01","people":2,"us":2,"quality":4,"keep":5,"why":"short reason"}',
+    "",
+    "  people   how many people are visible at all (0 if none)",
+    "  us       how many of Alex and Jackie you can identify, 0-2. Only count a",
+    "           face you would actually bet on; a distant back-of-head is 0.",
+    "  quality  1-5 on the picture as a picture: composition, light, is the",
+    "           subject clear. Ignore resolution, the thumbnails are all small.",
+    "  keep     1-5, would this earn a place in a gallery of about 80 frames",
+    "           from a ten-day trip. Weight a good photo of us above a good",
+    "           photo of scenery, and mark down anything repetitive: if three",
+    "           frames are the same lake from the same angle, only one scores high.",
+    "  why      one short clause, in plain words, on what it is",
+    "",
+    "Cover every ID on every sheet. If a cell is unreadable, still emit it with",
+    'keep 1 and why "unreadable".',
+  ].join("\n");
+
+  // ---- The model's verdict ------------------------------------------------
+  // Merged in, never trusted outright. Anything it did not mention keeps its
+  // local score, and every one of its calls is visible on the tile so a wrong
+  // "that isn't you" is one click to overrule.
+  function applyVerdict() {
+    const raw = $("verdict").value.trim();
+    if (!raw) { $("n4b").innerHTML = '<span class="bad">Nothing pasted.</span>'; return; }
+    let arr;
+    try {
+      const m = raw.match(/\[[\s\S]*\]/);
+      arr = JSON.parse(m ? m[0] : raw);
+      if (!Array.isArray(arr)) throw new Error("not an array");
+    } catch (e) {
+      $("n4b").innerHTML = '<span class="bad">That would not parse as JSON (' + e.message + ").</span>";
+      return;
+    }
+    const byId = new Map(shortlist.map((it) => [it.sid, it]));
+    let hit = 0, us = 0;
+    const unknown = [];
+    for (const v of arr) {
+      const id = String(v && v.id || "").trim().toUpperCase();
+      const it = byId.get(id);
+      // A row addressed to an ID that is not on any sheet means the model
+      // invented one, or this JSON belongs to an earlier run. Either way it is
+      // worth saying out loud rather than dropping on the floor.
+      if (!it) { unknown.push(id || "(no id)"); continue; }
+      hit++;
+      it.ai = {
+        people: Number(v.people) || 0,
+        us: Math.max(0, Math.min(2, Number(v.us) || 0)),
+        quality: Number(v.quality) || 0,
+        keep: Number(v.keep) || 0,
+        why: String(v.why || "").slice(0, 120),
+      };
+      if (it.ai.us > 0) us++;
+    }
+    const missed = shortlist.length - hit;
+    $("n4b").innerHTML =
+      "Scored <b>" + hit + "</b> of " + shortlist.length + " frames; <b>" + us +
+      "</b> have one or both of you in them." +
+      (missed ? ' <span class="warn">' + missed + " were not mentioned and keep their local score only.</span>" : "") +
+      (unknown.length
+        ? ' <span class="warn">' + unknown.length + " row" + (unknown.length === 1 ? "" : "s") +
+          " referred to IDs that are not on these sheets (" + unknown.slice(0, 5).join(", ") +
+          (unknown.length > 5 ? ", …" : "") + ") — check you pasted this run's JSON.</span>"
+        : "");
+    openReview();
+  }
+
+  function skipAi() {
+    shortlist.forEach((it) => { it.ai = null; });
+    $("n4b").innerHTML = 'Going in without the vision pass — the "us" filter and the ' +
+      "balanced auto-pick will have nothing to work from, so this is a manual review.";
+    openReview();
+  }
+
+  // ---- Review -------------------------------------------------------------
+  function openReview() {
+    if (!shortlist.some((it) => it.keep)) autoPick();
+    show("c5"); setStep(5);
+    render();
+    $("c5").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const rank = (it) => (it.ai
+    ? it.ai.keep * 100 + it.ai.us * 30 + it.ai.quality * 8 + score(it) * 0.1
+    : score(it));
+
+  // A gallery that is 80 photographs of a lake is not a record of a trip you
+  // were both on. Two quotas: half the set has to have one of you in it, and
+  // every day that produced anything gets at least three frames.
+  function autoPick() {
+    const budget = Math.min(GALLERY_CAP, Math.max(20, Math.round(shortlist.length * 0.35)));
+    shortlist.forEach((it) => { it.keep = false; });
+
+    const byDay = new Map();
+    shortlist.forEach((it) => {
+      const d = dayKey(it.at);
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(it);
+    });
+    for (const list of byDay.values()) list.sort((a, b) => rank(b) - rank(a));
+
+    let taken = 0;
+    for (const list of byDay.values()) {
+      for (const it of list.slice(0, 3)) { it.keep = true; taken++; }
+    }
+    const wantUs = Math.round(budget * 0.5);
+    let haveUs = shortlist.filter((it) => it.keep && it.ai && it.ai.us > 0).length;
+    const usPool = shortlist.filter((it) => !it.keep && it.ai && it.ai.us > 0).sort((a, b) => rank(b) - rank(a));
+    for (const it of usPool) {
+      if (haveUs >= wantUs || taken >= budget) break;
+      it.keep = true; taken++; haveUs++;
+    }
+    const rest = shortlist.filter((it) => !it.keep).sort((a, b) => rank(b) - rank(a));
+    for (const it of rest) {
+      if (taken >= budget) break;
+      it.keep = true; taken++;
+    }
+  }
+
+  function render() {
+    const kept = shortlist.filter((it) => it.keep);
+    const keptUs = kept.filter((it) => it.ai && it.ai.us > 0).length;
+    const scored = shortlist.some((it) => it.ai);
+    funnel("f5", [
+      { n: shortlist.length, label: "short list" },
+      { n: kept.length, label: "keeping", cls: "keep" },
+      { n: scored ? keptUs : "—", label: "with you in it", cls: "us" },
+      { n: kept.filter((it) => it.video).length, label: "video" },
+      { n: new Set(kept.map((it) => dayKey(it.at))).size, label: "days covered" },
+    ]);
+
+    const host = $("days");
+    host.innerHTML = "";
+    const byDay = new Map();
+    shortlist.forEach((it) => {
+      const d = dayKey(it.at);
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(it);
+    });
+
+    for (const [d, list] of [...byDay.entries()].sort()) {
+      const shown = filterUs ? list.filter((it) => it.ai && it.ai.us > 0) : list;
+      if (!shown.length) continue;
+      const n = list.filter((it) => it.keep).length;
+      const row = document.createElement("div");
+      row.className = "dayrow";
+      row.innerHTML =
+        "<h3>" + d + " · " + (DAYS[d] || "off-itinerary") + "</h3>" +
+        '<span class="m' + (n ? "" : " zero") + '">' + n + " kept of " + list.length + "</span>";
+      host.appendChild(row);
+
+      const grid = document.createElement("div");
+      grid.className = "grid";
+      shown.forEach((it) => grid.appendChild(tile(it)));
+      host.appendChild(grid);
+    }
+
+    const emptyDays = Object.keys(DAYS).filter((d) => !(byDay.get(d) || []).some((it) => it.keep));
+    $("n5").innerHTML = emptyDays.length
+      ? '<span class="warn">Nothing kept for ' + emptyDays.join(", ") + ".</span>"
+      : '<span class="good">Every trip day has something.</span>';
+  }
+
+  function tile(it) {
+    const fig = document.createElement("figure");
+    fig.className = "tile " + (it.keep ? "keep" : "cut");
+    const img = document.createElement("img");
+    img.src = it.thumb; img.loading = "lazy"; img.alt = it.name;
+    fig.appendChild(img);
+
+    const badges = document.createElement("div");
+    badges.className = "badges";
+    const pill = (cls, txt, onClick) => {
+      const s = document.createElement("span");
+      s.className = "pill " + cls; s.textContent = txt;
+      if (onClick) { s.style.cursor = "zoom-in"; s.addEventListener("click", (e) => { e.stopPropagation(); onClick(); }); }
+      badges.appendChild(s);
+    };
+    pill("", it.sid);
+    if (it.video) pill("vid", "VIDEO");
+    if (it.ai && it.ai.us > 0) pill("us", it.ai.us === 2 ? "BOTH" : "ONE OF US");
+    if (it.ai) pill("sc", "keep " + it.ai.keep);
+    if (it.dupes) pill("dup", "+" + it.dupes, () => openCluster(it));
+    if (!it.exact) pill("dup", "date?");
+    fig.appendChild(badges);
+
+    const cap = document.createElement("figcaption");
+    cap.textContent = clock(it.at) + (it.ai && it.ai.why ? " · " + it.ai.why : " · " + it.name);
+    fig.appendChild(cap);
+
+    const kb = document.createElement("span");
+    kb.className = "kb";
+    kb.textContent = it.keep ? "✓" : "·";
+    fig.appendChild(kb);
+
+    fig.addEventListener("click", () => {
+      it.keep = !it.keep;
+      fig.className = "tile " + (it.keep ? "keep" : "cut");
+      kb.textContent = it.keep ? "✓" : "·";
+      const kept = shortlist.filter((x) => x.keep);
+      const scored = shortlist.some((x) => x.ai);
+      funnel("f5", [
+        { n: shortlist.length, label: "short list" },
+        { n: kept.length, label: "keeping", cls: "keep" },
+        { n: scored ? kept.filter((x) => x.ai && x.ai.us > 0).length : "—", label: "with you in it", cls: "us" },
+        { n: kept.filter((x) => x.video).length, label: "video" },
+        { n: new Set(kept.map((x) => dayKey(x.at))).size, label: "days covered" },
+      ]);
+    });
+    return fig;
+  }
+
+  // ---- Cluster inspector --------------------------------------------------
+  // The one place the automatic choice can be wrong in a way you would care
+  // about: the sharpest frame of a burst is not always the one where nobody
+  // blinked.
+  let clusterOf = null, clusterPick = null;
+  function openCluster(it) {
+    clusterOf = it;
+    clusterPick = it;
+    drawCluster();
+    $("lb").classList.add("open");
+  }
+  function drawCluster() {
+    $("lbBig").src = clusterPick.thumb;
+    $("lbMeta").textContent =
+      clusterOf.members.length + " frames collapsed here · " +
+      clock(clusterPick.at) + " · " + clusterPick.name +
+      " · focus " + Math.round(clusterPick.sharp || 0) +
+      " · clipped " + Math.round((clusterPick.clip || 0) * 100) + "%";
+    const strip = $("lbStrip");
+    strip.innerHTML = "";
+    clusterOf.members.forEach((m) => {
+      const im = new Image();
+      im.src = m.thumb;
+      im.className = m === clusterPick ? "on" : "";
+      im.addEventListener("click", () => { clusterPick = m; drawCluster(); });
+      strip.appendChild(im);
+    });
+  }
+
+  function swapCluster() {
+    if (!clusterOf || clusterPick === clusterOf) { $("lb").classList.remove("open"); return; }
+    const idx = shortlist.indexOf(clusterOf);
+    if (idx < 0) return;
+    clusterPick.members = clusterOf.members;
+    clusterPick.dupes = clusterOf.dupes;
+    clusterPick.sid = clusterOf.sid;
+    clusterPick.ai = clusterOf.ai;
+    clusterPick.keep = clusterOf.keep;
+    shortlist[idx] = clusterPick;
+    $("lb").classList.remove("open");
+    render();
+  }
+
+  // ---- Upload -------------------------------------------------------------
+  // The same path photos.html uses: resize in the browser, POST the data URL,
+  // and let the server hold the password. Video goes straight to Supabase and
+  // only its poster frame comes back through the function.
+  async function shrink(file) {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const draw = (edge) => {
+      const [w, h] = fitTo(bmp.width, bmp.height, edge);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(bmp, 0, 0, w, h);
+      return { url: c.toDataURL("image/jpeg", QUALITY), w, h };
+    };
+    const full = draw(MAX_EDGE), thumb = draw(THUMB_EDGE);
+    bmp.close && bmp.close();
+    return { full, thumb };
+  }
+
+  function captionFor(it) {
+    const place = DAYS[dayKey(it.at)] || "";
+    const why = it.ai && it.ai.why ? it.ai.why : "";
+    return [place, why].filter(Boolean).join(" · ").slice(0, 280);
+  }
+
+  function putVideo(path, file, onPct) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", SUPABASE_URL + "/storage/v1/object/" + BUCKET + "/" + path, true);
+      xhr.setRequestHeader("apikey", SUPABASE_KEY);
+      xhr.setRequestHeader("Authorization", "Bearer " + SUPABASE_KEY);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.setRequestHeader("x-upsert", "false");
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable && onPct) onPct(e.loaded / e.total); };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300)
+        ? resolve()
+        : reject(new Error("Supabase refused the video (" + xhr.status + ")."));
+      xhr.onerror = () => reject(new Error("Network error during the video upload."));
+      xhr.send(file);
+    });
+  }
+
+  const token = () => {
+    const b = crypto.getRandomValues(new Uint8Array(8));
+    return [...b].map((x) => x.toString(36).padStart(2, "0")).join("").slice(0, 16);
+  };
+
+  async function upload() {
+    const pw = $("pw").value;
+    if (!pw) { $("n6").innerHTML = '<span class="bad">The upload password is needed.</span>'; return; }
+    const by = $("by").value.trim();
+
+    // Newest first. The gallery lists by upload time, newest at the top, so
+    // sending the last day first leaves day one sitting at the top where it
+    // belongs — the trip reads forwards instead of backwards.
+    const queue = shortlist.filter((it) => it.keep).sort((a, b) => b.at - a.at);
+    if (!queue.length) { $("n6").innerHTML = '<span class="bad">Nothing is marked keep.</span>'; return; }
+
+    stopping = false;
+    $("startUp").disabled = true; $("stopUp").hidden = false;
+    let done = 0; const failed = [];
+
+    for (const it of queue) {
+      if (stopping) break;
+      const label = it.sid + " · " + it.name;
+      $("n6").innerHTML = "Uploading " + (done + 1) + " of " + queue.length + " — " + label;
+      try {
+        if (it.video) {
+          if (it.file.size > 50_000_000) throw new Error("over the 50 MB video ceiling");
+          const ext = (it.name.split(".").pop() || "mp4").toLowerCase();
+          if (!VIDEO_EXT[ext]) throw new Error("unsupported video type");
+          const tk = token();
+          await putVideo(VIDEO_PREFIX + "/" + tk + "." + ext, it.file, (frac) => {
+            prog("p6", Math.round(((done + frac) / queue.length) * 100));
+          });
+          const r = await fetch(API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              kind: "video", token: tk, ext, password: pw, by,
+              caption: captionFor(it), thumb: it.thumb,
+              w: it.w, h: it.h, dur: it.dur,
+            }),
+          });
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || "the server refused it");
+        } else {
+          const { full, thumb } = await shrink(it.file);
+          const r = await fetch(API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              password: pw, by, caption: captionFor(it),
+              image: full.url, thumb: thumb.url, w: full.w, h: full.h,
+            }),
+          });
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || "the server refused it");
+        }
+        it.uploaded = true;
+      } catch (e) {
+        failed.push(label + " — " + (e.message || e));
+      }
+      done++;
+      prog("p6", Math.round((done / queue.length) * 100));
+    }
+
+    $("startUp").disabled = false; $("stopUp").hidden = true;
+    const okN = done - failed.length;
+    $("n6").innerHTML =
+      "<b>" + okN + "</b> of " + queue.length + " loaded" + (stopping ? " (stopped early)" : "") + ". " +
+      (failed.length
+        ? '<span class="bad">' + failed.length + " failed:</span><br>" + failed.slice(0, 12).join("<br>")
+        : '<span class="good">Open the gallery to see them.</span>') +
+      ' <a href="./photos.html" style="color:var(--glacier)">Photos →</a>';
+  }
+
+  // ---- Wiring -------------------------------------------------------------
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach((e) =>
+    drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add("hot"); }));
+  ["dragleave", "drop"].forEach((e) =>
+    drop.addEventListener(e, () => drop.classList.remove("hot")));
+  drop.addEventListener("drop", async (ev) => {
+    ev.preventDefault();
+    const out = [];
+    const entries = [...ev.dataTransfer.items]
+      .map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry())
+      .filter(Boolean);
+    if (entries.length) { for (const e of entries) await walkEntry(e, out); }
+    else out.push(...ev.dataTransfer.files);
+    if (out.length) ingest(out);
+  });
+
+  $("pickBtn").addEventListener("click", () => $("pickDir").click());
+  $("pickFilesBtn").addEventListener("click", () => $("pickFiles").click());
+  $("pickDir").addEventListener("change", (e) => ingest([...e.target.files]));
+  $("pickFiles").addEventListener("change", (e) => ingest([...e.target.files]));
+
+  $("applyWindow").addEventListener("click", applyWindow);
+  $("collapse").addEventListener("click", collapse);
+
+  $("dlSheets").addEventListener("click", async () => {
+    $("n4").textContent = "Drawing the sheets…";
+    await renderSheets();
+    sheets.forEach((sh, i) =>
+      setTimeout(() => download(sh.name, sh.canvas.toDataURL("image/jpeg", 0.85)), i * 350));
+    $("n4").innerHTML = "Downloading <b>" + sheets.length + "</b> sheet" +
+      (sheets.length === 1 ? "" : "s") + " — the browser may ask to allow multiple files.";
+  });
+
+  $("dlManifest").addEventListener("click", () => {
+    const manifest = shortlist.map((it) => ({
+      id: it.sid, file: it.name, at: it.at.toISOString(), day: dayKey(it.at),
+      place: DAYS[dayKey(it.at)] || null, video: it.video,
+      collapsed: (it.dupes || 0) + 1,
+      focus: Math.round(it.sharp || 0), clipped: +(it.clip || 0).toFixed(3),
+      dateFromFile: !it.exact,
+    }));
+    download("manifest.json",
+      URL.createObjectURL(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" })));
+  });
+
+  $("copyPrompt").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(PROMPT); $("n4").textContent = "Prompt copied."; }
+    catch { window.prompt("Copy this:", PROMPT); }
+  });
+
+  $("skipAi").addEventListener("click", skipAi);
+  $("applyVerdict").addEventListener("click", applyVerdict);
+
+  $("fOnlyUs").addEventListener("click", () => { filterUs = true; render(); });
+  $("fAll").addEventListener("click", () => { filterUs = false; render(); });
+  $("autoPick").addEventListener("click", () => { autoPick(); render(); });
+  $("cutAll").addEventListener("click", () => { shortlist.forEach((it) => { it.keep = false; }); render(); });
+  $("toUpload").addEventListener("click", () => {
+    const n = shortlist.filter((it) => it.keep).length;
+    if (!n) { $("n5").innerHTML = '<span class="bad">Nothing is marked keep.</span>'; return; }
+    show("c6"); setStep(6);
+    $("n6").innerHTML = "<b>" + n + "</b> ready. The gallery holds " + GALLERY_CAP + " items in total.";
+    $("c6").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  $("lbClose").addEventListener("click", () => $("lb").classList.remove("open"));
+  $("lbKeep").addEventListener("click", swapCluster);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") $("lb").classList.remove("open");
+  });
+
+  $("startUp").addEventListener("click", upload);
+  $("stopUp").addEventListener("click", () => { stopping = true; });
+
+  window.addEventListener("beforeunload", (e) => {
+    if (items.length && !shortlist.every((it) => !it.keep || it.uploaded)) {
+      e.preventDefault(); e.returnValue = "";
+    }
+  });
+})();
+</script>
+</body>
+</html>
