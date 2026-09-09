@@ -5,10 +5,16 @@
  * are the whole value and a rewrite would risk them for no user-visible gain.
  * So React's only job here is mounting the board.
  *
- * NO SIGN-IN. This board is open to anyone with the URL, by decision: it holds
- * names and office numbers, which is wall-map information. The consequence is
- * that the URL permits writing as well as reading, so keep `schema-auth-
- * enforce.sql` UNRUN — it would drop the anonymous access this depends on.
+ * NO SIGN-IN, and now not even the option of one. Accounts were the problem
+ * rather than the protection: people were being asked to sign in and still not
+ * seeing the current status. The board holds names and office numbers, which is
+ * wall-map information, so it takes one shared password instead — see gate.js,
+ * which is honest about not being a security boundary.
+ *
+ * That means `schema-auth-enforce.sql` must stay UNRUN, and if it was ever run,
+ * `schema-anon-restore.sql` puts back the anonymous access this depends on.
+ * Without those policies the board loads, shows the empty default layout, and
+ * reports "Offline — not saved" — which looks exactly like losing the roster.
  *
  * Because there's no signed-in identity, "who changed this" comes from a name
  * the user sets once, kept in localStorage. It's a courtesy label for the `by`
@@ -21,6 +27,7 @@ import { store } from "../../../shared/store.js";
 import { mountBoard } from "./board.js";
 import { createSync } from "./persist.js";
 import { BASIS_LABEL } from "./basis.js";
+import { PassGate } from "./gate.js";
 
 /* Shared, not per-user: a board where each person saw only their own
    assignments would be useless. */
@@ -118,4 +125,6 @@ function Board() {
   return <div ref={hostRef} />;
 }
 
-createRoot(document.getElementById("root")).render(<Board />);
+createRoot(document.getElementById("root")).render(
+  <PassGate><Board /></PassGate>
+);

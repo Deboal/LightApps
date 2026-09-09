@@ -249,29 +249,63 @@ what's in the file would leave the rest behind for the next load to restore.
 | `src/board.js` | The board: ~600 lines of vanilla DOM, to-scale rendering, drag-drop. |
 | `src/basis.js` | The design basis as data, plus `buildGroups()`. |
 | `src/persist.js` | Supabase sync — split writes, ready gate, revision check. |
+| `src/gate.js` | The one shared password. Not a security boundary; see above. |
 
 The board is **deliberately not React**. The geometry and drag-drop are the
 whole value; a rewrite would risk them for nothing the user would see. React's
 only jobs are auth and mounting.
 
-## No sign-in — deliberate
+## One shared password, not sign-in
 
-This app does **not** use the shared `AuthGate`. It holds names and office
-numbers, which is wall-map information, so the sign-in friction wasn't worth it.
+This app does **not** use the shared `AuthGate`. Accounts turned out to be the
+problem rather than the protection: people were being asked to sign in and still
+not seeing the current status. It holds names and office numbers — wall-map
+information — so it takes one shared word instead, `src/gate.js`.
+
+**It is not a security boundary, and must not be described as one.** The
+password is compiled into the published bundle, so anyone who opens the page can
+read it, and the data sits behind the same anonymous Postgres policies it always
+did — reachable with the publishable key whether or not anyone passed the gate.
+It is one word between a stray visitor and a board they'd be confused by. That
+trade was chosen deliberately; if the board ever holds something that matters,
+this is the thing to replace, not to patch.
+
+What it does buy: no email, no magic link, no per-user rows, nothing to
+administer, and everyone who gets in has identical full access — which is what
+makes the board shared. It's remembered per browser in `localStorage`, so each
+device is asked once. Clearing site data asks again.
 
 Two consequences to be clear about:
 
-- **The URL permits writing, not just reading.** Anyone with the link can
-  reassign or clear the board. `Save file` exports are the only undo.
-- **`schema-auth-enforce.sql` must stay UNRUN.** It drops the anonymous
-  policies this app depends on and would break it completely. If a future app in
-  the hub needs enforcement, this one has to move to its own project or grow a
-  sign-in first.
+- **The URL plus the word permits writing, not just reading.** Anyone who has
+  both can reassign or clear the board. `Save file` exports are the only undo.
+- **`schema-auth-enforce.sql` must stay UNRUN.** It drops the anonymous policies
+  this app depends on. With them missing the board still loads, reads nothing,
+  draws the empty default layout and reports *"Offline — not saved"* — which
+  looks exactly like losing the roster, and **signing in does not fix it**,
+  because the board never asks anyone to sign in. `schema-anon-restore.sql` puts
+  them back.
 
 Because there's no signed-in identity, the `by` field on an assignment comes
 from a name the user sets via the **Who am I?** button, kept in `localStorage`.
 It's a courtesy label so changes are readable later — nothing verifies it, and
 it is not a credential. Rows written anonymously have a null `owner`.
+
+### If people report an empty or stale board
+
+In order of likelihood:
+
+1. **Anonymous access was revoked** — someone ran `schema-auth-enforce.sql`.
+   Symptom: the sync badge reads *Offline — not saved* or *Not saved*. Fix:
+   run `schema-anon-restore.sql`.
+2. **The rows aren't marked shared.** Rows written before the `visibility`
+   column existed default to `'private'`, which matches neither
+   `owner = auth.uid()` (an anonymous write leaves `owner` null) nor
+   `visibility = 'shared'`. The restore script also repairs the board's own
+   rows.
+3. **They're on a different app.** `endure`, `gear-tracker`, `cocodona-coach`
+   and `gba` do use `AuthGate` and will ask for sign-in. That is correct for
+   them and unrelated to this board.
 
 ## Room and person ids
 
