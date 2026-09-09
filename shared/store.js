@@ -2,18 +2,26 @@
 //
 // store("my-app")            -> per-user PRIVATE data (each signed-in user sees only their own)
 // store("my-app", {shared:true}) -> SHARED data (all signed-in users see it; owner recorded)
+// store("my-app", {shared:true, anon:true})
+//                            -> SHARED, and always read/written as the anon
+//                               role even if the visitor is signed in to
+//                               another app on this hub. For an app with no
+//                               sign-in of its own: see sbAnon in client.js
+//                               for why carrying somebody else's session is a
+//                               trap rather than a bonus.
 //
 // Backing table app_data(app, collection, doc_id, data jsonb, owner uuid, visibility text).
 // Row-level security enforces the private/shared rule; this helper just sets `visibility`.
 
-import { sb, configured } from "./client.js";
+import { sb, sbAnon, configured } from "./client.js";
 
 const TABLE = "app_data";
 const BUCKET = "hub-files";
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
-function client() {
-  if (!sb) throw new Error("App Hub backend not configured — set SUPABASE_URL and SUPABASE_KEY in shared/config.js");
-  return sb;
+function client(anonOnly) {
+  const c = anonOnly ? sbAnon : sb;
+  if (!c) throw new Error("App Hub backend not configured — set SUPABASE_URL and SUPABASE_KEY in shared/config.js");
+  return c;
 }
 
 export { configured };
@@ -21,7 +29,8 @@ export { configured };
 export function store(appName, opts = {}) {
   if (!appName) throw new Error("store(appName): appName is required");
   const visibility = opts.shared ? "shared" : "private";
-  const tbl = () => client().from(TABLE);
+  const anonOnly = !!opts.anon;
+  const tbl = () => client(anonOnly).from(TABLE);
 
   return {
     async list(collection) {
@@ -59,27 +68,28 @@ export function store(appName, opts = {}) {
     },
 
     subscribe(onChange) {
-      if (!sb) return { unsubscribe() {} };
-      const ch = sb.channel("hub:" + appName)
+      const c = anonOnly ? sbAnon : sb;
+      if (!c) return { unsubscribe() {} };
+      const ch = c.channel("hub:" + appName)
         .on("postgres_changes", { event: "*", schema: "public", table: TABLE, filter: "app=eq." + appName }, () => onChange())
         .subscribe();
-      ch.unsubscribe = () => sb.removeChannel(ch);
+      ch.unsubscribe = () => c.removeChannel(ch);
       return ch;
     },
 
     async uploadFile(file, prefix = "") {
       const safe = (file.name || "file").replace(/[^\w.\-]+/g, "_");
       const path = `${appName}/${prefix}${Date.now()}-${safe}`;
-      const { error } = await client().storage.from(BUCKET).upload(path, file);
+      const { error } = await client(anonOnly).storage.from(BUCKET).upload(path, file);
       if (error) throw error;
-      const { data } = client().storage.from(BUCKET).getPublicUrl(path);
+      const { data } = client(anonOnly).storage.from(BUCKET).getPublicUrl(path);
       return { name: file.name, mime: file.type || "", size: file.size, url: data.publicUrl, path };
     },
 
     async removeFile(path) {
-      if (path) await client().storage.from(BUCKET).remove([path]);
+      if (path) await client(anonOnly).storage.from(BUCKET).remove([path]);
     },
 
-    raw: () => client(),
+    raw: () => client(anonOnly),
   };
 }

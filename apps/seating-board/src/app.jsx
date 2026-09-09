@@ -30,8 +30,16 @@ import { BASIS_LABEL } from "./basis.js";
 import { PassGate } from "./gate.js";
 
 /* Shared, not per-user: a board where each person saw only their own
-   assignments would be useless. */
-const db = store("b100-seating", { shared: true });
+   assignments would be useless.
+ *
+ * anon:true is load-bearing, not tidiness. This board has no sign-in, but the
+ * hub's Supabase session is shared across the origin, so a visitor who signed
+ * in to another app here arrived as the `authenticated` role instead of `anon`
+ * -- a different role, a different set of policies, and an empty board. Ted saw
+ * exactly that: "I refreshed, signed in and no names still," while an unsigned
+ * browser showed the full roster. The board now always reads and writes as
+ * anon, so every visitor gets the same board whatever they are signed in to. */
+const db = store("b100-seating", { shared: true, anon: true });
 
 const HEADER = "PJ Helicopters &middot; 903 Langley Rd, Red Bluff &middot; Basis: Rev1 full status set 4-9-26";
 const WHO_KEY = "seating-board:whoami";
