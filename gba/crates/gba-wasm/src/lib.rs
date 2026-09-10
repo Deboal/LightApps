@@ -398,3 +398,20 @@ pub extern "C" fn gba_link_ewram(unit: u32) -> *const u8 {
         None => core::ptr::null(),
     }
 }
+
+/// The program counter, for finding out where a stuck game is stuck.
+///
+/// A frozen screen and a game politely waiting look identical from outside.
+/// This tells them apart: sample it over a few thousand frames and a spin
+/// shows up as a handful of addresses repeated forever.
+#[no_mangle]
+pub extern "C" fn gba_pc() -> u32 {
+    emulator().map(|e| e.cpu.r[15]).unwrap_or(0)
+}
+
+/// Cycles the CPU still owes for a long BIOS call it is being billed for in
+/// slices. Non-zero for many frames means it is stuck inside one.
+#[no_mangle]
+pub extern "C" fn gba_stall() -> u32 {
+    emulator().map(|e| e.cpu.stall).unwrap_or(0)
+}
