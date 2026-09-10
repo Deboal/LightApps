@@ -515,6 +515,61 @@ one-frame race between a battle ending and the damage that ended it cannot add
 up to a false stop. If the flag turns out to be wrong, the failure is a run
 that halts and says so — not a fainted party.
 
+### Where it can go
+
+The runner used to be able to walk in a small circle and nothing else. It had
+no map, so "walk to the Pokémon Center" was not a thing it could be asked:
+healing meant the player walked the trip once and it replayed the trail, and a
+run on a cartridge with no recorded route simply stopped when HP ran low.
+
+The walls were never a secret. `tools/gen-world.mjs` turns the decompilation's
+layout data into two files — `assets/world.json` and `assets/world.bin` — and
+the whole of Kanto costs **about 28 KB gzipped**, against a bundle already over
+four hundred:
+
+| | raw | gzipped |
+|---|---|---|
+| `world.bin` — 242,469 tiles, two bits each (walkable, grass) | 59.3 KB | 13.9 KB |
+| `world.json` — 425 maps, 1,294 warps, 120 connections, 19 Centers | 70.1 KB | 14.6 KB |
+
+With it loaded the trip is planned rather than remembered: the nearest Centre
+is searched for over the map graph, the walk there is pathfound from the game's
+own collision data, and the way back is to the exact tile the grind was
+interrupted on. It works for a Centre nobody has been shown.
+
+Two rules in that data are worth stating because both cost a run to learn.
+Collision alone is not walkability — a pond has collision zero, because Surf is
+meant to work there — so metatile *behaviours* are read too. And every Pokémon
+Center door in the game is a *solid* tile: the warp is what lets you through,
+not the collision. So a door is a wall to route around and a destination to
+step onto, and which one it is depends only on whether it is being aimed at.
+Conflating that with terrain plans a path into a tree in one direction and
+makes every Centre unreachable in the other; both happened.
+
+The atlas is generated, committed, and gated on the cartridge — it describes
+FireRed and LeafGreen and nothing else. On anything else it is not loaded and
+the recorded route is still there.
+
+### Writing a journey as a straight line
+
+`policy.js` answers one question per frame, which is the only shape a
+`requestAnimationFrame` loop allows. A trip does not fit in it: the harness
+writes one the way a person would describe it, with loops and early returns.
+
+`drive.js` bridges the two with generators. Where the harness wrote
+`machine.step(BTN.UP)` and then looked, a journey writes
+
+```js
+const state = yield BTN.UP;
+```
+
+and gets back the state after that frame. The driver turns such a generator
+into the `step(state) → { keys, done }` the frame loop already speaks, `yield*`
+lets one journey call another, and nothing has to be flattened into a state
+machine. `journey.js` is the harness's travel and heal routines moved over
+essentially unchanged, which is the point — the code that was debugged against
+a real cartridge is the code that runs in the tab.
+
 ## Playing it unattended
 
 The in-app runner above answers one question per frame — which button now — and

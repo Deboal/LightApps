@@ -7,6 +7,7 @@ import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 import { BTN, DPAD } from "./buttons.js";
 import { runner, previewOf } from "./policy.js";
+import { loadWorld } from "./world.js";
 import * as route from "./route.js";
 import * as autopilot from "./autopilot.js";
 
@@ -1092,15 +1093,20 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onCancel, onStop, o
           <span style={{ color: "var(--dim)", overflow: "hidden", textOverflow: "ellipsis" }}>
             {auto.phase === "battle"
               ? "fighting"
-              : auto.mode === "toNurse"
-                ? "→ Pokémon Center"
-                : auto.mode === "atNurse"
-                  ? "being healed"
-                  : auto.mode === "back"
-                    ? "→ back to the grass"
-                    : "looking for a fight"}
+              : auto.mode === "journey"
+                ? auto.trip === "travel"
+                  ? "→ the grass"
+                  : "→ Pokémon Center"
+                : auto.mode === "toNurse"
+                  ? "→ Pokémon Center"
+                  : auto.mode === "atNurse"
+                    ? "being healed"
+                    : auto.mode === "back"
+                      ? "→ back to the grass"
+                      : "looking for a fight"}
             {" · "}
             {auto.battles} battles
+            {auto.heals ? ` · ${auto.heals} heals` : ""}
             {auto.mon ? ` · ${auto.mon.name} Lv ${auto.mon.level} ${auto.mon.hp}/${auto.mon.maxHp}` : ""}
           </span>
           <span style={{ flex: 1 }} />
@@ -1124,7 +1130,7 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onCancel, onStop, o
 // model is not in the loop after that -- the emulator runs the plan locally,
 // so the only thing that can happen while nobody is watching is the thing on
 // screen here.
-function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecorded, onMarkNurse, onForget, onStart, onStop, onClose, blocked }) {
+function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, onRecord, onRecorded, onMarkNurse, onForget, onStart, onStop, onClose, blocked }) {
   const [prompt, setPrompt] = useState("");
   const [plan, setPlan] = useState(null);
   const [thinking, setThinking] = useState(false);
@@ -1139,7 +1145,14 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
     setError("");
     setPlan(null);
     try {
-      setPlan(await autopilot.compile(said, party));
+      // Where it could go, worked out here rather than remembered by the
+      // model: which routes are next door to *this* player, how much grass
+      // each has, and how far each is from a Pokémon Center.
+      const places =
+        atlas && position
+          ? atlas.placesNear(position.map).map((p) => ({ name: p.name, hops: p.hops, centre: p.centre, grass: p.tiles }))
+          : [];
+      setPlan(await autopilot.compile(said, party, places));
     } catch (problem) {
       setError(problem.message);
     } finally {
@@ -1164,11 +1177,13 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
         </p>
 
         {/* Recording the way to a Pokémon Center.
-            This is the alternative to modelling the world: rather than read
-            the map out of the ROM and pathfind, the player walks it once and
-            the trail is a path that is walkable by construction. The nurse is
-            not marked by hand -- the party is watched, and whoever heals it
-            is where the nurse is. */}
+            This was once the only way: rather than model the world, the player
+            walked the trip once and the trail was a path walkable by
+            construction. On FireRed and LeafGreen the atlas has replaced it --
+            the trip is planned now, and works for a Centre nobody has been
+            shown. It stays for the cartridges the atlas does not describe, and
+            because a route someone walked is still the more trustworthy of the
+            two on ground the map data gets wrong. */}
         {recording && (
           <div style={{ ...panel, padding: 14, marginBottom: 16 }}>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Recording the way</div>
@@ -1221,7 +1236,35 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
 
         {!recording && !blocked && !running && (
           <div style={{ ...panel, padding: 14, marginBottom: 16 }}>
-            {healRoute ? (
+            {atlas ? (
+              <>
+                <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                  It knows this game's maps. When the lead gets hurt it finds the
+                  nearest Pokémon Center, walks there fighting what it meets,
+                  heals, and comes back to the exact tile it left.
+                </div>
+                {/* Recording stays on offer. The planned trip is better almost
+                    everywhere, but a route someone actually walked is the more
+                    trustworthy of the two on ground the map data gets wrong --
+                    and taking the option away would mean a player who hits such
+                    a place has nothing left to try. */}
+                <div style={{ color: "var(--dim)", fontSize: 12, lineHeight: 1.5, marginTop: 10 }}>
+                  {healRoute
+                    ? `A ${healRoute.tiles.length}-tile route you walked is also saved. The planned trip is used instead.`
+                    : "If it ever gets the walk wrong, you can walk it yourself instead."}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <Button onClick={onRecord} style={{ fontSize: 13, padding: "8px 12px" }}>
+                    Record the way to a Pokémon Center
+                  </Button>
+                  {healRoute && (
+                    <Button onClick={onForget} style={{ fontSize: 13, padding: "8px 12px" }}>
+                      Forget it
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : healRoute ? (
               <>
                 <div style={{ fontSize: 13 }}>
                   It can heal — a {healRoute.tiles.length}-tile walk to a Pokémon
@@ -1239,8 +1282,9 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
             ) : (
               <>
                 <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  It cannot heal, so a run ends when HP runs low. Walk it to a
-                  Pokémon Center once and it can keep going.
+                  It cannot heal on this cartridge — there are no maps for it — so
+                  a run ends when HP runs low. Walk it to a Pokémon Center once and
+                  it can keep going.
                 </div>
                 <Button onClick={onRecord} style={{ width: "100%", padding: 10, marginTop: 10 }}>
                   Record the way to a Pokémon Center
@@ -1272,16 +1316,26 @@ function AutoPanel({ party, auto, route: healRoute, recording, onRecord, onRecor
                 <span style={{ color: "var(--dim)" }}>Doing</span>{" "}
                 {auto.phase === "battle"
                   ? "fighting"
-                  : auto.mode === "toNurse"
-                    ? "walking to the Pokémon Center"
-                    : auto.mode === "atNurse"
-                      ? "being healed"
-                      : auto.mode === "back"
-                        ? "walking back to the grass"
-                        : "looking for a fight"}
+                  : auto.mode === "journey"
+                    ? auto.trip === "travel"
+                      ? "walking to where this is meant to happen"
+                      : "on the round trip to a Pokémon Center"
+                    : auto.mode === "toNurse"
+                      ? "walking to the Pokémon Center"
+                      : auto.mode === "atNurse"
+                        ? "being healed"
+                        : auto.mode === "back"
+                          ? "walking back to the grass"
+                          : "looking for a fight"}
               </div>
               <div>
                 <span style={{ color: "var(--dim)" }}>Battles</span> {auto.battles}
+                {auto.heals ? (
+                  <>
+                    {" · "}
+                    <span style={{ color: "var(--dim)" }}>Heals</span> {auto.heals}
+                  </>
+                ) : null}
               </div>
               {mon && (
                 <div>
@@ -1595,6 +1649,13 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   const [party, setParty] = useState(null);
   const [world, setWorld] = useState(null);
   const [partyOpen, setPartyOpen] = useState(false);
+  // The map data, once and only for cartridges it describes. `world` above is
+  // a live readout of the running game; this is the atlas -- where the walls
+  // are, which doors lead where, and where the Pokémon Centers are. About
+  // 28 KB over the wire, fetched rather than bundled so it costs nothing to
+  // anyone who never opens the Auto panel.
+  const [atlas, setAtlas] = useState(null);
+  const atlasRef = useRef(null);
 
   // The AI player. As with the link session, the frame loop reads a ref and
   // never React state: `autoRef` holds the runner, the cartridge code it was
@@ -2040,6 +2101,33 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     }
   }, [code, romSha]);
 
+  // Fetch the atlas once, and only for a cartridge whose maps it describes.
+  // A FireRed map read as Emerald would be confidently and invisibly wrong, so
+  // `covers` gates it and everything downstream falls back to the recorded
+  // route when this stays null.
+  useEffect(() => {
+    if (!code) return undefined;
+    let alive = true;
+    // `assets/`, like the core. Relative to the page, which is served at
+    // /<name>/ -- the default here says the same thing, and it is spelled out
+    // because getting it wrong is a 404 that only a browser can see: every
+    // test that reads these files off disk passes either way.
+    loadWorld("assets/world")
+      .then((loaded) => {
+        if (!alive) return;
+        if (!loaded.covers(code)) return;
+        atlasRef.current = loaded;
+        setAtlas(loaded);
+      })
+      .catch(() => {
+        // No atlas is a working state, not a broken one: the player can still
+        // record a route by hand, which is what they did before this existed.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [code]);
+
   const forgetRoute = useCallback(() => {
     routeRef.current = null;
     setSavedRoute(null);
@@ -2048,8 +2136,24 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
   const startAuto = useCallback(
     (policy) => {
-      autoRef.current = { run: runner(policy, routeRef.current), frame: 0, code, slot: policy.slot || 0, mon: null };
-      setAuto({ policy, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null });
+      // The model names a map; the app works out which tile on it. Deciding
+      // "Route 6" is a judgement worth asking for, and picking the middle of
+      // its largest patch of grass is arithmetic that should never have been
+      // a model's job.
+      const atlasNow = atlasRef.current;
+      const spot =
+        atlasNow && policy.spotMap
+          ? (() => {
+              const place = atlasNow.meta.maps.find((m) => m.name === policy.spotMap);
+              return place ? atlasNow.grindSpot(place.g, place.n) : null;
+            })()
+          : null;
+      const withSpot = spot ? { ...policy, spot } : policy;
+      autoRef.current = {
+        run: runner(withSpot, routeRef.current, atlasNow),
+        frame: 0, code, slot: policy.slot || 0, mon: null,
+      };
+      setAuto({ policy: withSpot, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null });
       autoResume.current = baseSpeed.current;
       baseSpeed.current = 8;
       applySpeed();
@@ -2268,6 +2372,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
                   ...prev,
                   phase: running.run.phase,
                   mode: running.run.mode,
+                  heals: running.run.heals,
+                  trip: running.run.trip,
                   battles: running.run.battles,
                   mon: running.mon,
                   menuBlind: running.run.menuBlind,
@@ -2741,6 +2847,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       {autoOpen && (
         <AutoPanel
           party={party}
+          atlas={atlas}
+          position={world && world.position}
           auto={auto}
           route={savedRoute}
           recording={recording}

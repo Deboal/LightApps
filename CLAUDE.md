@@ -82,6 +82,17 @@ Verify the result by loading it as a `file://` URL with all network requests
 blocked. `offline/` is gitignored; the file is a build artifact to hand over,
 not something to commit.
 
+## Generated data an app carries
+
+`apps/gba/assets/world.*` is the worked example: map data derived from a
+pokefirered checkout by `tools/gen-world.mjs`, committed rather than built.
+Netlify has no checkout and should not need one, and the input never changes.
+The rules that make this safe rather than sloppy: the generator is in the repo
+and takes the source path as an argument, the output is small enough to read
+the size of in a diff (about 28 KB gzipped), and the app gates on it — a
+cartridge the data does not describe loads no data and falls back, rather than
+navigating Emerald with Kanto's walls.
+
 ## Server-side secrets
 
 `shared/config.js` holds public values only. Anything that must not reach a

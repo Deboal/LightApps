@@ -43,7 +43,7 @@ async function reason(error) {
  * Turn a sentence into a policy. Throws with something readable on failure —
  * this is shown to the person who typed the sentence.
  */
-export async function compile(prompt, party) {
+export async function compile(prompt, party, places = []) {
   if (!sb) {
     throw new Error("This build has no backend configured, so there is nothing to ask.");
   }
@@ -53,7 +53,11 @@ export async function compile(prompt, party) {
   }
 
   const result = await sb.functions.invoke("gba-policy", {
-    body: { prompt, party: brief(party) },
+    // The places are the app's contribution to the decision. The model knows
+    // these games; it does not know which routes are next door to this player
+    // or how far each one is from a Pokémon Center, and choosing where to
+    // grind without that is choosing by memory instead of by map.
+    body: { prompt, party: brief(party), places },
   });
   if (result.error) throw new Error(await reason(result.error));
   if (!result.data || !result.data.policy) {
