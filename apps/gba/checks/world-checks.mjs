@@ -160,5 +160,72 @@ check("the atlas is for FireRed and LeafGreen and nothing else",
     doors.has("15,6"), `${doors.size} doors`);
 }
 
+// -- the grass patch, which is what a grind is confined to --------------------
+{
+  const from = { x: 4, y: 21 };            // where the Charizard save stands
+  const patch = W.grassPatch(3, 24, from);
+  check("a patch is found from a tile in the grass", patch && patch.tiles.size > 20,
+    patch ? `${patch.tiles.size} tiles` : "none");
+  check("every tile in the patch is grass",
+    [...patch.tiles].every((k) => {
+      const [x, y] = k.split(",").map(Number);
+      return W.gridOf(3, 24).isGrass(x, y);
+    }));
+  check("the patch is the reachable part, not all the grass on the map",
+    patch.tiles.size < W.grassOn(3, 24).length,
+    `${patch.tiles.size} of ${W.grassOn(3, 24).length}`);
+
+  // The measurement behind replacing the leash: a four-tile box around the
+  // grind tile is mostly not grass, so a walk obeying it still drifts out.
+  let box = 0;
+  let inside = 0;
+  for (let dy = -4; dy <= 4; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      box++;
+      if (patch.has(from.x + dx, from.y + dy)) inside++;
+    }
+  }
+  check("the old four-tile leash box was mostly not grass", inside / box < 0.5,
+    `${inside} of ${box} tiles, ${Math.round((100 * inside) / box)}%`);
+
+  // Route 6's grass comes in separate patches. A leash cannot tell them
+  // apart; a flood fill can, and must.
+  const other = W.grassPatch(3, 24, { x: 12, y: 30 });
+  check("a separate patch of grass is a separate patch",
+    other && other.tiles.size !== patch.tiles.size && !patch.has(other.seed.x, other.seed.y),
+    other ? `${other.tiles.size} vs ${patch.tiles.size}` : "none");
+
+  // Set going from the path beside the grass, it should still find the patch.
+  const beside = W.grassPatch(3, 24, { x: 8, y: 21 });
+  check("a run started off the grass still finds the patch beside it",
+    beside && beside.tiles.size > 0 && W.gridOf(3, 24).isGrass(beside.seed.x, beside.seed.y));
+
+  check("a map with no grass has no patch", W.grassPatch(9, 1, { x: 7, y: 5 }) === null);
+}
+
+// -- the nurse, read rather than assumed --------------------------------------
+{
+  check("every Centre knows where its nurse is", W.meta.centres.every((c) => c.nurse));
+  check("the inside of a Centre knows which Centre it is",
+    (() => { const c = W.centreInside(9, 1); return !!(c && c.nurse); })());
+  check("a route is not the inside of a Pokémon Center", W.centreInside(3, 24) === null);
+
+  // The tile to stand on is the nearest walkable one below her, and it must
+  // exist everywhere -- otherwise the walk arrives and finds a wall.
+  const stands = W.meta.centres.map((c) => {
+    const m = W.meta.maps[c.map];
+    const g = W.gridOf(m.g, m.n);
+    const [nx, ny] = c.nurse;
+    for (let d = 1; d <= 4; d++) if (g && g.at(nx, ny + d)) return { name: m.name, x: nx, y: ny + d };
+    return { name: m.name, x: null, y: null };
+  });
+  check("every nurse can be stood in front of", stands.every((s) => s.x !== null),
+    stands.filter((s) => s.x === null).map((s) => s.name).join(", "));
+  // And the reason this is derived at all: two Centres are not at (7,4).
+  const odd = stands.filter((s) => !(s.x === 7 && s.y === 4));
+  check("and two of them are not where the old constant said", odd.length === 2,
+    odd.map((s) => `${s.name} ${s.x},${s.y}`).join("; "));
+}
+
 console.log(failures === 0 ? "\nall good" : `\n${failures} failed`);
 process.exit(failures === 0 ? 0 : 1);

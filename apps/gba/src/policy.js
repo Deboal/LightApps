@@ -223,6 +223,12 @@ export function runner(policy, route = null, world = null) {
   // happens, before a single blade of grass is walked into.
   const spot = (canPlan && policy && policy.spot) || null;
   let travelled = !spot;
+  // The patch of grass this grind belongs in, worked out from the map once
+  // the anchor is known. `patchAt` is the anchor it was computed for, so a
+  // heal trip that comes back to a different tile recomputes rather than
+  // keeping a patch from somewhere else.
+  let patch = null;
+  let patchAt = null;
   // Set when a battle is left because something is wrong with the Pokémon
   // that is out -- hurt, spent, or knocked out. Acted on once the battle is
   // over and there is somewhere to walk to.
@@ -644,10 +650,37 @@ export function runner(policy, route = null, world = null) {
         return { keys: 0 };
       }
 
-      // Too far from where it started: head back instead of wandering on.
-      // The bigger of the two offsets is the one worth closing, and closing
-      // it is one direction, not a plan.
-      if (here && home) {
+      // Stay in the grass, which is not the same thing as staying near where
+      // it started.
+      //
+      // The leash below is a square box around one anchor tile, and grass is
+      // not square: four tiles in every direction from the middle of Route 6
+      // is only about a third tall grass, and the rest is path, ledge and
+      // trees. A walk that respected the leash perfectly still drifted
+      // steadily out of the grass, because two thirds of what the leash
+      // permitted was never grass at all. With the map loaded the patch
+      // itself is knowable, so it is used instead of a radius.
+      if (here && canPlan && home) {
+        const anchor = `${home.map.mapGroup}/${home.map.mapNum}:${home.x},${home.y}`;
+        if (patchAt !== anchor) {
+          patchAt = anchor;
+          patch = world.grassPatch(home.map.mapGroup, home.map.mapNum, home);
+        }
+        if (patch && !patch.has(here.x, here.y)) {
+          // Already out of it. Walking back is a path, not a direction --
+          // pressing one way hopefully is how it ended up here.
+          mode = "journey";
+          tripKind = "travel";
+          trip = drive(() =>
+            goTo(world, { ...home.map, x: patch.seed.x, y: patch.seed.y }, { hops: 4 })
+          );
+          return { keys: 0 };
+        }
+      }
+
+      // Without a map, the leash is still the best available answer: head
+      // back the moment the anchor is more than a few tiles away.
+      if (here && home && !patch) {
         const dx = here.x - home.x;
         const dy = here.y - home.y;
         if (Math.abs(dx) > LEASH || Math.abs(dy) > LEASH) {
@@ -671,12 +704,32 @@ export function runner(policy, route = null, world = null) {
         stuckFor = 0;
       }
       sinceTurn++;
+
+      // And never take a step that leaves the patch. This is the half that
+      // actually keeps it in the grass: the check above notices having left,
+      // which is a repair, while this makes leaving not happen. Turning early
+      // is free -- the encounter rate depends on steps taken in grass, not on
+      // which way they are pointed.
+      let going = DIRS[dir];
+      if (patch && here) {
+        const leaves = (key) =>
+          !patch.has(
+            here.x + (key & BTN.RIGHT ? 1 : key & BTN.LEFT ? -1 : 0),
+            here.y + (key & BTN.DOWN ? 1 : key & BTN.UP ? -1 : 0)
+          );
+        for (let tried = 0; tried < DIRS.length && leaves(going); tried++) {
+          dir = (dir + 1) % DIRS.length;
+          going = DIRS[dir];
+          sinceTurn = 0;
+        }
+      }
+
       // B is held the whole time: B is running, encounters are counted per
       // step, so this is close to twice the fights per minute for nothing --
       // and on a save without the Running Shoes it simply does nothing. What
       // is deliberately absent is A: an A press in the overworld talks to
       // whoever is standing nearby, and this is meant to be left alone.
-      return { keys: DIRS[dir] | BTN.B };
+      return { keys: going | BTN.B };
     },
   };
 }

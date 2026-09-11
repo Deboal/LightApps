@@ -203,12 +203,70 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
     }),
     doorsOf: () => new Set(["7,8"]),
     mapRoute: () => [],
+    // She is at (7,2) here, as in sixteen of the game's nineteen Centres. The
+    // counter at (7,3) is solid, so the tile to stand on is (7,4) -- found by
+    // searching down from her rather than by knowing the answer.
+    centreInside: () => ({ nurse: [7, 2] }),
   };
   const { result } = play(() => healInside(atlas), machine, { limit: 60000 });
   check("the nurse heals the party", m.state.party[0].hp === 40);
   check("and the player gets back out of the Center",
     result.ok && m.state.mapNum === 5, `${result.ok ? "ok" : result.reason} on map ${m.state.mapNum}`);
   check("without talking to her again forever", apresses < 200, `${apresses} A presses`);
+}
+
+// -- the grind stays in its patch of grass ------------------------------------
+//
+// The live version of this is `gba/tools/autoplay/measure-grind.mjs`, which
+// walks a real cartridge for six minutes and counts. This is the same
+// question asked of a toy map so it can be answered without a ROM: put the
+// runner in a small patch of grass surrounded by open ground it is free to
+// walk onto, and see whether it ever does.
+{
+  const { runner } = await import("../src/policy.js");
+
+  // A 3x3 patch of grass in the middle of a 15x15 field. Everything is
+  // walkable, so nothing but the patch rule keeps it in.
+  const isGrass = (x, y) => x >= 6 && x <= 8 && y >= 6 && y <= 8;
+  const grid = {
+    width: 15, height: 15, name: "Field", indoor: false,
+    at: (x, y) => x >= 0 && y >= 0 && x < 15 && y < 15,
+    isGrass,
+  };
+  const tiles = new Set();
+  for (let y = 6; y <= 8; y++) for (let x = 6; x <= 8; x++) tiles.add(`${x},${y}`);
+  const atlas = {
+    covers: () => true,
+    gridOf: () => grid,
+    doorsOf: () => new Set(),
+    mapRoute: () => [],
+    centreInside: () => null,
+    nearestCentre: () => null,
+    grassPatch: () => ({ seed: { x: 7, y: 7 }, tiles, has: (x, y) => tiles.has(`${x},${y}`) }),
+  };
+
+  const m = overworld({ open: grid.at, x: 7, y: 7, step: 8 });
+  m.state.party = [{ name: "TEST", hp: 40, maxHp: 40, level: 5, record: { moves: [{ id: 52, pp: 20 }] } }];
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0, stopBelowHp: 0 }, null, atlas);
+
+  let left = 0;
+  let moved = 0;
+  let last = "7,7";
+  for (let frame = 0; frame < 20000; frame++) {
+    const out = run.step({
+      frame, party: m.state.party, inBattle: false, battle: null,
+      position: { x: m.state.x, y: m.state.y, map: { mapGroup: 3, mapNum: 24 } },
+    });
+    if (out.done) break;
+    m.press(out.keys);
+    const at = `${m.state.x},${m.state.y}`;
+    if (at !== last) { moved++; last = at; }
+    if (!tiles.has(at)) left++;
+  }
+  check("the grind never steps out of the grass", left === 0, `${left} frames outside`);
+  // Confinement is worthless if it achieves it by standing still: encounters
+  // are counted per step taken in grass, so it has to keep walking.
+  check("and keeps walking rather than standing still", moved > 30, `${moved} steps`);
 }
 
 console.log(failures === 0 ? "\nall good" : `\n${failures} failed`);

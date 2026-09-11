@@ -546,6 +546,33 @@ step onto, and which one it is depends only on whether it is being aimed at.
 Conflating that with terrain plans a path into a tree in one direction and
 makes every Centre unreachable in the other; both happened.
 
+Two things the atlas replaced outright, both because a constant was standing
+in for something the data already knew:
+
+**Where to walk while looking for a fight.** This used to be a leash — wander
+freely within four tiles of where you started, turn back past that. It is the
+wrong shape, and measurably so: the nine-by-nine box around the grind tile on
+Route 6 is **33% tall grass**, and the rest is path, ledge and trees. So a walk
+that respected the leash perfectly still drifted out of the grass, which is
+what it did. The patch is knowable — flood-fill the walkable grass from the
+anchor — and a step that would leave it is simply not taken. Same save, same
+tile, six minutes each (`tools/autoplay/measure-grind.mjs`):
+
+| | leash | grass patch |
+|---|---|---|
+| frames spent on grass | 21.2% | **100%** |
+| frames outside the patch | 5,751 | **0** |
+| furthest from the start tile | 9 tiles | 4 tiles |
+| battles per minute of play | 1.7 | **5.1** |
+| how it ended | *stopped: "walked for a minute and a half without a single encounter"* | still grinding |
+
+**Where the nurse is.** This was the tile (7,4), which is right in sixteen of
+the nineteen Centres. Indigo Plateau and One Island have different layouts and
+put her at (13,10) and (5,2), so the constant walks into a wall there and
+reports never being healed. She is an object event in the map's own data, so
+the atlas carries her position and the standing tile is found by searching down
+from her until the floor is walkable.
+
 The atlas is generated, committed, and gated on the cartridge — it describes
 FireRed and LeafGreen and nothing else. On anything else it is not loaded and
 the recorded route is still there.

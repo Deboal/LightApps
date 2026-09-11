@@ -296,11 +296,19 @@ export function* healInside(world, { limit = 60 * 60 * 4 } = {}) {
   const inside = state && state.position;
   if (!inside) return { ok: false, reason: "lost the player at the door" };
 
+  // Where she is, from the map's own object events. This was the tile (7,4)
+  // for a long time and that is right in sixteen of the nineteen Centres --
+  // Indigo Plateau and One Island have different layouts and put her
+  // somewhere else entirely, so a constant would walk into a wall there and
+  // report never being healed.
+  const where = counterOf(world, inside.map);
+  if (!where) return { ok: false, reason: "no nurse on this map" };
+
   const walked = yield* goTo(world, {
     mapGroup: inside.map.mapGroup,
     mapNum: inside.map.mapNum,
-    x: 7,
-    y: 4,
+    x: where.x,
+    y: where.y,
   }, { hops: 6 });
   if (!walked.ok) return { ok: false, reason: `could not reach the counter: ${walked.reason}` };
 
@@ -331,6 +339,26 @@ export function* healInside(world, { limit = 60 * 60 * 4 } = {}) {
     yield* tap(BTN.A, { press: 4, then: 30 });
   }
   return { ok: false, reason: "healed, but could not get back out" };
+}
+
+/**
+ * The tile to stand on to talk to the nurse.
+ *
+ * You do not stand next to her: the counter between you is solid, so the spot
+ * is the nearest walkable tile straight below her, and the conversation
+ * happens across it. Searching downwards rather than assuming two tiles is
+ * what makes this work in the Centres whose counters are a different depth.
+ */
+function counterOf(world, map) {
+  const centre = world.centreInside(map.mapGroup, map.mapNum);
+  if (!centre || !centre.nurse) return null;
+  const grid = world.gridOf(map.mapGroup, map.mapNum);
+  if (!grid) return null;
+  const [nx, ny] = centre.nurse;
+  for (let down = 1; down <= 4; down++) {
+    if (grid.at(nx, ny + down)) return { x: nx, y: ny + down, nurse: { x: nx, y: ny } };
+  }
+  return null;
 }
 
 /**

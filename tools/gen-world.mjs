@@ -178,7 +178,19 @@ out.centres = out.maps
       if (outside.in) continue; // the 2F stairs
       const door = outside.w[id];
       if (!door) continue;
-      return { map: i, outside: dest, door: [door[0], door[1]] };
+      // The nurse, from the map's own object events rather than from a
+      // constant. Every Centre in the game puts her at (7,2), which is
+      // exactly the kind of fact that is true until it isn't -- and reading
+      // it costs nothing when the file is already open.
+      const nurse = (maps[i].json.object_events || []).find(
+        (o) => o.graphics_id === "OBJ_EVENT_GFX_NURSE"
+      );
+      return {
+        map: i,
+        outside: dest,
+        door: [door[0], door[1]],
+        nurse: nurse ? [nurse.x, nurse.y] : null,
+      };
     }
     return null;
   })

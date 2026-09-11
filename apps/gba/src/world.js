@@ -177,6 +177,59 @@ export function world(meta, tiles) {
     return best;
   };
 
+  /**
+   * The patch of tall grass a tile belongs to, as a set of "x,y".
+   *
+   * This is what a grind should be confined to, and the reason the leash it
+   * replaces was never right: a leash is a square box around one anchor tile,
+   * and grass is not square. Four tiles in every direction from the middle of
+   * Route 6 includes the path, the ledge and the trainer standing on it, so a
+   * walk that respects the leash perfectly still wanders steadily out of the
+   * grass -- which is exactly what it did.
+   *
+   * Flood-filled over walkable grass, so it is the reachable patch rather
+   * than every grass tile on the map: the grass across a river is not
+   * somewhere this walk can get to, and including it would make "am I still
+   * in my patch" answer yes from the wrong side of the water.
+   */
+  const grassPatch = (mapGroup, mapNum, from, { limit = 4000 } = {}) => {
+    const grid = gridOf(mapGroup, mapNum);
+    if (!grid) return null;
+    const isPatch = (x, y) => grid.at(x, y) && grid.isGrass(x, y);
+
+    // Start from `from` if it is grass, otherwise the nearest grass tile that
+    // is: a run set going from the path beside the grass should still get the
+    // patch it is plainly meant to work.
+    let seed = isPatch(from.x, from.y) ? { x: from.x, y: from.y } : null;
+    if (!seed) {
+      const near = pathToAny(grid, from, grassOn(mapGroup, mapNum));
+      if (!near) return null;
+      seed = near.target;
+    }
+
+    const patch = new Set([`${seed.x},${seed.y}`]);
+    const queue = [seed];
+    for (let head = 0; head < queue.length && patch.size < limit; head++) {
+      const { x, y } = queue[head];
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const key = `${nx},${ny}`;
+        if (patch.has(key) || !isPatch(nx, ny)) continue;
+        patch.add(key);
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    return { seed, tiles: patch, has: (x, y) => patch.has(`${x},${y}`) };
+  };
+
+  /** The Pokémon Center whose inside this map is, if it is one. */
+  const centreInside = (mapGroup, mapNum) => {
+    const index = indexOf(mapGroup, mapNum);
+    if (index < 0) return null;
+    return meta.centres.find((c) => c.map === index) || null;
+  };
+
   /** Grass on this map, as tiles — where a grind can actually happen. */
   const grassOn = (mapGroup, mapNum) => {
     const grid = gridOf(mapGroup, mapNum);
@@ -254,7 +307,7 @@ export function world(meta, tiles) {
 
   return {
     meta, covers, mapAt, gridOf, mapRoute, doorsOf, nearestCentre,
-    grassOn, place, indexOf, placesNear, grindSpot,
+    grassOn, place, indexOf, placesNear, grindSpot, grassPatch, centreInside,
   };
 }
 
