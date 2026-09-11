@@ -718,7 +718,7 @@ export function runner(policy, route = null, world = null) {
           // fixed would otherwise loop all night, so the same reads that sent
           // it are checked on the way back.
           const back = party[slot];
-          if (back && (back.fainted || (movesOf(back) && !bestMove(back)))) {
+          if (back && (back.fainted || spent(back))) {
             return {
               keys: 0,
               done: true,

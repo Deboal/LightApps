@@ -10,7 +10,7 @@
 // far better failure than a script that presses hopefully for an hour.
 
 import { BTN, game } from "./machine.mjs";
-import { bestMove } from "../../../apps/gba/src/policy.js";
+import { bestMove, spent } from "../../../apps/gba/src/policy.js";
 import { grid, path as planPath, pathToAny, layoutOf } from "./maps.mjs";
 
 /** Frames to hold a direction before deciding it is blocked. A walking step
@@ -54,7 +54,10 @@ export function throughBattle(machine, { limit = 60000, runBelow = 0.3, prefer =
     const fighter = (state.party && state.party[active]) || (state.party && state.party[0]);
     const share = fighter && fighter.maxHp ? fighter.hp / fighter.maxHp : 1;
     const want = fighter && bestMove(fighter);
-    const flee = running || share < runBelow || !want;
+    // `spent`, not `!want`: a party record that failed its checksum this frame
+    // is not a Pokemon out of PP, and fleeing on one is throwing away a battle
+    // that was being won.
+    const flee = running || share < runBelow || (fighter && spent(fighter));
 
     if (!battle || !battle.menu) {
       machine.step(beat ? BTN.A : 0);
