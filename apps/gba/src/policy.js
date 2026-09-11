@@ -339,6 +339,19 @@ export function runner(policy, route = null, world = null) {
     get heals() {
       return heals;
     },
+    /**
+     * The patch of grass this grind is confined to, or null if it is walking
+     * on the leash instead.
+     *
+     * Worth saying out loud rather than only in a log. The two produce very
+     * different behaviour -- one stays in the grass, the other wanders out of
+     * it -- and from the outside they are the same character walking around.
+     * A screenshot of the wrong one is indistinguishable from a stale tab, and
+     * that cost a round trip of "I cannot reproduce this".
+     */
+    get confined() {
+      return patch ? { tiles: patch.tiles.size, x: patch.seed.x, y: patch.seed.y } : null;
+    },
     /** What the journey under way is for, when `mode` is "journey": "heal" on
      *  the round trip to a Centre, "travel" on the way to the grinding spot.
      *  The readout says which, because a player watching their character walk

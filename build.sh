@@ -5,6 +5,16 @@ set -euo pipefail
 [ -d node_modules ] || npm install
 ESBUILD=./node_modules/.bin/esbuild
 
+# Which build this is, so a running page can say so.
+#
+# Every app ships as one bundle behind a service worker that deliberately does
+# not take over a live tab, so a browser can be a deploy or two behind and look
+# identical. That turns "it still does the thing you fixed" into a question
+# nobody can answer from the outside. A commit is short enough to read off a
+# screen and exact enough to settle it.
+BUILD_ID=$(git rev-parse --short HEAD 2>/dev/null || date -u +%Y%m%d-%H%M)
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then BUILD_ID="$BUILD_ID+"; fi
+
 rm -rf public && mkdir -p public
 names=()
 
@@ -36,6 +46,7 @@ for dir in apps/*/; do
   "$ESBUILD" "${dir}src/app.jsx" \
     --bundle --minify --format=iife --platform=browser --target=es2018 \
     --define:process.env.NODE_ENV='"production"' \
+    --define:__BUILD_ID__="\"$BUILD_ID\"" \
     --jsx=transform --loader:.js=jsx --outfile="public/$name/bundle.js"
   cp "${dir}"*.html "public/$name/"
 

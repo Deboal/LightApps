@@ -1107,6 +1107,9 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onCancel, onStop, o
             {" · "}
             {auto.battles} battles
             {auto.heals ? ` · ${auto.heals} heals` : ""}
+            {auto.confined
+              ? ` · ${auto.confined.tiles}-tile patch`
+              : " · roaming (no patch)"}
             {auto.mon ? ` · ${auto.mon.name} Lv ${auto.mon.level} ${auto.mon.hp}/${auto.mon.maxHp}` : ""}
           </span>
           <span style={{ flex: 1 }} />
@@ -1336,6 +1339,16 @@ function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, 
                     <span style={{ color: "var(--dim)" }}>Heals</span> {auto.heals}
                   </>
                 ) : null}
+              </div>
+              <div>
+                <span style={{ color: "var(--dim)" }}>Staying in</span>{" "}
+                {auto.confined ? (
+                  `a ${auto.confined.tiles}-tile patch of grass`
+                ) : (
+                  <span style={{ color: "var(--accent2)" }}>
+                    nothing — no grass patch here, so it is wandering on a leash
+                  </span>
+                )}
               </div>
               {mon && (
                 <div>
@@ -2374,6 +2387,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
                   mode: running.run.mode,
                   heals: running.run.heals,
                   trip: running.run.trip,
+                  confined: running.run.confined,
                   battles: running.run.battles,
                   mon: running.mon,
                   menuBlind: running.run.menuBlind,
@@ -2625,6 +2639,13 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     setSyncing(false);
   };
 
+  // Which build this page is. The service worker deliberately does not take
+  // over a live tab -- swapping the emulator core out from under a running
+  // game is worse than waiting -- so a browser can be a deploy or two behind
+  // and look exactly the same. Printing it turns "it still does the thing you
+  // fixed" from an argument into a comparison.
+  const build = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
+
   const status = syncing
     ? "syncing…"
     : !user
@@ -2644,6 +2665,9 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         <span>{fps} fps</span>
         <span style={{ color: backup === "error" ? "var(--accent2)" : undefined }}>{status}</span>
         {note && <span style={{ color: "var(--accent)" }}>{note}</span>}
+        <span style={{ marginLeft: "auto", opacity: 0.5, fontVariantNumeric: "tabular-nums" }} title="Which build this tab is running">
+          {build}
+        </span>
         <span style={{ flex: 1 }} />
         <button
           onClick={() => {
