@@ -45,6 +45,16 @@ const DIRS = [BTN.LEFT, BTN.DOWN, BTN.RIGHT, BTN.UP];
  *  it is exceeded. */
 const LEASH = 4;
 
+/** Fights' worth of damage to keep in hand before setting off for a Centre.
+ *
+ *  Three rather than one, because the walk is not free: it has battles in it,
+ *  and leaving at the point of actually needing a heal means arriving in worse
+ *  shape than when the decision was made -- or not arriving. Three of the
+ *  worst hits seen here is enough to survive the trip and a surprise on the
+ *  way, and little enough that a Pokémon shrugging off everything on the route
+ *  never goes at all. */
+const FIGHTS_OF_MARGIN = 3;
+
 /** Frames spent at the counter before giving up on being healed. The nurse
  *  takes a few seconds of text and animation; a minute means the route ended
  *  somewhere that is not a nurse. */
@@ -266,6 +276,20 @@ export function runner(policy, route = null, world = null) {
   // that is out -- hurt, spent, or knocked out. Acted on once the battle is
   // over and there is somewhere to walk to.
   let needsHeal = false;
+  // Why the next trip to a Centre was booked. Reported, because "it keeps
+  // going back to the Pokemon Center" is a complaint nobody can act on: the
+  // reasons are several, they look identical from outside, and the one that
+  // mattered turned out twice to be something other than the obvious one.
+  let healBecause = null;
+  // The worst damage seen in a single battle, which is what "can I take
+  // another fight" actually depends on. A fixed fraction of max HP cannot
+  // know it: 80% is barely a scratch to something losing three HP a battle
+  // and not nearly enough for something losing thirty.
+  let worstHit = 0;
+  let hpEnteringBattle = null;
+  // Frames spent in a battle the target is healthy for and somebody else is
+  // fighting. See the check on it below -- one frame means nothing.
+  let wrongFighter = 0;
   // Frames spent in a battle with a controller pointer this build does not
   // recognise. Without the menus the runner can only mash A, and A takes the
   // first move -- which looks exactly like the move picker choosing badly.
@@ -291,7 +315,12 @@ export function runner(policy, route = null, world = null) {
     const key = (x, y) => `${x},${y}`;
     const came = new Map([[key(from.x, from.y), null]]);
     const order = [{ x: from.x, y: from.y }];
-    for (let head = 0; head < order.length; head++) {
+    // Bounded by the patch's own size. The patch is a finite set of tiles, so
+    // this is belt and braces -- but a flood fill that trusts someone else's
+    // `has` is a flood fill that hangs the tab if that someone is ever wrong,
+    // and a grind loop is not a place to find that out.
+    const limit = (patch.tiles ? patch.tiles.size : 0) + 1;
+    for (let head = 0; head < order.length && order.length <= limit; head++) {
       const at = order[head];
       for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
         const nx = at.x + dx;
@@ -349,6 +378,16 @@ export function runner(policy, route = null, world = null) {
      * A screenshot of the wrong one is indistinguishable from a stale tab, and
      * that cost a round trip of "I cannot reproduce this".
      */
+    /** Why the last trip to a Pokémon Center was made. "It keeps going back"
+     *  is a complaint nobody can act on without this. */
+    get healBecause() {
+      return healBecause;
+    },
+    /** The hardest hit seen in a single battle here, which is what the
+     *  decision to leave is actually measured against. */
+    get worstHit() {
+      return worstHit;
+    },
     get confined() {
       return patch ? { tiles: patch.tiles.size, x: patch.seed.x, y: patch.seed.y } : null;
     },
@@ -383,8 +422,49 @@ export function runner(policy, route = null, world = null) {
       }
       blind = 0;
       const mon = party[slot];
+
+      // The Pokémon being trained has to be the one that fights, because only
+      // the one that fights earns experience.
+      //
+      // Someone else being out is usually a faint -- the game sends out the
+      // next one by itself -- and that is an errand, not a misconfiguration:
+      // it books a trip to a Centre and carries on. What is a
+      // misconfiguration is the target standing there perfectly healthy while
+      // something else does the fighting, because nothing here can reorder a
+      // party. Left alone that books a trip after every battle, forever, and
+      // the target never gains a level.
+      //
+      // Two seconds of it before saying so. One frame is a torn read, and
+      // ending a run on one of those is the mistake this file has already
+      // made once.
+      const out = state.inBattle && state.battle && Number.isInteger(state.battle.active)
+        ? state.battle.active : null;
+      if (out !== null && out !== slot && party[out] && mon.hp > 0 && !mon.fainted) {
+        if (++wrongFighter > 120) {
+          return {
+            keys: 0,
+            done: true,
+            reason:
+              `${mon.name} is in slot ${slot + 1}, but ${party[out].name} is the one ` +
+              `fighting — and only the one that fights earns experience. Put ` +
+              `${mon.name} first in your party and start again.`,
+          };
+        }
+      } else {
+        wrongFighter = 0;
+      }
       const share = mon.maxHp ? mon.hp / mon.maxHp : 0;
       ticks++;
+
+      // How hard the fights here actually hit, which is what "can I take
+      // another one" depends on. Watched rather than assumed: HP on entering
+      // a battle against HP on leaving it.
+      if (state.inBattle) {
+        if (hpEnteringBattle === null) hpEnteringBattle = mon.hp;
+      } else if (hpEnteringBattle !== null) {
+        worstHit = Math.max(worstHit, hpEnteringBattle - mon.hp);
+        hpEnteringBattle = null;
+      }
 
       // -- the flag against reality ---------------------------------------
       if (lastHp !== null && mon.hp < lastHp && !state.inBattle) damageUnseen++;
@@ -490,16 +570,22 @@ export function runner(policy, route = null, world = null) {
         // hurt is not a reason to stop, it is a reason to go to a Centre --
         // and a Centre restores PP as well as HP, so running dry has exactly
         // the same remedy as running low.
-        const leave =
-          mode !== "grind" ||
-          // `spent`, not `!bestMove`: an unreadable record is not an empty
-          // one, and treating it as one is a trip to a Centre for nothing.
-          spent(fighter) ||
-          fighterShare < fleeBelowHp ||
-          (activeSlot !== slot && canHeal);
+        // Why to be somewhere else, as a reason rather than a boolean. Being
+        // hurt is not among them: that is a reason to go to a Centre, not to
+        // stop, and a Centre restores PP as well as HP so running dry has the
+        // same remedy as running low.
+        const why =
+          mode !== "grind" ? "the walk was interrupted"
+            // `spent`, not `!bestMove`: an unreadable record is not an empty
+            // one, and treating it as one is a trip to a Centre for nothing.
+            : spent(fighter) ? "out of PP"
+              : fighterShare < fleeBelowHp ? "too hurt to keep fighting"
+                : activeSlot !== slot && canHeal
+                  ? `${party[slot] ? party[slot].name : "it"} is not the one fighting`
+                  : null;
 
-        if (leave) {
-          if (canHeal) needsHeal = true;
+        if (why) {
+          if (canHeal) { needsHeal = true; healBecause = healBecause || why; }
           // RUN is the fourth option, and the cursor reaches it the way the
           // move cursor does -- by XOR, one axis per press, checked rather
           // than counted. This replaces a blind B/DOWN/RIGHT/A sequence that
@@ -633,7 +719,7 @@ export function runner(policy, route = null, world = null) {
           trip = null;
           tripKind = null;
           home = here || home;
-          if (was === "heal") heals++;
+          if (was === "heal") { heals++; healBecause = null; }
           else travelled = true;
           return { keys: 0 };
         }
@@ -752,7 +838,19 @@ export function runner(policy, route = null, world = null) {
       // Hurt, spent, or knocked out. `needsHeal` on its own is enough: a
       // party at full HP with no PP left has nothing wrong that HP can show,
       // and a Centre fixes it all the same.
-      if (canHeal && here && (needsHeal || (share < healBelowHp && !everyoneWhole(party)))) {
+      // Enough left to fight, or not.
+      //
+      // A fraction of max HP cannot answer that on its own: 80% is barely a
+      // scratch to something losing three HP a battle, and nowhere near enough
+      // for something losing thirty. So the test is whether what is left
+      // covers a few more of the fights this place has actually been giving,
+      // plus the walk, which has fights in it too. `healBelowHp` stays as the
+      // floor underneath it, for the case where nothing has hit hard enough
+      // yet to have been measured.
+      const cannotTakeMore = worstHit > 0 && mon.hp <= worstHit * FIGHTS_OF_MARGIN;
+      if (cannotTakeMore && !healBecause) healBecause = "not enough left for another fight";
+      if (share < healBelowHp && !everyoneWhole(party) && !healBecause) healBecause = "hurt";
+      if (canHeal && here && (needsHeal || cannotTakeMore || (share < healBelowHp && !everyoneWhole(party)))) {
         needsHeal = false;
         walkStuck = 0;
         if (canPlan) {
