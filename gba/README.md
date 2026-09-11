@@ -566,6 +566,31 @@ tile, six minutes each (`tools/autoplay/measure-grind.mjs`):
 | battles per minute of play | 1.7 | **5.1** |
 | how it ended | *stopped: "walked for a minute and a half without a single encounter"* | still grinding |
 
+**How to walk around inside it.** Confining the walk to the patch was only
+half an answer. The walk itself was still four directions cycled on a timer,
+and a timer that turns whenever the next step would leave the grass produces a
+walk that paces one row of it forever:
+
+```
+4,21 3,21 2,21 2,22 3,22 4,22 5,22 6,22 7,22 6,22 5,22 4,22 3,22 2,22 3,22 ...
+```
+
+Twenty-seven frames per step against a walking step's sixteen, so nearly half
+the time went on turning on the spot, inside a fifty-one-tile patch it never
+saw most of. The fix is to stop choosing directions and start choosing
+*destinations*: breadth-first to the furthest tile this sweep has not aimed at
+yet, then walk that leg. Furthest rather than nearest because a near target is
+a one-tile hop, and a hop is a turn, and a turn is eight frames in which no
+step is taken. Direction changes over three minutes went from 24 to 5.
+
+**Getting back when it ends up somewhere else.** Ledges are one-way and are
+not modelled, so a patch can quietly contain a tile that drops the player onto
+the route below. This used to end the run, with a message that said in as many
+words that it could find its way back and was not going to. It walks back now —
+the same walk the trip to a Centre makes, in the other direction — and only
+gives up after six of them, because a patch that keeps throwing the player out
+is a loop rather than a walk.
+
 **Where the nurse is.** This was the tile (7,4), which is right in sixteen of
 the nineteen Centres. Indigo Plateau and One Island have different layouts and
 put her at (13,10) and (5,2), so the constant walks into a wall there and

@@ -229,6 +229,19 @@ export function runner(policy, route = null, world = null) {
   // keeping a patch from somewhere else.
   let patch = null;
   let patchAt = null;
+  // The leg currently being walked inside the patch, and which tiles this
+  // sweep has already aimed at. Cycling through four directions and turning
+  // whenever the next step would leave the grass produces a walk that paces
+  // one row of it forever -- measured on Route 6 as twenty-seven frames per
+  // step against a walking step's sixteen, so nearly half the time was spent
+  // turning on the spot inside a patch of fifty-one tiles it never saw most
+  // of. Walking a planned leg to a chosen tile instead is smooth, covers the
+  // patch, and takes more steps per minute, which is the only thing an
+  // encounter rate depends on.
+  let leg = null;
+  let legAt = 0;
+  let swept = new Set();
+  let strays = 0;
   // Set when a battle is left because something is wrong with the Pokémon
   // that is out -- hurt, spent, or knocked out. Acted on once the battle is
   // over and there is somewhere to walk to.
@@ -242,6 +255,51 @@ export function runner(policy, route = null, world = null) {
   let walk = null;
   let healTicks = 0;
   let walkStuck = 0;
+
+  /**
+   * A leg to walk inside the patch: a path to the furthest tile this sweep
+   * has not aimed at yet.
+   *
+   * Furthest rather than nearest on purpose. Nearest gives a one-tile hop,
+   * and a hop means a turn, and a turn costs eight frames in which no step is
+   * taken; furthest gives a long straight-ish walk across the grass. Once
+   * every tile has been a target the sweep starts over, so the whole patch
+   * gets covered rather than one row of it.
+   */
+  const planLeg = (from) => {
+    if (!patch) return null;
+    const key = (x, y) => `${x},${y}`;
+    const came = new Map([[key(from.x, from.y), null]]);
+    const order = [{ x: from.x, y: from.y }];
+    for (let head = 0; head < order.length; head++) {
+      const at = order[head];
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        const nx = at.x + dx;
+        const ny = at.y + dy;
+        const k = key(nx, ny);
+        if (came.has(k) || !patch.has(nx, ny)) continue;
+        came.set(k, at);
+        order.push({ x: nx, y: ny });
+      }
+    }
+    // `order` is breadth-first, so the last reachable tile is the furthest.
+    let target = null;
+    for (let i = order.length - 1; i > 0 && !target; i--) {
+      if (!swept.has(key(order[i].x, order[i].y))) target = order[i];
+    }
+    if (!target) {
+      // Every tile has been a target; go round again.
+      swept = new Set();
+      target = order[order.length - 1];
+    }
+    if (!target || (target.x === from.x && target.y === from.y)) return null;
+    swept.add(key(target.x, target.y));
+    const tiles = [];
+    for (let at = target; at && !(at.x === from.x && at.y === from.y); at = came.get(key(at.x, at.y))) {
+      tiles.push(at);
+    }
+    return tiles.reverse();
+  };
 
   return {
     get phase() {
@@ -476,14 +534,38 @@ export function runner(policy, route = null, world = null) {
         here && home &&
         (here.map.mapGroup !== home.map.mapGroup || here.map.mapNum !== home.map.mapNum)
       ) {
+        // With a map, walking back is just a walk -- the same one the trip to
+        // a Pokémon Center makes, in the other direction. Stopping here used
+        // to be the answer and it was indefensible once the map was loaded:
+        // the reason it printed said, in as many words, that it could find its
+        // way back and was not going to.
+        //
+        // A ledge is the usual culprit. They are one-way and are not modelled,
+        // so the grass patch does not know that one of its tiles drops onto
+        // the route below.
+        if (canPlan) {
+          if (++strays > 6) {
+            return {
+              keys: 0,
+              done: true,
+              reason:
+                "Kept ending up off the map it was grinding on, six times over. " +
+                "Something here puts the player somewhere else -- most likely a " +
+                "ledge inside the patch -- and walking back into it would be a loop.",
+            };
+          }
+          mode = "journey";
+          tripKind = "travel";
+          leg = null;
+          trip = drive(() =>
+            goTo(world, { ...home.map, x: home.x, y: home.y }, { hops: 8 })
+          );
+          return { keys: 0 };
+        }
         return {
           keys: 0,
           done: true,
-          reason: canPlan
-            ? "Wandered off the map it was grinding on. It can find its way " +
-              "back, but a grind that leaves the grass on its own is one that " +
-              "has gone wrong somewhere."
-            : "Walked off the map it started on, and it has no way back yet.",
+          reason: "Walked off the map it started on, and it has no way back yet.",
         };
       }
 
@@ -697,39 +779,55 @@ export function runner(policy, route = null, world = null) {
         }
       }
 
-      // Turn at the end of a leg, or the moment the tile stops changing.
+      // Walk a leg of the patch. Every tile of the path is inside the grass by
+      // construction, so there is no "would this step leave" test to fail and
+      // no turning on the spot when it does -- the walk simply goes somewhere.
+      if (patch && here) {
+        // Something in the way. Drop the plan and make another; the tile that
+        // stopped it stays marked as visited, so the next leg aims elsewhere.
+        if (stuckFor >= STUCK) {
+          leg = null;
+          stuckFor = 0;
+        }
+        while (leg && legAt < leg.length && leg[legAt].x === here.x && leg[legAt].y === here.y) {
+          legAt++;
+        }
+        if (!leg || legAt >= leg.length) {
+          leg = planLeg(here);
+          legAt = 0;
+        }
+        if (leg && legAt < leg.length) {
+          const next = leg[legAt];
+          // A battle can end with the player a tile off the plan. Re-planning
+          // is cheaper than reasoning about where they went.
+          if (Math.abs(next.x - here.x) + Math.abs(next.y - here.y) !== 1) {
+            leg = null;
+            return { keys: 0 };
+          }
+          const going =
+            next.x > here.x ? BTN.RIGHT
+              : next.x < here.x ? BTN.LEFT
+                : next.y > here.y ? BTN.DOWN
+                  : BTN.UP;
+          // B is held the whole time: B is running, encounters are counted per
+          // step, so this is close to twice the fights per minute for nothing --
+          // and on a save without the Running Shoes it simply does nothing.
+          return { keys: going | BTN.B };
+        }
+      }
+
+      // Without a map there is no patch to walk, so this is the old answer:
+      // pick a direction and hold it, turning at the end of a leg or the
+      // moment the tile stops changing.
       if (sinceTurn >= LEG || stuckFor >= STUCK) {
         dir = (dir + 1) % DIRS.length;
         sinceTurn = 0;
         stuckFor = 0;
       }
       sinceTurn++;
-
-      // And never take a step that leaves the patch. This is the half that
-      // actually keeps it in the grass: the check above notices having left,
-      // which is a repair, while this makes leaving not happen. Turning early
-      // is free -- the encounter rate depends on steps taken in grass, not on
-      // which way they are pointed.
-      let going = DIRS[dir];
-      if (patch && here) {
-        const leaves = (key) =>
-          !patch.has(
-            here.x + (key & BTN.RIGHT ? 1 : key & BTN.LEFT ? -1 : 0),
-            here.y + (key & BTN.DOWN ? 1 : key & BTN.UP ? -1 : 0)
-          );
-        for (let tried = 0; tried < DIRS.length && leaves(going); tried++) {
-          dir = (dir + 1) % DIRS.length;
-          going = DIRS[dir];
-          sinceTurn = 0;
-        }
-      }
-
-      // B is held the whole time: B is running, encounters are counted per
-      // step, so this is close to twice the fights per minute for nothing --
-      // and on a save without the Running Shoes it simply does nothing. What
-      // is deliberately absent is A: an A press in the overworld talks to
+      // What is deliberately absent is A: an A press in the overworld talks to
       // whoever is standing nearby, and this is meant to be left alone.
-      return { keys: going | BTN.B };
+      return { keys: DIRS[dir] | BTN.B };
     },
   };
 }

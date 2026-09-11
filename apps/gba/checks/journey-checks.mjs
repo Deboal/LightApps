@@ -269,5 +269,73 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
   check("and keeps walking rather than standing still", moved > 30, `${moved} steps`);
 }
 
+// -- walked off the map: walk back, do not give up ----------------------------
+//
+// A ledge is one-way and is not modelled, so a patch can quietly contain a
+// tile that drops the player onto the route below. This used to stop the run
+// with a message that said, in as many words, that it could find its way back
+// and was not going to.
+{
+  const { runner } = await import("../src/policy.js");
+  const tiles = new Set(["7,7", "7,8", "8,7", "8,8"]);
+  const home = { mapGroup: 3, mapNum: 24 };
+  const elsewhere = { mapGroup: 3, mapNum: 25 };
+  const atlas = {
+    covers: () => true,
+    gridOf: () => ({ width: 15, height: 15, name: "F", at: () => true, isGrass: (x, y) => tiles.has(`${x},${y}`) }),
+    doorsOf: () => new Set(),
+    // The two maps are joined by an edge, so a walk home is a thing that
+    // exists. Returning no route would make the journey fail instantly and
+    // the check would be measuring the toy rather than the runner.
+    mapRoute: (from, to) =>
+      from.mapGroup === to.mapGroup && from.mapNum === to.mapNum
+        ? []
+        : [{ from, to, via: { kind: "edge", dir: 0 } }],
+    centreInside: () => null,
+    nearestCentre: () => null,
+    grassPatch: () => ({ seed: { x: 7, y: 7 }, tiles, has: (x, y) => tiles.has(`${x},${y}`) }),
+  };
+  const party = [{ name: "TEST", hp: 40, maxHp: 40, level: 5, record: { moves: [{ id: 52, pp: 20 }] } }];
+
+  const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0, stopBelowHp: 0 }, null, atlas);
+  // Settle on the home map so the anchor is set.
+  for (let f = 0; f < 40; f++) {
+    run.step({ frame: f, party, inBattle: false, battle: null, position: { x: 7, y: 7, map: home } });
+  }
+  check("it starts out grinding", run.mode === "grind", run.mode);
+
+  // Now the ledge: the same run, suddenly on another map.
+  let stopped = null;
+  for (let f = 0; f < 30 && !stopped; f++) {
+    const out = run.step({ frame: 100 + f, party, inBattle: false, battle: null, position: { x: 3, y: 3, map: elsewhere } });
+    if (out.done) stopped = out.reason;
+  }
+  check("ending up on another map does not end the run", stopped === null, stopped || "");
+  check("it sets off to walk back instead", run.mode === "journey" && run.trip === "travel",
+    `${run.mode}/${run.trip}`);
+
+  // But a patch that keeps throwing the player out is a loop, not a walk, and
+  // the run has to be able to say so rather than bounce forever.
+  const looper = runner({ slot: 0, stopAtLevel: 99, healBelowHp: 0, stopBelowHp: 0 }, null, atlas);
+  for (let f = 0; f < 40; f++) {
+    looper.step({ frame: f, party, inBattle: false, battle: null, position: { x: 7, y: 7, map: home } });
+  }
+  let gaveUp = null;
+  for (let round = 0; round < 12 && !gaveUp; round++) {
+    // Off the map...
+    for (let f = 0; f < 4 && !gaveUp; f++) {
+      const out = looper.step({ frame: 1000 + round * 20 + f, party, inBattle: false, battle: null, position: { x: 3, y: 3, map: elsewhere } });
+      if (out.done) gaveUp = out.reason;
+    }
+    // ...and back, as if the walk home had worked, so it resumes grinding.
+    for (let f = 0; f < 60 && !gaveUp; f++) {
+      const out = looper.step({ frame: 1100 + round * 20 + f, party, inBattle: false, battle: null, position: { x: 7, y: 7, map: home } });
+      if (out.done) gaveUp = out.reason;
+    }
+  }
+  check("but a patch that keeps throwing it out is eventually called a loop",
+    gaveUp !== null && /ledge|loop/i.test(gaveUp), gaveUp || "never gave up");
+}
+
 console.log(failures === 0 ? "\nall good" : `\n${failures} failed`);
 process.exit(failures === 0 ? 0 : 1);
