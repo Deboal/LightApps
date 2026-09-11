@@ -4,8 +4,7 @@
 -- gate, which is fine for a gear list and not fine for what two people spend.
 -- This is the one app where the Postgres boundary has to be real.
 --
---   >>> EDIT THE SECOND EMAIL BELOW BEFORE RUNNING. <<<
---
+-- Both members are filled in below; there is nothing to edit before running.
 -- Safe to run more than once. Re-run it after adding or changing a member.
 --
 -- What it does NOT do: nothing here weakens any other app. The one policy that
@@ -37,8 +36,13 @@ revoke all on public.household_members from anon, authenticated;
 
 insert into public.household_members (email) values
   ('adebord@quantaaviation.com'),
-  ('jackie@example.com')          -- <<< REPLACE with Jackie's real email
+  ('jndarnell@me.com')
 on conflict (email) do nothing;
+
+-- Adding or removing someone later is one statement here plus a re-run; the
+-- policies read this table, so nothing else has to change. Note that removing
+-- a row does not end that person's existing session -- revoke it under
+-- Authentication in the Supabase dashboard if that matters.
 
 -- ---------------------------------------------------------------------------
 -- 2. The membership test.
