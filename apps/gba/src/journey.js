@@ -15,7 +15,7 @@
 
 import { BTN } from "./buttons.js";
 import { hold, settle, tap, beat } from "./drive.js";
-import { bestMove } from "./policy.js";
+import { bestMove, spent } from "./policy.js";
 import { pathToAny, path, edgeTiles, DIR } from "./world.js";
 
 /** Frames to keep pressing towards a tile before calling it blocked. A step is
@@ -68,7 +68,10 @@ export function* throughBattle({ runBelow = 0.3, prefer = "fight", limit = 60 * 
     const fighter = party[active] || party[0];
     const share = fighter && fighter.maxHp ? fighter.hp / fighter.maxHp : 1;
     const want = fighter && bestMove(fighter);
-    const flee = running || share < runBelow || !want;
+    // Out of PP is a reason to stop fighting; a record that did not decode
+    // this frame is not. They look identical through `bestMove`, so the
+    // difference has to be asked for.
+    const flee = running || share < runBelow || (fighter && spent(fighter));
 
     // No menu read means this build's battle addresses are unknown, and the
     // only honest move is A -- which takes the first move rather than the

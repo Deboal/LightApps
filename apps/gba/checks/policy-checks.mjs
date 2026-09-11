@@ -9,7 +9,7 @@
 //
 // Run: node apps/gba/checks/policy-checks.mjs
 
-import { runner, previewOf } from "../src/policy.js";
+import { runner, previewOf, bestMove, spent } from "../src/policy.js";
 import { recorder } from "../src/route.js";
 import { BTN } from "../src/buttons.js";
 
@@ -786,6 +786,35 @@ function centreRoute() {
     party: [{ ...mon(), hp: 0, fainted: true }],
   }));
   check("a faint with nowhere to go still stops", end !== null && /fainted/.test(end.reason));
+}
+
+// -- out of PP is not the same as unreadable ---------------------------------
+//
+// `bestMove` answers null for two unrelated reasons, and a caller that cannot
+// tell them apart sends a Pokémon at full HP and full PP to a Centre. The
+// party record is checksummed and read out of memory the cartridge is writing
+// to mid-battle, so a frame where it fails to decode is ordinary; measured at
+// 49 such frames in six minutes of grinding, and four trips they explain.
+{
+  const readable = (moves) => ({ name: "TEST", hp: 40, maxHp: 40, record: { moves } });
+  const torn = { name: "TEST", hp: 40, maxHp: 40, record: null };
+
+  const healthy = readable([{ id: 52, pp: 25 }, { id: 106, pp: 30 }]);
+  check("a Pokémon with PP has a move and is not spent", !!bestMove(healthy) && !spent(healthy));
+
+  const empty = readable([{ id: 52, pp: 0 }, { id: 106, pp: 0 }]);
+  check("a Pokémon with no PP anywhere is spent", spent(empty) && !bestMove(empty));
+
+  check("a record that did not decode has no move to offer", bestMove(torn) === null);
+  check("but is NOT spent — that is the distinction that matters", spent(torn) === false);
+
+  const blank = readable([{ id: 0, pp: 0 }, { id: 0, pp: 0 }]);
+  check("an empty move list counts as spent", spent(blank));
+
+  // A status-only Pokémon still has something to do. Stopping on that would
+  // be wrong when Sing can be the thing that ends a fight.
+  const statusOnly = readable([{ id: 47, pp: 15 }]);
+  check("a Pokémon with only status moves is not spent", !spent(statusOnly));
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");
