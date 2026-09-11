@@ -22,6 +22,12 @@ const SHELL = [
   "./",
   "./bundle.js",
   "./assets/gba-core.wasm",
+  // The atlas. Two halves of one thing again -- the tile bits are indexed by
+  // offsets that live in the JSON -- so they are precached together, and the
+  // build stamp already hashes every asset, which makes a changed map a
+  // changed worker and one atomic swap.
+  "./assets/world.json",
+  "./assets/world.bin",
   "./assets/manifest.webmanifest",
   "./assets/icon-180.png",
   "./assets/icon-192.png",

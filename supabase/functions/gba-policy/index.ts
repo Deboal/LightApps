@@ -36,6 +36,16 @@ const Policy = z.object({
         "player's chance to disagree, so be concrete about the stopping condition."
     ),
   task: z.literal("grind").describe("The only task the runtime implements today."),
+  spotMap: z
+    .string()
+    .nullable()
+    .describe(
+      "The name of the map to grind on, copied exactly from the list of " +
+        "places given below, or null to use wherever the player is standing. " +
+        "Choose on type matchup and on how far the walk to a Pokemon Center " +
+        "is -- a place with worse experience and a Centre next door usually " +
+        "beats a better one an hour away."
+    ),
   slot: z
     .number()
     .int()
@@ -56,14 +66,25 @@ const Policy = z.object({
     .min(0)
     .max(1)
     .describe("Run from a battle when the lead's HP falls below this fraction of its maximum."),
+  healBelowHp: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe(
+      "Set off for a Pokemon Center when the lead's HP falls below this " +
+        "fraction of its maximum. Leave early rather than late: the walk " +
+        "itself has battles in it, so departing at the point of actually " +
+        "needing a heal means arriving in worse shape than when the decision " +
+        "was made, or not arriving. Around 0.8 is right when a Centre is close."
+    ),
   stopBelowHp: z
     .number()
     .min(0)
     .max(1)
     .describe(
-      "Stop the whole run when HP falls below this fraction. The runtime cannot " +
-        "walk to a Pokemon Center, so stopping is the honest end -- keep this " +
-        "low but above zero."
+      "Stop the whole run when HP falls below this fraction. This is the last " +
+        "resort, below healBelowHp -- it is what happens when healing did not " +
+        "work, not the normal way a run ends. Keep it low but above zero."
     ),
 });
 
@@ -73,14 +94,22 @@ You are given the player's actual party, read out of the running game's memory.
 Resolve names against it: "grind Pikachu" means whichever slot holds PIKACHU.
 If the request names nobody, use slot 0.
 
-The runtime walks in grass to find wild Pokemon, fights with the lead's first
-move, and runs away or stops on the thresholds you choose. It cannot heal,
-cannot navigate to a Pokemon Center, cannot use items, and cannot switch
-Pokemon. Choose thresholds that respect that: fleeing early is cheap, fainting
-is not.
+The runtime walks in tall grass to find wild Pokemon and fights with the lead's
+best usable move -- highest power among the moves that still have PP, so it
+will not sit there using Harden or press a move that has run out.
+
+On FireRed and LeafGreen it can also make the trip to a Pokemon Center on its
+own: it knows where the walls are, searches out the nearest Centre, walks
+there fighting what it meets, heals, and walks back to the exact tile it left.
+That is what healBelowHp governs. When the list of places below is empty, the
+cartridge is one whose maps it does not have, and there is no trip -- then
+healBelowHp is ignored and stopBelowHp is the only floor there is.
+
+It still cannot use items, cannot switch Pokemon mid-battle, and cannot catch
+anything.
 
 The player is left alone while this runs, so the summary must make the stopping
-condition unmistakable.`;
+condition unmistakable. If you are sending them somewhere, say where.`;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -110,7 +139,7 @@ Deno.serve(async (request) => {
     );
   }
 
-  let body: { prompt?: string; party?: unknown };
+  let body: { prompt?: string; party?: unknown; places?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -122,6 +151,10 @@ Deno.serve(async (request) => {
   if (prompt.length > 500) return json({ error: "That is longer than this needs" }, 400);
 
   const party = Array.isArray(body.party) ? body.party.slice(0, 6) : [];
+  // Where it could go. The app works these out from the map data it carries,
+  // because the model has no way to know which routes are next door to the
+  // player -- and a grind spot chosen without that is chosen by vibes.
+  const places = Array.isArray(body.places) ? body.places.slice(0, 24) : [];
   if (party.length === 0) {
     return json({ error: "No party was readable, so there is nothing to act on" }, 400);
   }
@@ -132,9 +165,14 @@ Deno.serve(async (request) => {
       model: "claude-opus-5",
       max_tokens: 16000,
       system: SYSTEM,
-      // Low effort on purpose: this is a short mapping from one sentence onto
-      // a handful of parameters, not a problem that repays deliberation.
-      output_config: { effort: "low", format: zodOutputFormat(Policy) },
+      // This used to be low effort, and the comment here said it was a short
+      // mapping from a sentence onto a handful of parameters rather than a
+      // problem that repays deliberation. That stopped being true when the
+      // runtime learned to walk: choosing where to grind is a real judgement
+      // about type matchups against a place's wild Pokemon and about how far
+      // the walk to a Centre is, and it is the choice that decides whether a
+      // run takes thirteen minutes or does not finish.
+      output_config: { effort: "medium", format: zodOutputFormat(Policy) },
       messages: [
         {
           role: "user",
@@ -146,6 +184,18 @@ Deno.serve(async (request) => {
                   `${i}. ${mon.name} — level ${mon.level}, ${mon.hp}/${mon.maxHp} HP`
               )
               .join("\n") +
+            (places.length
+              ? `\n\nPlaces with tall grass the player can walk to from where ` +
+                `they are standing, nearest first. "centre" is how many map ` +
+                `crossings from there to the nearest Pokemon Center:\n` +
+                places
+                  .map(
+                    (p: Record<string, unknown>) =>
+                      `- ${p.name} (${p.hops} away, centre ${p.centre})`
+                  )
+                  .join("\n")
+              : `\n\nNo map data for this cartridge, so the run happens where ` +
+                `the player is standing and there is no trip to a Centre.`) +
             `\n\nWhat the player asked for: ${prompt}`,
         },
       ],

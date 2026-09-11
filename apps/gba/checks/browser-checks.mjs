@@ -653,5 +653,50 @@ async function newPage() {
   await page.close();
 }
 
+// The atlas actually arrives.
+//
+// This check exists because of a bug that no other kind of test could see. The
+// map data is fetched from `assets/`, and every check that reads those files
+// off disk passes whatever path the app asks for -- so a wrong URL is invisible
+// until a real browser asks a real server for it and gets a 404. It did.
+{
+  const { page, errors } = await newPage();
+  const asked = [];
+  page.on("response", (r) => {
+    if (/world\.(json|bin)$/.test(r.url())) asked.push(`${r.url().split("/").pop()} ${r.status()}`);
+  });
+  await page.waitForTimeout(14000);
+  // A party has to exist before the panel offers anything, and a party comes
+  // from a save. Without this the panel correctly refuses and every assertion
+  // below is about the refusal instead of about the atlas.
+  if (SAV) {
+    await page.setInputFiles('input[accept*=".sav"]', SAV);
+    await page.waitForTimeout(6000);
+  }
+  check("the atlas is fetched", asked.length === 2, asked.join(", ") || "nothing requested");
+  check("and the server actually has it", asked.length > 0 && asked.every((a) => a.endsWith("200")),
+    asked.join(", "));
+
+  // With maps for this cartridge, the panel must not still be telling the
+  // player it cannot heal -- the same drift that had the model being told the
+  // runtime was dumber than it is.
+  const auto = page.getByRole("button", { name: "Auto", exact: true });
+  const offered = await auto.waitFor({ state: "visible", timeout: 20000 }).then(() => true).catch(() => false);
+  if (offered) {
+    await auto.click();
+    await page.waitForSelector("text=Play it for me", { timeout: 5000 });
+    const said = await page.evaluate(() => document.body.innerText);
+    check("the panel says it can find its own way to a Centre",
+      /nearest Pok/i.test(said) && /knows this game's maps/i.test(said),
+      said.replace(/\s+/g, " ").slice(-260));
+    check("and no longer claims it cannot heal", !/It cannot heal, so a run ends/.test(said));
+  } else {
+    check("the panel says it can find its own way to a Centre", false,
+      SAV ? "no Auto button" : "set GBA_SAV to check this");
+  }
+  check("no page errors with the atlas loaded", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

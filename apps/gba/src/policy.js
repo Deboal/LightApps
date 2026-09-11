@@ -14,6 +14,12 @@ import { BTN } from "./buttons.js";
 import { sameTile } from "./game.js";
 import { MOVES, moveName } from "./moves.js";
 import { follower, usable, ROUTE_STUCK } from "./route.js";
+// Circular, and deliberately: `journey.js` needs `bestMove` to fight its way
+// to the Centre, and this needs `journey.js` to make the trip. Both uses are
+// inside functions rather than at module scope, which is what makes it safe --
+// by the time either is called, both modules have finished evaluating.
+import { drive } from "./drive.js";
+import { healTrip, goTo } from "./journey.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
  *  held A advances one message and then nothing. Four frames down, eight up. */
@@ -159,12 +165,22 @@ export function previewOf(policy, party) {
   return { name: mon.name, move: moveName(want.id), power: want.power, pp: want.pp };
 }
 
-export function runner(policy, route = null) {
+export function runner(policy, route = null, world = null) {
   const { slot = 0, stopAtLevel = 100, fleeBelowHp = 0.34, stopBelowHp = 0.15 } = policy || {};
-  // Healing is only on the table with a route that was walked and whose heal
-  // was actually watched happening. Without one this behaves exactly as it
-  // did before: it stops when HP runs low.
-  const canHeal = usable(route);
+  // Two ways to reach a Pokémon Center, and they are not equal.
+  //
+  // With the world data loaded, the trip is planned: the nearest Centre is
+  // searched for over the map graph, the walk there is pathfound from the
+  // game's own collision data, and the way back is to the exact tile the
+  // grind was interrupted on. Nothing has to have been shown to it first.
+  //
+  // Without it -- an Emerald cartridge, or the asset failing to load -- the
+  // fallback is the recorded route: a trip the player walked once, replayed
+  // with the tile read as feedback. That is what this could do before, and it
+  // still can, because a cartridge these maps do not describe is a cartridge
+  // where a planned route would be confidently and invisibly wrong.
+  const canPlan = !!world;
+  const canHeal = canPlan || usable(route);
   const healBelowHp = canHeal ? (policy && policy.healBelowHp) || 0.4 : 0;
 
   let phase = "seek";
@@ -198,6 +214,21 @@ export function runner(policy, route = null) {
   // The trip to the Pokemon Center. `mode` is what the walking is *for*;
   // `phase` above stays the question of whether a battle is happening.
   let mode = "grind";
+  // The journey currently being driven, when there is one, and what it is for.
+  let trip = null;
+  let tripKind = null;
+  let heals = 0;
+  // Somewhere better to do this than where Start was pressed. The model picks
+  // it from the places the app offers; getting there is the first thing that
+  // happens, before a single blade of grass is walked into.
+  const spot = (canPlan && policy && policy.spot) || null;
+  let travelled = !spot;
+  // The patch of grass this grind belongs in, worked out from the map once
+  // the anchor is known. `patchAt` is the anchor it was computed for, so a
+  // heal trip that comes back to a different tile recomputes rather than
+  // keeping a patch from somewhere else.
+  let patch = null;
+  let patchAt = null;
   // Set when a battle is left because something is wrong with the Pokémon
   // that is out -- hurt, spent, or knocked out. Acted on once the battle is
   // over and there is somewhere to walk to.
@@ -224,6 +255,18 @@ export function runner(policy, route = null) {
      *  off to a Centre does not look like one that has wandered off. */
     get mode() {
       return mode;
+    },
+    /** Trips to a Centre completed. Worth showing: a long run that has healed
+     *  four times is working, and one that has healed forty is not. */
+    get heals() {
+      return heals;
+    },
+    /** What the journey under way is for, when `mode` is "journey": "heal" on
+     *  the round trip to a Centre, "travel" on the way to the grinding spot.
+     *  The readout says which, because a player watching their character walk
+     *  across a town deserves to know why. */
+    get trip() {
+      return tripKind;
     },
     /** True once a battle has spent long enough in menus this build cannot
      *  read that the moves are certainly not being chosen. A minute of it is
@@ -421,12 +464,13 @@ export function runner(policy, route = null) {
         // then guarantees the walk to the Centre never begins more than a few
         // tiles off the recorded path, which is the only path known to be
         // walkable. Without one it is simply where it was set going.
-        if (!home) home = canHeal ? asPlace(route.tiles[0]) : here;
+        if (!home) home = usable(route) ? asPlace(route.tiles[0]) : here;
       }
 
-      // Off the map it started on. It cannot find its way back -- it has no
-      // route and no map -- so stopping is the honest end rather than
-      // wandering further into a town.
+      // Off the map it started on, while grinding rather than travelling.
+      // Wandering into a town is not something a grind should be able to do,
+      // and it means the leash has failed -- so this stops either way. What
+      // differs is what can be said about it.
       if (
         mode === "grind" &&
         here && home &&
@@ -435,7 +479,11 @@ export function runner(policy, route = null) {
         return {
           keys: 0,
           done: true,
-          reason: "Walked off the map it started on, and it has no way back yet.",
+          reason: canPlan
+            ? "Wandered off the map it was grinding on. It can find its way " +
+              "back, but a grind that leaves the grass on its own is one that " +
+              "has gone wrong somewhere."
+            : "Walked off the map it started on, and it has no way back yet.",
         };
       }
 
@@ -451,7 +499,52 @@ export function runner(policy, route = null) {
         };
       }
 
-      // -- the trip to the Centre -----------------------------------------
+      // -- the planned trip to the Centre ---------------------------------
+      //
+      // A journey generator, driven one frame at a time. Everything hard about
+      // it -- pathfinding, doors, map edges, the nurse who keeps talking after
+      // the party is whole -- lives in `journey.js`, written as straight-line
+      // code. All this has to do is feed it frames and notice when it is done.
+      if (mode === "journey") {
+        const out = trip.step(state);
+        if (!out.done) return { keys: out.keys };
+        const was = tripKind;
+        if (out.result && out.result.ok) {
+          // Arrived. Re-anchor: the leash is measured from here, and "here"
+          // is the tile it is actually standing on now.
+          mode = "grind";
+          needsHeal = false;
+          trip = null;
+          tripKind = null;
+          home = here || home;
+          if (was === "heal") heals++;
+          else travelled = true;
+          return { keys: 0 };
+        }
+        return {
+          keys: 0,
+          done: true,
+          reason:
+            was === "heal"
+              ? `The trip to the Pokémon Center did not work out: ${
+                  (out.result && out.result.reason) || "unknown"
+                }.`
+              : `Could not get to where this was meant to happen: ${
+                  (out.result && out.result.reason) || "unknown"
+                }.`,
+        };
+      }
+
+      // Not there yet. Walk to the spot before doing anything else -- there
+      // is no point grinding in the wrong place efficiently.
+      if (!travelled && here) {
+        mode = "journey";
+        tripKind = "travel";
+        trip = drive(() => goTo(world, spot));
+        return { keys: 0 };
+      }
+
+      // -- the recorded trip to the Centre --------------------------------
       //
       // A recorded route, walked with the tile read as feedback rather than
       // replayed blind: a wild encounter on the way is fought and the walk
@@ -545,16 +638,49 @@ export function runner(policy, route = null) {
       // and a Centre fixes it all the same.
       if (canHeal && here && (needsHeal || (share < healBelowHp && !everyoneWhole(party)))) {
         needsHeal = false;
+        walkStuck = 0;
+        if (canPlan) {
+          mode = "journey";
+          tripKind = "heal";
+          trip = drive(() => healTrip(world, { from: here }));
+          return { keys: 0 };
+        }
         mode = "toNurse";
         walk = follower(route, 0);
-        walkStuck = 0;
         return { keys: 0 };
       }
 
-      // Too far from where it started: head back instead of wandering on.
-      // The bigger of the two offsets is the one worth closing, and closing
-      // it is one direction, not a plan.
-      if (here && home) {
+      // Stay in the grass, which is not the same thing as staying near where
+      // it started.
+      //
+      // The leash below is a square box around one anchor tile, and grass is
+      // not square: four tiles in every direction from the middle of Route 6
+      // is only about a third tall grass, and the rest is path, ledge and
+      // trees. A walk that respected the leash perfectly still drifted
+      // steadily out of the grass, because two thirds of what the leash
+      // permitted was never grass at all. With the map loaded the patch
+      // itself is knowable, so it is used instead of a radius.
+      if (here && canPlan && home) {
+        const anchor = `${home.map.mapGroup}/${home.map.mapNum}:${home.x},${home.y}`;
+        if (patchAt !== anchor) {
+          patchAt = anchor;
+          patch = world.grassPatch(home.map.mapGroup, home.map.mapNum, home);
+        }
+        if (patch && !patch.has(here.x, here.y)) {
+          // Already out of it. Walking back is a path, not a direction --
+          // pressing one way hopefully is how it ended up here.
+          mode = "journey";
+          tripKind = "travel";
+          trip = drive(() =>
+            goTo(world, { ...home.map, x: patch.seed.x, y: patch.seed.y }, { hops: 4 })
+          );
+          return { keys: 0 };
+        }
+      }
+
+      // Without a map, the leash is still the best available answer: head
+      // back the moment the anchor is more than a few tiles away.
+      if (here && home && !patch) {
         const dx = here.x - home.x;
         const dy = here.y - home.y;
         if (Math.abs(dx) > LEASH || Math.abs(dy) > LEASH) {
@@ -578,12 +704,32 @@ export function runner(policy, route = null) {
         stuckFor = 0;
       }
       sinceTurn++;
+
+      // And never take a step that leaves the patch. This is the half that
+      // actually keeps it in the grass: the check above notices having left,
+      // which is a repair, while this makes leaving not happen. Turning early
+      // is free -- the encounter rate depends on steps taken in grass, not on
+      // which way they are pointed.
+      let going = DIRS[dir];
+      if (patch && here) {
+        const leaves = (key) =>
+          !patch.has(
+            here.x + (key & BTN.RIGHT ? 1 : key & BTN.LEFT ? -1 : 0),
+            here.y + (key & BTN.DOWN ? 1 : key & BTN.UP ? -1 : 0)
+          );
+        for (let tried = 0; tried < DIRS.length && leaves(going); tried++) {
+          dir = (dir + 1) % DIRS.length;
+          going = DIRS[dir];
+          sinceTurn = 0;
+        }
+      }
+
       // B is held the whole time: B is running, encounters are counted per
       // step, so this is close to twice the fights per minute for nothing --
       // and on a save without the Running Shoes it simply does nothing. What
       // is deliberately absent is A: an A press in the overworld talks to
       // whoever is standing nearby, and this is meant to be left alone.
-      return { keys: DIRS[dir] | BTN.B };
+      return { keys: going | BTN.B };
     },
   };
 }

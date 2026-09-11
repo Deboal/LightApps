@@ -79,6 +79,19 @@ clothes: believing an input landed because it was sent.
 - **The save file is written by the game, not by you.** `gba_read_save` reads
   flash. Without an in-game save, the image you export is the one you loaded.
 
+## Where this ended up
+
+Most of this now also runs in the browser. `apps/gba/src/journey.js` is
+`travel.mjs` and `healHere` moved across essentially unchanged, with
+`machine.step(k); machine.look()` becoming `yield k` — generators let the
+imperative shape survive a per-frame loop that cannot block. The map data the
+harness reads from a pokefirered checkout is generated into two committed files
+(`tools/gen-world.mjs`, about 28 KB gzipped) so a static page can carry it.
+
+The harness is still the place to develop: it runs headless, at whatever speed
+the machine manages, with a real cartridge and no tab in the way. What changed
+is that the result no longer has to stay here.
+
 ## Porting this to something else
 
 The transferable part is not the map data; it is the loop.
