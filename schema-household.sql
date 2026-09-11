@@ -128,54 +128,175 @@ create policy "household-files is private to its members" on storage.objects
   with check (bucket_id <> 'household-files' or public.is_household_member());
 
 -- ---------------------------------------------------------------------------
--- 5. Verify. Run these after the above and read the answers.
+-- 5. Verify -- one report, because the SQL Editor shows only the last result.
+--
+--    Everything above is the change; this is how you know it worked. It asks
+--    the real questions the real way: it becomes `anon`, then each member,
+--    then a stranger, and counts what each can actually see through the
+--    policies. Nothing here is a guess about what should happen.
+--
+--    Two traps it is built to avoid:
+--
+--    - SET LOCAL outside a transaction is ignored with only a WARNING, and
+--      the query then runs as you -- the owner, who bypasses RLS -- so it
+--      reports every private row as world-readable when nothing is wrong. A
+--      verification step that cries wolf is worse than none. Here the role
+--      switches happen inside a function, where they are transaction-local
+--      and cannot silently no-op.
+--
+--    - "0 rows" is not a pass on its own: a policy that locks out BOTH of you
+--      also returns 0. So each member is measured against the true row count
+--      taken as the owner, and an empty ledger is reported as INCONCLUSIVE
+--      rather than green.
+--
+--    A failure to impersonate a role reports CANNOT TEST, never PASS.
 -- ---------------------------------------------------------------------------
 
--- (a) Who is a member. Expect exactly the two of you, no placeholder.
-select email from public.household_members order by email;
+create or replace function public.household_access_report()
+returns table (check_name text, observed text, expected text, verdict text)
+language plpgsql
+as $$
+declare
+  truth   bigint;   -- rows really there, counted as the owner (RLS bypassed)
+  n       bigint;
+  m       text;
+  members text[];
+begin
+  select count(*) into truth from public.app_data where app = 'household';
+  select array_agg(lower(email) order by lower(email)) into members
+    from public.household_members;
 
--- (b) The policies exist, and the two that matter are RESTRICTIVE.
---     Expect 3 rows: permissive=f on the two named "private to its members".
-select schemaname, tablename, policyname, permissive, roles
-  from pg_policies
- where policyname in ('household is private to its members',
-                      'household-files is private to its members',
-                      'household members use household-files')
- order by tablename, policyname;
+  return query select 'ledger rows that exist (counted as owner)'::text,
+    truth::text, 'your entries'::text,
+    case when truth = 0 then 'EMPTY -- log an entry and re-run for a real test'
+         else 'baseline' end;
 
--- (c) The bucket is private. Expect public = false.
-select id, public from storage.buckets where id = 'household-files';
+  return query select 'household_members list'::text,
+    coalesce(array_to_string(members, ', '), '(none)'), 'the two of you'::text,
+    case when members is null then 'FAIL -- nobody is a member; everyone is locked out'
+         when array_length(members, 1) = 2 then 'PASS'
+         else 'CHECK -- expected 2, found ' || array_length(members, 1) end;
 
--- (d) The real test: does an anonymous reader see the ledger? This runs the
---     request the same way a browser holding the publishable key does.
---
---     The transaction block is load-bearing, not tidiness. SET LOCAL outside
---     one is ignored with only a WARNING, and the query then runs as you --
---     the owner, who bypasses RLS -- so it reports every household row as
---     visible to anon and reads as a failed lockdown when nothing is wrong.
---     A verification step that cries wolf is worse than none.
---
---     Expect 0. Read it together with (e): 0 here means nothing more than
---     "this policy denies somebody", and only (e) shows it still admits you.
-begin;
-  set local role anon;
-  select count(*) as anon_can_see_household from public.app_data where app = 'household';
-rollback;
+  -- anon: a browser holding the publishable key, which is public by design.
+  begin
+    perform set_config('role', 'anon', true);
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into n from public.app_data where app = 'household';
+    perform set_config('role', 'none', true);
+    return query select 'anon (publishable key) can read the ledger'::text,
+      n::text, '0'::text,
+      case when n = 0 then 'PASS' else 'FAIL -- still readable without signing in' end;
+  exception when others then
+    perform set_config('role', 'none', true);
+    return query select 'anon (publishable key) can read the ledger'::text,
+      sqlerrm, '0'::text, 'CANNOT TEST'::text;
+  end;
 
--- (e) And that a member still sees the ledger: the other half, and the half
---     that catches a policy which locked out everyone including you.
---     Expect the number of entries you have logged (3 collections' worth of
---     rows, so a couple more than the entry count). The claims are stubbed
---     because the SQL Editor carries no session of its own.
-begin;
-  set local role authenticated;
-  set local request.jwt.claims = '{"email":"adebord@quantaaviation.com"}';
-  select count(*) as member_can_see_household from public.app_data where app = 'household';
-rollback;
+  -- each member, with a real session.
+  foreach m in array coalesce(members, array[]::text[]) loop
+    begin
+      perform set_config('role', 'authenticated', true);
+      perform set_config('request.jwt.claims',
+        json_build_object('email', m, 'sub', '00000000-0000-0000-0000-0000000000aa')::text, true);
+      select count(*) into n from public.app_data where app = 'household';
+      perform set_config('role', 'none', true);
+      return query select 'member ' || m || ' can read the ledger',
+        n::text, truth::text,
+        case when truth = 0 then 'INCONCLUSIVE -- ledger is empty'
+             when n = truth then 'PASS'
+             when n = 0 then 'FAIL -- this member is locked out of their own ledger'
+             else 'FAIL -- sees ' || n || ' of ' || truth end;
+    exception when others then
+      perform set_config('role', 'none', true);
+      return query select 'member ' || m || ' can read the ledger',
+        sqlerrm, truth::text, 'CANNOT TEST'::text;
+    end;
+  end loop;
 
--- (f) And that a stranger with a session does not. Expect 0.
-begin;
-  set local role authenticated;
-  set local request.jwt.claims = '{"email":"nobody@example.com"}';
-  select count(*) as stranger_can_see_household from public.app_data where app = 'household';
-rollback;
+  -- a signed-in stranger.
+  begin
+    perform set_config('role', 'authenticated', true);
+    perform set_config('request.jwt.claims',
+      '{"email":"nobody@example.invalid","sub":"00000000-0000-0000-0000-0000000000bb"}', true);
+    select count(*) into n from public.app_data where app = 'household';
+    perform set_config('role', 'none', true);
+    return query select 'a signed-in stranger can read the ledger'::text,
+      n::text, '0'::text,
+      case when n = 0 then 'PASS' else 'FAIL -- any signed-in user can read it' end;
+  exception when others then
+    perform set_config('role', 'none', true);
+    return query select 'a signed-in stranger can read the ledger'::text,
+      sqlerrm, '0'::text, 'CANNOT TEST'::text;
+  end;
+
+  -- a member's email with no session behind it.
+  begin
+    perform set_config('role', 'anon', true);
+    perform set_config('request.jwt.claims',
+      json_build_object('email', coalesce(members[1], 'x@y.z'))::text, true);
+    select count(*) into n from public.app_data where app = 'household';
+    perform set_config('role', 'none', true);
+    return query select 'a member email with NO session can read the ledger'::text,
+      n::text, '0'::text,
+      case when n = 0 then 'PASS' else 'FAIL -- an email claim alone is enough' end;
+  exception when others then
+    perform set_config('role', 'none', true);
+    return query select 'a member email with NO session can read the ledger'::text,
+      sqlerrm, '0'::text, 'CANNOT TEST'::text;
+  end;
+
+  -- the receipts bucket.
+  return query select 'receipts bucket household-files is private'::text,
+    coalesce((select case when public then 'public' else 'private' end
+                from storage.buckets where id = 'household-files'), 'missing'),
+    'private'::text,
+    case when (select public from storage.buckets where id = 'household-files') is false
+         then 'PASS'
+         when (select 1 from storage.buckets where id = 'household-files') is null
+         then 'FAIL -- bucket does not exist'
+         else 'FAIL -- receipts are world-readable by link' end;
+
+  -- the policies themselves, and that the two that matter are RESTRICTIVE.
+  return query
+    select 'policy: ' || policyname,
+           case when permissive = 'RESTRICTIVE' then 'restrictive' else 'permissive' end,
+           case when policyname like '%private to its members%' then 'restrictive' else 'permissive' end,
+           case when (policyname like '%private to its members%') = (permissive = 'RESTRICTIVE')
+                then 'PASS' else 'FAIL -- wrong kind of policy' end
+      from pg_policies
+     where policyname in ('household is private to its members',
+                          'household-files is private to its members',
+                          'household members use household-files')
+     order by 1;
+
+  -- And that every other app on the hub still works. This is the worst thing
+  -- that can go wrong here: a restrictive policy missing its
+  -- `app <> 'household' or ...` escape applies to the whole table and takes
+  -- every app down, the seating board first. Measured against the owner's own
+  -- count, so "anon sees none" can never be excused as "there are none" --
+  -- those are two different numbers and the difference is the damage.
+  begin
+    select count(*) into truth from public.app_data where app <> 'household';
+    perform set_config('role', 'anon', true);
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into n from public.app_data where app <> 'household';
+    perform set_config('role', 'none', true);
+    return query select 'other apps still readable as anon (no collateral damage)'::text,
+      n::text, truth::text,
+      case when truth = 0 then 'N/A -- no other apps have data yet'
+           when n = truth then 'PASS'
+           when n = 0 then 'FAIL -- every other app on the hub is now broken'
+           else 'FAIL -- other apps lost ' || (truth - n) || ' of ' || truth || ' rows' end;
+  exception when others then
+    perform set_config('role', 'none', true);
+    return query select 'other apps still readable as anon (no collateral damage)'::text,
+      sqlerrm, 'unchanged'::text, 'CANNOT TEST'::text;
+  end;
+end $$;
+
+revoke all on function public.household_access_report() from public, anon, authenticated;
+
+-- Read every row. Anything not PASS or baseline wants attention; INCONCLUSIVE
+-- on the member rows just means the ledger is empty, so log one entry and run
+-- `select * from public.household_access_report();` again.
+select * from public.household_access_report();
