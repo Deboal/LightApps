@@ -91,6 +91,48 @@ and read via `Deno.env.get`. Leave "Verify JWT" on so the function is only
 reachable by a signed-in user; it is the only thing standing between a URL and
 someone else's bill. `supabase/functions/gba-policy/` is the worked example.
 
+## Locking one app to specific people
+
+The hub's default access model is "the published URL plus sign-in is the gate",
+and `schema-anon-restore.sql` widens that further: it grants the `anon` role
+full CRUD on *all* of `app_data`, table-wide, because the seating board needs
+it. The publishable key is committed and ships inside every bundle, so for any
+app that holds something private, that key is not a boundary at all.
+
+`schema-household.sql` is the worked example of making the boundary real for
+one app without touching the others. Three parts worth reusing:
+
+- **Membership is data**, in a small table with RLS on and no policies (plus an
+  explicit `revoke`, since Supabase's default privileges on `public` decide
+  whether a grant exists at all). The list is referenced by several policies,
+  and an email list copied into several policies goes out of sync.
+- **The policy is `as restrictive`.** A permissive policy adds access;
+  restrictive subtracts it, ANDing with every other policy on the table. That
+  is what makes it hold regardless of what else grants access now or later —
+  the broad anon grant included — and scoping it `app <> '<name>' or …` is what
+  keeps every other app's access exactly as it was.
+- **The membership test needs `security definer`.** A policy's `USING` runs as
+  the requesting user, so a plain subquery against the members table is subject
+  to that table's own RLS, finds nothing, and denies everyone including you.
+
+Attachments are a separate boundary and easy to miss: `hub-files` is a **public**
+bucket, so a receipt in it is readable by anyone with the link, forever, signed
+in or not. An app that locks its rows and leaves its files there has not locked
+anything. Give it its own private bucket and ask for signed links:
+
+```js
+const db = store("<name>", { shared: true, bucket: "<name>-files", privateFiles: true });
+const links = await db.fileUrls(paths, 8 * 3600);  // { path: signedUrl }, one request
+```
+
+Verify it rather than trusting it — a policy that quietly denies everyone looks
+identical to one that works until the wrong person tries. `schema-household.sql`
+ends with checks that run as `anon`, as a member and as a stranger; each is
+wrapped in `begin … rollback` because **`SET LOCAL` outside a transaction is
+ignored with only a warning**, and the query then runs as the table owner, who
+bypasses RLS. That failure mode reports every private row as world-readable when
+nothing is wrong.
+
 ## Conventions
 
 - Keep apps small and dependency-light; reuse `shared/` rather than adding libs.

@@ -30,6 +30,12 @@ export function store(appName, opts = {}) {
   if (!appName) throw new Error("store(appName): appName is required");
   const visibility = opts.shared ? "shared" : "private";
   const anonOnly = !!opts.anon;
+  // An app whose attachments must not be world-readable gets its own private
+  // bucket. The default bucket is PUBLIC: its URLs need no session and never
+  // expire, so an RLS policy over app_data protects the rows and nothing at
+  // all protects the receipts. See store("household") for the worked example.
+  const bucket = opts.bucket || BUCKET;
+  const privateFiles = !!opts.privateFiles;
   const tbl = () => client(anonOnly).from(TABLE);
 
   return {
@@ -80,14 +86,32 @@ export function store(appName, opts = {}) {
     async uploadFile(file, prefix = "") {
       const safe = (file.name || "file").replace(/[^\w.\-]+/g, "_");
       const path = `${appName}/${prefix}${Date.now()}-${safe}`;
-      const { error } = await client(anonOnly).storage.from(BUCKET).upload(path, file);
+      const { error } = await client(anonOnly).storage.from(bucket).upload(path, file);
       if (error) throw error;
-      const { data } = client(anonOnly).storage.from(BUCKET).getPublicUrl(path);
-      return { name: file.name, mime: file.type || "", size: file.size, url: data.publicUrl, path };
+      const meta = { name: file.name, mime: file.type || "", size: file.size, path };
+      // A private bucket has no public URL to record. Storing one would be
+      // worse than storing none: it would be a dead link that looks live.
+      if (privateFiles) return meta;
+      const { data } = client(anonOnly).storage.from(bucket).getPublicUrl(path);
+      return { ...meta, url: data.publicUrl };
+    },
+
+    // Links for a set of stored files, keyed by path. For a private bucket
+    // these are signed and expiring, minted in one request rather than one
+    // per file; for a public bucket they are the same permanent URLs as ever,
+    // so a caller can use this without caring which kind it has.
+    async fileUrls(paths, seconds = 3600) {
+      const want = [...new Set((paths || []).filter(Boolean))];
+      if (!want.length) return {};
+      const s = client(anonOnly).storage.from(bucket);
+      if (!privateFiles) return Object.fromEntries(want.map((p) => [p, s.getPublicUrl(p).data.publicUrl]));
+      const { data, error } = await s.createSignedUrls(want, seconds);
+      if (error) throw error;
+      return Object.fromEntries((data || []).filter((d) => d.signedUrl).map((d) => [d.path, d.signedUrl]));
     },
 
     async removeFile(path) {
-      if (path) await client(anonOnly).storage.from(BUCKET).remove([path]);
+      if (path) await client(anonOnly).storage.from(bucket).remove([path]);
     },
 
     raw: () => client(anonOnly),

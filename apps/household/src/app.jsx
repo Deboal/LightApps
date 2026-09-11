@@ -9,7 +9,13 @@ import {
 } from "./model.js";
 
 // Shared store: both of us sign in with our own email and see the same ledger.
-const db = store("household", { shared: true });
+//
+// Its own private bucket, not the hub's shared one. The shared bucket is
+// public, so a receipt in it is readable by anyone with the link, forever,
+// signed in or not -- which would make the row-level policy on the ledger
+// pointless the moment a receipt has an account number on it. Links here are
+// signed and expire; schema-household.sql restricts both to the two of us.
+const db = store("household", { shared: true, bucket: "household-files", privateFiles: true });
 const ENTRIES = "entries";
 const CLAIMS = "people"; // doc_id = person key, data = { email }
 
@@ -105,6 +111,7 @@ function Ledger({ user, me, entries, reload }) {
   const [err, setErr] = useState(null);
   const [note, setNote] = useState(null);
   const [settling, setSettling] = useState(false);
+  const [urls, setUrls] = useState({});         // file path -> signed link
   const fileInput = useRef(null);
   const formTop = useRef(null);
 
@@ -117,6 +124,21 @@ function Ledger({ user, me, entries, reload }) {
   const lastSettle = useMemo(() => sortEntries(entries.filter(isSettle))[0], [entries]);
 
   const flash = (msg) => { setNote(msg); setTimeout(() => setNote(null), 2600); };
+
+  // Signed links for the receipts on screen: one request per month rather
+  // than one per file, and only for paths we do not already hold a link for
+  // -- otherwise every add, edit and delete re-signs the whole month.
+  // Eight hours outlives any realistic sitting with this open; a link that
+  // does expire comes back on reload. `f.url` is only present on receipts
+  // uploaded before the private bucket existed; those keep working.
+  useEffect(() => {
+    const paths = rows.flatMap((e) => (e.files || [])
+      .filter((f) => !f.url && !urls[f.path]).map((f) => f.path));
+    if (!paths.length) return;
+    let alive = true;
+    db.fileUrls(paths, 8 * 3600).then((m) => { if (alive) setUrls((u) => ({ ...u, ...m })); }).catch(() => {});
+    return () => { alive = false; };
+  }, [rows, urls]);
 
   const reset = () => { setEditing(null); setForm(blankForm(me)); setKeep([]); setDrop([]); setErr(null); };
 
@@ -383,7 +405,9 @@ function Ledger({ user, me, entries, reload }) {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
             {keep.map((f) => (
               <span key={f.path} style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.sunk, border: `1px solid ${C.line}`, borderRadius: 999, padding: "5px 10px", fontSize: 12 }}>
-                <a href={f.url} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: "none" }}>{f.name}</a>
+                {f.url || urls[f.path]
+                  ? <a href={f.url || urls[f.path]} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: "none" }}>{f.name}</a>
+                  : <span style={{ color: C.dim }}>{f.name}</span>}
                 <button onClick={() => setKeep((k) => k.filter((x) => x.path !== f.path))}
                   style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, fontSize: 14 }}>×</button>
               </span>
@@ -462,12 +486,13 @@ function Ledger({ user, me, entries, reload }) {
                 {e.note && <div style={{ color: C.dim, fontSize: 12.5, marginTop: 5, fontStyle: "italic", overflowWrap: "anywhere" }}>{e.note}</div>}
                 {(e.files || []).length > 0 && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 7 }}>
-                    {e.files.map((f) => (
-                      <a key={f.path} href={f.url} target="_blank" rel="noreferrer"
-                        style={{ color: C.accent, fontSize: 12, textDecoration: "none", border: `1px solid ${C.line}`, borderRadius: 999, padding: "3px 9px" }}>
-                        📎 {f.name}
-                      </a>
-                    ))}
+                    {e.files.map((f) => {
+                      const href = f.url || urls[f.path];
+                      const chip = { fontSize: 12, textDecoration: "none", border: `1px solid ${C.line}`, borderRadius: 999, padding: "3px 9px" };
+                      return href
+                        ? <a key={f.path} href={href} target="_blank" rel="noreferrer" style={{ ...chip, color: C.accent }}>📎 {f.name}</a>
+                        : <span key={f.path} style={{ ...chip, color: C.faint }}>📎 {f.name}</span>;
+                    })}
                   </div>
                 )}
               </div>
