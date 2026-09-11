@@ -93,6 +93,26 @@ const firstMove = (mon) => {
   return moves ? moves[0] : null;
 };
 
+/**
+ * Whether this Pokémon has genuinely run out of moves to use.
+ *
+ * This exists because `bestMove` returns null for two unrelated reasons and
+ * the caller cannot tell them apart: every move is out of PP, or the party
+ * record did not decode on this frame. The second is not a fact about the
+ * Pokémon at all -- the record is checksummed and read out of memory the
+ * cartridge is writing to during a battle, so a torn read is ordinary and
+ * transient.
+ *
+ * Conflating the two sent a Charizard at full HP and full PP to a Pokémon
+ * Center every few battles: one frame in which the record failed its checksum
+ * read as "nothing to fight with", which is a reason to leave. Measured at 49
+ * such frames in six minutes, and four trips it explains exactly.
+ *
+ * A record that decoded has a valid checksum, so its PP figures are true.
+ * Asking for the moves first is the whole guard.
+ */
+export const spent = (mon) => !!movesOf(mon) && !bestMove(mon);
+
 /** Which of the four to use: the hardest-hitting one that still has PP.
  *
  *  Ties break towards the move with more PP left, so a long run leans on the
@@ -369,8 +389,7 @@ export function runner(policy, route = null, world = null) {
       // -- the reasons to stop --------------------------------------------
       // The move it is about to use, checked before it is used rather than
       // after a minute of mashing A into a refusal.
-      const moves = movesOf(mon);
-      if (moves && !bestMove(mon)) {
+      if (spent(mon)) {
         // A Centre restores PP as well as HP, which is the whole reason
         // running dry does not have to end a run.
         if (!canHeal) {
@@ -460,7 +479,9 @@ export function runner(policy, route = null, world = null) {
         // the same remedy as running low.
         const leave =
           mode !== "grind" ||
-          !bestMove(fighter) ||
+          // `spent`, not `!bestMove`: an unreadable record is not an empty
+          // one, and treating it as one is a trip to a Centre for nothing.
+          spent(fighter) ||
           fighterShare < fleeBelowHp ||
           (activeSlot !== slot && canHeal);
 
@@ -697,7 +718,7 @@ export function runner(policy, route = null, world = null) {
           // fixed would otherwise loop all night, so the same reads that sent
           // it are checked on the way back.
           const back = party[slot];
-          if (back && (back.fainted || (movesOf(back) && !bestMove(back)))) {
+          if (back && (back.fainted || spent(back))) {
             return {
               keys: 0,
               done: true,

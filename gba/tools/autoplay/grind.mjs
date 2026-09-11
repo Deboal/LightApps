@@ -10,7 +10,7 @@
 import { BTN, game } from "./machine.mjs";
 import { goTo, throughBattle } from "./travel.mjs";
 import { healHere } from "./menus.mjs";
-import { runner, bestMove } from "../../../apps/gba/src/policy.js";
+import { runner, spent } from "../../../apps/gba/src/policy.js";
 
 /** Experience for a level, on the Medium Slow curve the Charmander line uses. */
 export const mediumSlow = (n) =>
@@ -33,7 +33,7 @@ export async function grind(machine, {
   const lead = () => machine.look().party[slot];
   const spent = () => {
     const mon = lead();
-    return mon && mon.record && !bestMove(mon);
+    return !!mon && spent(mon);
   };
   const hurt = () => {
     const mon = lead();
@@ -87,7 +87,7 @@ export async function grind(machine, {
       machine.step(out.keys);
       const now = state.party && state.party[slot];
       if (now && (now.level >= toLevel || (now.maxHp && now.hp / now.maxHp < healBelow))) break;
-      if (now && now.record && !bestMove(now)) break;
+      if (now && spent(now)) break;
     }
     battles += run.battles;
     onProgress({ what: "grinding", mon: lead(), heals, battles, stopped });

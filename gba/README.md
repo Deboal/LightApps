@@ -591,6 +591,29 @@ the same walk the trip to a Centre makes, in the other direction — and only
 gives up after six of them, because a patch that keeps throwing the player out
 is a loop rather than a walk.
 
+**When it needs a Centre at all.** Reported as going back "rather
+excessively" — a Charizard at full HP and full PP making the trip every two or
+three battles. The threshold was not the cause. `bestMove` answers null for two
+unrelated reasons, and the battle code could not tell them apart:
+
+- every move is out of PP, which is a reason to go and get them back;
+- the party record did not decode on this frame, which is a fact about the
+  read and not about the Pokémon.
+
+The record is checksummed and lives in memory the cartridge writes to during a
+battle, so a torn read is ordinary — 49 frames of it in six minutes of
+grinding. Each one read as "nothing to fight with", which is a reason to leave,
+which sets the flag that books a trip. Four trips in six minutes, all at
+111/111. The fix is to ask the question that was actually meant: `spent(mon)`
+is true only when the moves were *readable* and none of them has PP. Same save,
+same ten minutes, same threshold: **seven trips became zero**, and battles went
+from 23 to 31 for the time not spent walking.
+
+The PP stop three hundred lines further up had guarded this correctly all
+along (`moves && !bestMove(mon)`). The battle branch did not, and one call site
+getting it right is not a design — hence `spent` being exported rather than the
+guard being repeated.
+
 **Where the nurse is.** This was the tile (7,4), which is right in sixteen of
 the nineteen Centres. Indigo Plateau and One Island have different layouts and
 put her at (13,10) and (5,2), so the constant walks into a wall there and
