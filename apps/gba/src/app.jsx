@@ -1096,7 +1096,7 @@ function AutoBar({ recording, auto, onMarkNurse, onRecorded, onCancel, onStop, o
               : auto.mode === "journey"
                 ? auto.trip === "travel"
                   ? "→ the grass"
-                  : "→ Pokémon Center"
+                  : `→ Centre (${auto.healBecause || "hurt"})`
                 : auto.mode === "toNurse"
                   ? "→ Pokémon Center"
                   : auto.mode === "atNurse"
@@ -1322,7 +1322,7 @@ function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, 
                   : auto.mode === "journey"
                     ? auto.trip === "travel"
                       ? "walking to where this is meant to happen"
-                      : "on the round trip to a Pokémon Center"
+                      : `on the round trip to a Pokémon Center — ${auto.healBecause || "hurt"}`
                     : auto.mode === "toNurse"
                       ? "walking to the Pokémon Center"
                       : auto.mode === "atNurse"
@@ -1340,6 +1340,12 @@ function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, 
                   </>
                 ) : null}
               </div>
+              {auto.worstHit > 0 && (
+                <div>
+                  <span style={{ color: "var(--dim)" }}>Hardest hit here</span> {auto.worstHit} HP
+                  <span style={{ color: "var(--dim)" }}> · leaves below {auto.worstHit * 3} HP</span>
+                </div>
+              )}
               <div>
                 <span style={{ color: "var(--dim)" }}>Staying in</span>{" "}
                 {auto.confined ? (
@@ -2388,6 +2394,8 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
                   heals: running.run.heals,
                   trip: running.run.trip,
                   confined: running.run.confined,
+                  healBecause: running.run.healBecause,
+                  worstHit: running.run.worstHit,
                   battles: running.run.battles,
                   mon: running.mon,
                   menuBlind: running.run.menuBlind,

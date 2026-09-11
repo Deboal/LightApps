@@ -614,6 +614,35 @@ along (`moves && !bestMove(mon)`). The battle branch did not, and one call site
 getting it right is not a design — hence `spent` being exported rather than the
 guard being repeated.
 
+**How hurt is hurt enough.** A fraction of maximum HP cannot answer "can I
+take another fight", because the same 80% is a scratch to something losing
+three HP a battle and nearly fatal to something losing thirty. So the runner
+watches what the fights here actually cost -- HP entering a battle against HP
+leaving it -- and sets off when what is left would not cover three more of the
+worst of them. Three, because the walk is not free: it has battles in it, and
+leaving at the point of needing a heal means arriving worse than when the
+decision was made. `healBelowHp` survives as the floor underneath that, for
+the case where nothing has hit hard enough yet to have been measured, and the
+model is now told to keep it low rather than the 0.8 it used to be told was
+right.
+
+**Which Pokémon is actually fighting.** Only the one that fights earns
+experience, and nothing in the app can reorder a party. So a policy aimed at
+slot three while slot one does the fighting used to book a trip to a Centre
+after every battle, forever, gaining nothing -- the mismatch reads as a reason
+to leave the battle, and leaving books the trip. It now says so and stops.
+Two seconds of it before believing it: one frame is a torn read, and ending a
+run on one of those is a mistake this file has made before. A faint is
+explicitly not this case -- the game sends out the next Pokémon by itself, and
+that is an errand rather than a misconfiguration.
+
+**And it says why it left.** "It keeps going back to the Pokémon Center" is a
+complaint nobody can act on: the reasons are several, they look identical from
+outside, and twice now the cause has turned out to be something other than the
+obvious one. The strip reads `→ Centre (out of PP)` or `(not enough left for
+another fight)`, and the panel shows the hardest hit seen here and the HP it
+will leave below.
+
 **Where the nurse is.** This was the tile (7,4), which is right in sixteen of
 the nineteen Centres. Indigo Plateau and One Island have different layouts and
 put her at (13,10) and (5,2), so the constant walks into a wall there and

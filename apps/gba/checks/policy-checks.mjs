@@ -817,5 +817,69 @@ function centreRoute() {
   check("a Pokémon with only status moves is not spent", !spent(statusOnly));
 }
 
+// -- when to set off for a Centre, measured rather than guessed --------------
+//
+// A fraction of max HP cannot answer "can I take another fight": 80% is a
+// scratch to something losing three HP a battle and nearly fatal to something
+// losing thirty. So the runner watches what the fights here actually cost and
+// leaves when what is left would not cover a few more of them plus the walk.
+{
+  const mon = (hp, maxHp = 100) => ({
+    name: "TEST", hp, maxHp, level: 5, fainted: hp === 0,
+    record: { moves: [{ id: 52, pp: 25 }] },
+  });
+  const atlas = {
+    covers: () => true,
+    gridOf: () => ({ width: 9, height: 9, name: "F", at: () => true, isGrass: () => true }),
+    doorsOf: () => new Set(),
+    mapRoute: () => [],
+    centreInside: () => null,
+    nearestCentre: () => ({ hops: [], inside: { name: "C" }, door: { mapGroup: 3, mapNum: 5, x: 1, y: 1 } }),
+    // A real patch answers `has` from a finite set. Saying yes to everything
+    // makes the flood fill unbounded, which is a fault in the toy -- and was
+    // worth finding, because the planner now refuses to outrun the patch.
+    grassPatch: () => {
+      const tiles = new Set(["4,4", "4,5", "5,4", "5,5"]);
+      return { seed: { x: 4, y: 4 }, tiles, has: (x, y) => tiles.has(`${x},${y}`) };
+    },
+  };
+  const at = { x: 4, y: 4, map: { mapGroup: 3, mapNum: 24 } };
+
+  /** Run a party through `frames`, optionally fighting, and report the runner. */
+  const play = (hpSeries, healBelowHp = 0.35) => {
+    const run = runner({ slot: 0, stopAtLevel: 99, healBelowHp, stopBelowHp: 0 }, null, atlas);
+    let f = 0;
+    for (const [hp, inBattle] of hpSeries) {
+      for (let i = 0; i < 3; i++) {
+        run.step({ frame: f++, party: [mon(hp)], inBattle, battle: null, position: at });
+      }
+    }
+    return run;
+  };
+
+  // A gentle place: three HP a battle. Nothing here should ever send it away.
+  const gentle = [];
+  for (let i = 0; i < 6; i++) { gentle.push([100 - i * 3, true], [100 - (i + 1) * 3, false]); }
+  const soft = play(gentle);
+  check("a place that chips three HP a battle never books a trip",
+    soft.mode === "grind" && !soft.healBecause,
+    `${soft.mode} / ${soft.healBecause} / worst ${soft.worstHit}`);
+  check("and it learned what the fights here cost", soft.worstHit === 3, `${soft.worstHit}`);
+
+  // A rough place: thirty a battle. The same 82% HP has to mean something else.
+  const rough = play([[100, true], [70, false], [70, true], [40, false]]);
+  check("a place that takes thirty a battle sends it away with plenty left",
+    rough.worstHit === 30 && (rough.mode === "journey" || rough.healBecause),
+    `worst ${rough.worstHit}, ${rough.mode}, ${rough.healBecause}`);
+  check("and says that is why", rough.healBecause === "not enough left for another fight",
+    String(rough.healBecause));
+
+  // The floor still catches the case nothing has measured yet.
+  const unhit = play([[20, false]], 0.5);
+  check("the floor still applies when nothing has hit yet",
+    unhit.worstHit === 0 && (unhit.mode === "journey" || unhit.healBecause === "hurt"),
+    `${unhit.mode} / ${unhit.healBecause}`);
+}
+
 console.log(failures ? `\n${failures} failed` : "\nall good");
 process.exit(failures ? 1 : 0);

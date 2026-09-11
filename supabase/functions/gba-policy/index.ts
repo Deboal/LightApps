@@ -71,11 +71,13 @@ const Policy = z.object({
     .min(0)
     .max(1)
     .describe(
-      "Set off for a Pokemon Center when the lead's HP falls below this " +
-        "fraction of its maximum. Leave early rather than late: the walk " +
-        "itself has battles in it, so departing at the point of actually " +
-        "needing a heal means arriving in worse shape than when the decision " +
-        "was made, or not arriving. Around 0.8 is right when a Centre is close."
+      "A floor, not a target: go to a Pokemon Center if the lead's HP falls " +
+        "below this fraction of its maximum. Keep it low, around 0.35. The " +
+        "runtime does not rely on it -- it watches how hard the fights here " +
+        "actually hit and leaves when what is left would not cover a few more " +
+        "of them plus the walk, which is a better judgement than any fraction " +
+        "because the same 80% is a scratch to one Pokemon and nearly fatal to " +
+        "another. A high value here just sends it walking for no reason."
     ),
   stopBelowHp: z
     .number()
