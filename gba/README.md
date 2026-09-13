@@ -626,6 +626,26 @@ the case where nothing has hit hard enough yet to have been measured, and the
 model is now told to keep it low rather than the 0.8 it used to be told was
 right.
 
+**Putting the right Pokémon at the front.** Only the one that fights earns
+experience, so training the third member of a party means it has to lead. The
+app could not reorder a party at all -- `leadWith` was written for the headless
+harness and never ported -- so a run aimed at a Pokémon that was not already in
+front fought with whoever was, gained nothing for the one asked about, and read
+the mismatch as a reason to leave every battle, which booked a trip to a Centre
+after each one. It reorders first now, before walking anywhere or fighting
+anything.
+
+Two details are worth keeping. The party submenu is not a fixed list: it grows
+an entry for every field move the selected Pokémon knows, so SWITCH is second
+for a Charmeleon and third for a Beedrill that knows Cut. The position is
+searched and the result checked against the party, never counted.
+
+And identity is the whole record, not a field of it. The obvious unique key is
+the personality value -- and in the party this was built against, a CHARIZARD
+and a CHARMELEON share 2003283047, almost certainly a clone from trading. Two
+Pokémon of a species also share a name. So "did the one we meant reach the
+front" is asked of name, level, max HP, species and personality together.
+
 **Which Pokémon is actually fighting.** Only the one that fights earns
 experience, and nothing in the app can reorder a party. So a policy aimed at
 slot three while slot one does the fighting used to book a trip to a Centre
