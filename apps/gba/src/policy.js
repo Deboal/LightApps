@@ -19,7 +19,7 @@ import { follower, usable, ROUTE_STUCK } from "./route.js";
 // inside functions rather than at module scope, which is what makes it safe --
 // by the time either is called, both modules have finished evaluating.
 import { drive } from "./drive.js";
-import { healTrip, goTo } from "./journey.js";
+import { healTrip, goTo, leadWith } from "./journey.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
  *  held A advances one message and then nothing. Four frames down, eight up. */
@@ -197,6 +197,16 @@ export function previewOf(policy, party) {
 
 export function runner(policy, route = null, world = null) {
   const { slot = 0, stopAtLevel = 100, fleeBelowHp = 0.34, stopBelowHp = 0.15 } = policy || {};
+  // Where the Pokémon being trained actually is, which changes the moment the
+  // party is reordered. The policy names a slot; after the swap that slot is
+  // zero, and everything downstream has to follow it rather than the original.
+  let targetSlot = slot;
+  // Reordering does not need the map -- it is menus, not walking -- so this is
+  // on offer whatever cartridge is running.
+  let ordered = slot === 0;
+  // The one it was asked to train, remembered as a whole record so it can be
+  // found again after the party moves under it.
+  let want = null;
   // Two ways to reach a Pokémon Center, and they are not equal.
   //
   // With the world data loaded, the trip is planned: the nearest Centre is
@@ -414,14 +424,14 @@ export function runner(policy, route = null, world = null) {
 
     step(state) {
       const party = state && state.party;
-      if (!party || !party[slot]) {
+      if (!party || !party[targetSlot]) {
         // Hold still rather than act on a read that failed, and only give up
         // once it has failed for long enough to mean something.
         if (++blind < BLIND_PATIENCE) return { keys: 0 };
         return { keys: 0, done: true, reason: "Lost sight of the party." };
       }
       blind = 0;
-      const mon = party[slot];
+      const mon = party[targetSlot];
 
       // The Pokémon being trained has to be the one that fights, because only
       // the one that fights earns experience.
@@ -439,13 +449,13 @@ export function runner(policy, route = null, world = null) {
       // made once.
       const out = state.inBattle && state.battle && Number.isInteger(state.battle.active)
         ? state.battle.active : null;
-      if (out !== null && out !== slot && party[out] && mon.hp > 0 && !mon.fainted) {
+      if (out !== null && out !== targetSlot && party[out] && mon.hp > 0 && !mon.fainted) {
         if (++wrongFighter > 120) {
           return {
             keys: 0,
             done: true,
             reason:
-              `${mon.name} is in slot ${slot + 1}, but ${party[out].name} is the one ` +
+              `${mon.name} is in slot ${targetSlot + 1}, but ${party[out].name} is the one ` +
               `fighting — and only the one that fights earns experience. Put ` +
               `${mon.name} first in your party and start again.`,
           };
@@ -552,7 +562,7 @@ export function runner(policy, route = null, world = null) {
         // zero, and every decision after that is about the wrong animal.
         // Defensive about a partial read: a menu state without a cursor must
         // not become a direction press into a menu.
-        const activeSlot = battle && Number.isInteger(battle.active) ? battle.active : slot;
+        const activeSlot = battle && Number.isInteger(battle.active) ? battle.active : targetSlot;
         const actionAt = battle && Number.isInteger(battle.action) ? battle.action : FIGHT;
         const fighter = party[activeSlot] || mon;
         const fighterShare = fighter.maxHp ? fighter.hp / fighter.maxHp : 0;
@@ -580,8 +590,8 @@ export function runner(policy, route = null, world = null) {
             // one, and treating it as one is a trip to a Centre for nothing.
             : spent(fighter) ? "out of PP"
               : fighterShare < fleeBelowHp ? "too hurt to keep fighting"
-                : activeSlot !== slot && canHeal
-                  ? `${party[slot] ? party[slot].name : "it"} is not the one fighting`
+                : activeSlot !== targetSlot && canHeal
+                  ? `${party[targetSlot] ? party[targetSlot].name : "it"} is not the one fighting`
                   : null;
 
         if (why) {
@@ -711,6 +721,18 @@ export function runner(policy, route = null, world = null) {
         const out = trip.step(state);
         if (!out.done) return { keys: out.keys };
         const was = tripKind;
+        if (was === "order" && out.result && out.result.ok) {
+          // The party moved under us. Everything downstream keys off the slot,
+          // so it has to follow the Pokémon rather than the number it used to
+          // be at.
+          targetSlot = 0;
+          ordered = true;
+          mode = "grind";
+          trip = null;
+          tripKind = null;
+          leg = null;
+          return { keys: 0 };
+        }
         if (out.result && out.result.ok) {
           // Arrived. Re-anchor: the leash is measured from here, and "here"
           // is the tile it is actually standing on now.
@@ -731,10 +753,26 @@ export function runner(policy, route = null, world = null) {
               ? `The trip to the Pokémon Center did not work out: ${
                   (out.result && out.result.reason) || "unknown"
                 }.`
-              : `Could not get to where this was meant to happen: ${
-                  (out.result && out.result.reason) || "unknown"
-                }.`,
+              : was === "order"
+                ? `${(out.result && out.result.reason) || "Could not reorder the party"}. ` +
+                  `Only the Pokémon that fights earns experience, so put it first yourself ` +
+                  `and start again.`
+                : `Could not get to where this was meant to happen: ${
+                    (out.result && out.result.reason) || "unknown"
+                  }.`,
         };
+      }
+
+      // The party order comes first, before walking anywhere or fighting
+      // anything. Only the Pokémon that fights earns experience, so a run that
+      // starts grinding with the wrong one in front is a run that cannot
+      // succeed no matter how well everything after this works.
+      if (!ordered && here && !state.inBattle) {
+        want = want || mon;
+        mode = "journey";
+        tripKind = "order";
+        trip = drive(() => leadWith(want));
+        return { keys: 0 };
       }
 
       // Not there yet. Walk to the spot before doing anything else -- there
@@ -816,7 +854,7 @@ export function runner(policy, route = null, world = null) {
           // Did the errand work? Walking to a counter and back without being
           // fixed would otherwise loop all night, so the same reads that sent
           // it are checked on the way back.
-          const back = party[slot];
+          const back = party[targetSlot];
           if (back && (back.fainted || spent(back))) {
             return {
               keys: 0,

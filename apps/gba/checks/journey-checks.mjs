@@ -337,5 +337,142 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
     gaveUp !== null && /ledge|loop/i.test(gaveUp), gaveUp || "never gave up");
 }
 
+// -- putting the right Pokémon at the front -----------------------------------
+//
+// Only the one that fights earns experience, so this is the difference between
+// a run that works and one that cannot. The submenu is the fiddly part: it
+// grows an entry per field move the selected Pokémon knows, so SWITCH is not
+// at a fixed position, and counting presses quietly does the wrong thing on
+// somebody else's party.
+{
+  const { leadWith } = await import("../src/journey.js");
+  const mon = (name, level, species, personality) => ({
+    name, level, species, maxHp: 40, hp: 40,
+    record: { species, personality, moves: [{ id: 52, pp: 20 }] },
+  });
+
+  /**
+   * The field menu, the party screen, and the submenu that SWITCH lives in.
+   *
+   * All three, because the walk to SWITCH goes through all three and a fake
+   * that starts at the party screen mis-reads the START/DOWN/A that opens it
+   * as party-cursor movement. That off-by-one made attempt one look like
+   * attempt three, which reads exactly like a fault in the code being tested.
+   *
+   * Edge-triggered per button, like the hardware: one shared "was it down"
+   * flag across buttons is the other way a fake like this lies.
+   */
+  const partyScreen = (order, switchAt) => {
+    const was = {};
+    const edge = (keys, bit) => {
+      const now = !!(keys & bit);
+      const fired = now && !was[bit];
+      was[bit] = now;
+      return fired;
+    };
+    let screen = "overworld";
+    let depth = 0;
+    let picked = null;
+    return {
+      order,
+      get screen() { return screen; },
+      press(keys) {
+        const a = edge(keys, BTN.A);
+        const b = edge(keys, BTN.B);
+        const down = edge(keys, BTN.DOWN);
+        const left = edge(keys, BTN.LEFT);
+        const start = edge(keys, BTN.START);
+
+        if (start && screen === "overworld") { screen = "field"; depth = 0; return; }
+        if (b) {
+          screen = screen === "moving" ? "submenu"
+            : screen === "submenu" ? "party"
+              : screen === "party" ? "field" : "overworld";
+          depth = 0;
+          if (screen === "field" || screen === "overworld") picked = null;
+          return;
+        }
+        if (down) { depth++; return; }
+
+        if (!a) return;
+        if (screen === "field") { screen = "party"; depth = 0; return; }
+        if (screen === "party") {
+          // The cursor starts on the lead and the first press is eaten while
+          // the screen opens, which is why the walker sends one more than the
+          // slot index.
+          picked = Math.max(0, depth - 1);
+          screen = "submenu";
+          depth = 0;
+          return;
+        }
+        if (screen === "submenu") {
+          // Only one entry is SWITCH. Every other one opens something
+          // harmless -- a summary, the bag -- which B closes again.
+          if (depth === switchAt) { screen = "moving"; depth = 0; }
+          return;
+        }
+        if (screen === "moving") {
+          const [m] = order.splice(picked, 1);
+          order.unshift(m);
+          picked = null;
+          screen = "party";
+          depth = 0;
+        }
+      },
+    };
+  };
+
+  const run = (switchAt, party, target) => {
+    const order = party.slice();
+    const screen = partyScreen(order, switchAt);
+    const want = order[target];
+    const d = drive(() => leadWith(want), { budget: 200000 });
+    for (let i = 0; i < 200000 && !d.done; i++) {
+      const out = d.step({ party: screen.order, inBattle: false, battle: null, position: null });
+      if (out.done) break;
+      screen.press(out.keys);
+    }
+    return { result: d.result, order: screen.order };
+  };
+
+  const three = [mon("CHARIZARD", 36, 6, 111), mon("BEEDRILL", 19, 15, 222), mon("CLEFAIRY", 15, 35, 333)];
+
+  const second = run(2, three, 2);
+  check("it finds SWITCH when it is the second submenu entry",
+    second.result.ok && second.order[0].name === "CLEFAIRY",
+    `${second.result.ok ? "ok" : second.result.reason} -> ${second.order[0].name}`);
+
+  const third = run(3, three, 2);
+  check("and when a field move pushes it to the third",
+    third.result.ok && third.order[0].name === "CLEFAIRY",
+    `${third.result.ok ? "ok" : third.result.reason} -> ${third.order[0].name}`);
+
+  const never = run(99, three, 2);
+  check("a party that will not reorder is reported rather than retried forever",
+    !never.result.ok && /could not move/i.test(never.result.reason), String(never.result.reason));
+
+  // Already leading is not work.
+  {
+    const order = [mon("CLEFAIRY", 15, 35, 333), mon("CHARIZARD", 36, 6, 111)];
+    const d = drive(() => leadWith(order[0]));
+    for (let i = 0; i < 50 && !d.done; i++) {
+      d.step({ party: order, inBattle: false, battle: null, position: null });
+    }
+    check("a Pokémon already at the front is left alone",
+      d.result && d.result.ok && d.result.note === "already leading", JSON.stringify(d.result));
+  }
+
+  // Identity is the whole tuple. This player's party holds a CHARIZARD and a
+  // CHARMELEON sharing the personality value 2003283047, and two of a species
+  // share a name, so neither field identifies a Pokémon on its own.
+  {
+    const clash = [mon("CHARMELEON", 27, 5, 2003283047), mon("BEEDRILL", 19, 15, 222), mon("CHARIZARD", 36, 6, 2003283047)];
+    const out = run(2, clash, 2);
+    check("a shared personality does not confuse one Pokémon for another",
+      out.result.ok && out.order[0].name === "CHARIZARD" && out.order[0].level === 36,
+      `${out.result.ok ? "ok" : out.result.reason} -> ${out.order[0].name} L${out.order[0].level}`);
+  }
+}
+
 console.log(failures === 0 ? "\nall good" : `\n${failures} failed`);
 process.exit(failures === 0 ? 0 : 1);

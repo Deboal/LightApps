@@ -345,6 +345,71 @@ export function* healInside(world, { limit = 60 * 60 * 4 } = {}) {
 }
 
 /**
+ * Whether two party reads are the same Pokémon.
+ *
+ * Not by name, and not by personality either. This player's party contains a
+ * CHARIZARD and a CHARMELEON sharing the personality value 2003283047 --
+ * almost certainly a clone from trading -- and two Pokémon of the same species
+ * share a name. Neither field is the unique identifier it looks like, so this
+ * compares the whole tuple, which is unique enough for the only question being
+ * asked: did the one we meant end up at the front?
+ */
+const sameMon = (a, b) =>
+  !!a && !!b &&
+  a.name === b.name &&
+  a.level === b.level &&
+  a.maxHp === b.maxHp &&
+  (a.record && a.record.species) === (b.record && b.record.species) &&
+  (a.record && a.record.personality) === (b.record && b.record.personality);
+
+/**
+ * Move a party member into the lead.
+ *
+ * Only the Pokémon that fights earns experience, so training the third member
+ * of a party means putting it first. Without this the run fights with whoever
+ * happens to lead, the intended Pokémon gains nothing, and the mismatch reads
+ * as a reason to leave every battle -- which books a trip to a Pokémon Center
+ * after each one, forever.
+ *
+ * The fiddly part is that the party submenu is not a fixed list: it grows an
+ * entry for every field move the selected Pokémon knows, so SWITCH is second
+ * for a Charmeleon and third for a Beedrill that knows Cut. Counting presses
+ * is how a script quietly does the wrong thing on somebody else's party. So
+ * the submenu position is searched, and the result is checked against the
+ * party itself rather than assumed.
+ */
+export function* leadWith(want, { attempts = 5 } = {}) {
+  let state = yield 0;
+  const partyNow = () => (state && state.party) || [];
+  const at = partyNow().findIndex((mon) => sameMon(mon, want));
+  if (at < 0) return { ok: false, reason: `${want.name} is not in the party any more` };
+  if (at === 0) return { ok: true, note: "already leading", slot: 0 };
+
+  for (let switchAt = 1; switchAt <= attempts; switchAt++) {
+    // Open the party from the field menu.
+    yield* tap(BTN.START, { then: 50 });
+    yield* tap(BTN.DOWN, { then: 30 }); // POKéMON
+    yield* tap(BTN.A, { then: 90 });
+    // One press per slot. The first is eaten while the screen opens, which is
+    // why this is one more than the slot index.
+    for (let i = 0; i < at + 1; i++) yield* tap(BTN.DOWN, { then: 30 });
+    yield* tap(BTN.A, { then: 60 }); // SUMMARY / [field moves] / SWITCH / ITEM / CANCEL
+    for (let i = 0; i < switchAt; i++) yield* tap(BTN.DOWN, { then: 30 });
+    yield* tap(BTN.A, { then: 60 }); // "Move to where?"
+    yield* tap(BTN.LEFT, { then: 30 }); // the lead is the box on its own
+    state = yield* tap(BTN.A, { then: 180 });
+
+    if (sameMon(partyNow()[0], want)) {
+      for (let i = 0; i < 4; i++) state = yield* tap(BTN.B, { then: 40 });
+      return { ok: true, slot: 0, switchAt };
+    }
+    // Whatever that submenu entry was, back out of it and try the next.
+    for (let i = 0; i < 5; i++) state = yield* tap(BTN.B, { then: 40 });
+  }
+  return { ok: false, reason: `could not move ${want.name} to the front of the party` };
+}
+
+/**
  * The tile to stand on to talk to the nurse.
  *
  * You do not stand next to her: the counter between you is solid, so the spot
