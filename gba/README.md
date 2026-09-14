@@ -694,6 +694,26 @@ machine. `journey.js` is the harness's travel and heal routines moved over
 essentially unchanged, which is the point — the code that was debugged against
 a real cartridge is the code that runs in the tab.
 
+### The update nobody could take
+
+Worth writing down because it wasted more of someone's time than any bug here.
+
+The service worker never calls `skipWaiting`, on purpose: swapping the emulator
+core out from under a running game is worse than waiting, and that rule stands.
+The consequence of it is invisible and vicious. A waiting worker activates only
+once **every** tab controlled by the old one has closed — so reloading does not
+pick up a new build. Someone told a fix has shipped does the obvious thing,
+reloads, gets the old code, and reports the same bug again. That happened twice
+here, and both times the reply was a version hash they had no way to compare
+against anything.
+
+The fix is not to skip waiting automatically. It is to stop the trap being
+silent: the page notices a worker in waiting, says "Update ready — reload", and
+the button performs the swap deliberately (`SKIP_WAITING`, then reload on
+`controllerchange`) having warned that it costs anything not yet saved to the
+cartridge. A tab left open all day asks for itself every ten minutes, because
+otherwise it would never find out.
+
 ## Playing it unattended
 
 The in-app runner above answers one question per frame — which button now — and
