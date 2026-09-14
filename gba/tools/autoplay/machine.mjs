@@ -105,6 +105,31 @@ export async function boot({ rom, save, code = "BPRE" }) {
     },
 
     /** The cartridge save, as the app would export it. */
+    /**
+     * A save state, and putting one back.
+     *
+     * What this buys is branching: driving the machine to an interesting
+     * moment once and then trying several different things from exactly that
+     * moment, rather than rebooting and hoping to arrive somewhere comparable.
+     * Learning an unfamiliar menu is precisely that problem -- every press
+     * changes the thing being measured.
+     */
+    /** The cartridge's work RAM, for finding an address by watching it move. */
+    ewram: () => game.ewram(core),
+    iwram: () => game.iwram(core),
+
+    snapshot() {
+      const length = core.gba_read_state();
+      if (!length) return null;
+      const ptr = core.gba_transfer_ptr();
+      return Buffer.from(new Uint8Array(core.memory.buffer, ptr, length).slice());
+    },
+    restore(state) {
+      const ptr = core.gba_alloc(state.length);
+      new Uint8Array(core.memory.buffer, ptr, state.length).set(state);
+      return core.gba_write_state(ptr, state.length) === 1;
+    },
+
     save() {
       const length = core.gba_read_save();
       if (!length) return null;
