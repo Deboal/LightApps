@@ -698,5 +698,63 @@ async function newPage() {
   await page.close();
 }
 
+// A new build can actually be taken.
+//
+// This is the one that cost real time. The worker never calls `skipWaiting`
+// on its own -- swapping the emulator core out from under a running game is
+// worse than waiting -- and the consequence is a trap: a waiting worker
+// activates only once every tab controlled by the old one closes, so
+// *reloading does not pick up a new build*. Someone told a fix had shipped
+// reloads, gets the old code, and reports the bug again. Twice.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(9000);
+
+  // The worker has to be in charge before any of this means anything.
+  const controlled = await page.evaluate(async () => {
+    if (!("serviceWorker" in navigator)) return false;
+    await navigator.serviceWorker.ready;
+    return !!navigator.serviceWorker.controller;
+  }).catch(() => false);
+  check("the page is running under its service worker", controlled);
+
+  if (controlled) {
+    // No update pending, so nothing should be offered.
+    check("with nothing waiting, no update is advertised",
+      (await page.locator("text=Update ready").count()) === 0);
+
+    // A waiting worker must be able to step forward when asked. This is the
+    // exact exchange the button performs.
+    const swapped = await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg || !reg.active) return "no registration";
+      return await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve("no reply"), 4000);
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => { clearTimeout(timer); resolve("answered"); };
+        // A worker that ignores messages entirely would throw here; one that
+        // handles SKIP_WAITING accepts it silently, which is success.
+        try {
+          reg.active.postMessage({ type: "SKIP_WAITING" });
+          clearTimeout(timer);
+          resolve("accepted");
+        } catch (e) {
+          clearTimeout(timer);
+          resolve(`threw: ${e.message}`);
+        }
+      });
+    });
+    check("the worker accepts the message that takes an update",
+      swapped === "accepted" || swapped === "answered", String(swapped));
+
+    // And the swap must not have broken the page that was running.
+    await page.waitForTimeout(2000);
+    const lit = await brightness(page);
+    check("and the game is still running afterwards", lit > 5, `luminance ${lit}`);
+  }
+  check("no page errors around the update path", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

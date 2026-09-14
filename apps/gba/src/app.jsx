@@ -2647,6 +2647,53 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     setSyncing(false);
   };
 
+  // An update waiting to be taken.
+  //
+  // The service worker never swaps itself in on its own -- swapping the
+  // emulator core out from under a running game is worse than waiting. The
+  // trap in that is invisible: a waiting worker activates only once every tab
+  // controlled by the old one has closed, so reloading does *not* pick up a
+  // new build, which is exactly what someone does when told a fix has shipped.
+  // So: notice it, say so, and let them take it deliberately.
+  const [update, setUpdate] = useState(null);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return undefined;
+    let alive = true;
+    let timer = null;
+    navigator.serviceWorker
+      .getRegistration()
+      .then((reg) => {
+        if (!reg || !alive) return;
+        const look = () => {
+          if (alive && reg.waiting) setUpdate(reg.waiting);
+        };
+        look();
+        reg.addEventListener("updatefound", () => {
+          const arriving = reg.installing;
+          if (arriving) arriving.addEventListener("statechange", look);
+        });
+        // Ask rather than wait to be told: a tab left open for a day would
+        // otherwise never find out.
+        reg.update().catch(() => {});
+        timer = setInterval(() => reg.update().catch(() => {}), 10 * 60 * 1000);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  const takeUpdate = useCallback(() => {
+    if (!update) return;
+    navigator.serviceWorker.addEventListener(
+      "controllerchange",
+      () => window.location.reload(),
+      { once: true }
+    );
+    update.postMessage({ type: "SKIP_WAITING" });
+  }, [update]);
+
   // Which build this page is. The service worker deliberately does not take
   // over a live tab -- swapping the emulator core out from under a running
   // game is worse than waiting -- so a browser can be a deploy or two behind
@@ -2673,7 +2720,22 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         <span>{fps} fps</span>
         <span style={{ color: backup === "error" ? "var(--accent2)" : undefined }}>{status}</span>
         {note && <span style={{ color: "var(--accent)" }}>{note}</span>}
-        <span style={{ marginLeft: "auto", opacity: 0.5, fontVariantNumeric: "tabular-nums" }} title="Which build this tab is running">
+        {update && (
+          <button
+            onClick={takeUpdate}
+            title="Reloads the page. Save in-game first — anything not written to the cartridge is lost."
+            style={{
+              marginLeft: "auto", background: "var(--accent)", color: "#000", border: 0,
+              borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            Update ready — reload
+          </button>
+        )}
+        <span
+          style={{ marginLeft: update ? 8 : "auto", opacity: 0.5, fontVariantNumeric: "tabular-nums" }}
+          title="Which build this tab is running"
+        >
           {build}
         </span>
         <span style={{ flex: 1 }} />

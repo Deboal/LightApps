@@ -46,6 +46,21 @@ self.addEventListener("install", (event) => {
   );
 });
 
+// Taking an update, when the player asks for one.
+//
+// There is still no automatic `skipWaiting`: swapping the emulator core out
+// from under a running game is worse than waiting, and that rule stands. But
+// the consequence of it is a trap -- a waiting worker activates only once
+// every tab controlled by the old one has closed, so *reloading does nothing*
+// and a player who reloads to pick up a fix keeps getting the old build. They
+// were reloading into the same bug I had already fixed, twice.
+//
+// So the swap is on offer rather than automatic. The page asks, having warned
+// what it costs, and reloads itself the moment this takes effect.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
