@@ -92,6 +92,45 @@ The harness is still the place to develop: it runs headless, at whatever speed
 the machine manages, with a real cartridge and no tab in the way. What changed
 is that the result no longer has to stay here.
 
+## Switch training, and why it is not here
+
+The plan was: put the Pokémon being trained in front so it is sent out first,
+switch to a strong one on turn one, let that win. Switching resolves before the
+opponent attacks, so the weak one takes no damage, and Gen 3 splits experience
+among everything that was sent out. Half the experience for none of the risk.
+
+Measured against the cartridge, two facts kill it.
+
+**A switch permanently reorders the party.** Not just `gBattlerPartyIndexes` --
+the party array itself. Switching to the Pokémon in slot three leaves it in slot
+zero and the one that led in slot three, and it stays that way after the battle
+ends. So the trick works exactly once: the next battle sends out the *fighter*,
+not the trainee, and getting back to the starting arrangement costs a full
+party reorder (about fourteen seconds) before every single battle.
+
+**The cursor cannot be driven blind.** The in-battle party menu exposes no
+cursor this build can read -- a byte-level diff across two presses finds nothing
+that counts -- and pressing A without moving first does nothing at all, because
+the cursor starts on the Pokémon already out, which cannot be chosen. Four DOWN
+presses selected slot three rather than slot four, and I could not establish the
+mapping reliably. Guessing wrong does not fail safely: it silently and
+permanently rearranges somebody's party.
+
+So the arithmetic is worse than it looked. Against lead training, switch
+training costs roughly a doubled battle time plus half the experience, which is
+about four times worse per level, on top of a failure mode that edits the
+player's save.
+
+What actually protects a weak Pokémon, in order of sense:
+
+1. **Lead training with the adaptive heal threshold.** It already exists: the
+   runner watches what the fights here cost and leaves for a Centre while it
+   can still survive the walk. Full experience, no new machinery.
+2. **Exp. Share.** The trainee holds it, never enters a battle, and takes a
+   share anyway. No reorder, no per-battle cost. It needs the bag, which is a
+   menu nobody here has driven yet -- but it is an overworld menu, where a
+   wrong press is recoverable.
+
 ## Porting this to something else
 
 The transferable part is not the map data; it is the loop.
