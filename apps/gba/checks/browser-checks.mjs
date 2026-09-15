@@ -30,6 +30,24 @@ const brightness = (page) =>
     return Math.round(sum / (data.length / 4));
   });
 
+/**
+ * Brightness averaged over a short window rather than sampled once.
+ *
+ * The title screen animates, so a single sample measures the animation's phase
+ * as much as the frame. That made the save-state check a coin flip: it failed
+ * at 16 against a threshold of 15, and its own baseline moved between runs
+ * (93, then 77) with nothing in the code changed. Averaging a dozen samples
+ * over three quarters of a second takes the phase out and leaves the frame.
+ */
+const steady = async (page, samples = 12) => {
+  let total = 0;
+  for (let i = 0; i < samples; i++) {
+    total += await brightness(page);
+    await page.waitForTimeout(60);
+  }
+  return Math.round(total / samples);
+};
+
 let failures = 0;
 function check(name, ok, detail) {
   console.log(`${ok ? "pass" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`);
@@ -98,16 +116,16 @@ async function newPage() {
   await page.fill('input[placeholder*="Name this state"]', "checkpoint");
   await page.click("button:has-text('Save state')");
   await page.waitForTimeout(1500);
-  const saved = await brightness(page);
+  const saved = await steady(page);
   await page.click("button:has-text('Close')");
 
   await page.waitForTimeout(9000);
-  const moved = await brightness(page);
+  const moved = await steady(page);
   await page.click("text=Library");
   await page.waitForSelector("text=checkpoint");
   await page.click("button:has-text('Load')");
   await page.waitForTimeout(1500);
-  const resumed = await brightness(page);
+  const resumed = await steady(page);
 
   check(
     "resuming a state returns to the saved moment",
@@ -753,6 +771,75 @@ async function newPage() {
     check("and the game is still running afterwards", lit > 5, `luminance ${lit}`);
   }
   check("no page errors around the update path", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
+// Discreet mode, measured rather than eyeballed.
+//
+// The claim is that it is less conspicuous to someone walking past, and the
+// three things that make it so are testable: the screen is smaller, the
+// colour is duller, and the d-pad -- the one element that cannot be mistaken
+// for anything but a game -- is gone.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(12000);
+
+  const canvasWidth = () =>
+    page.evaluate(() => Math.round(document.querySelector("canvas").getBoundingClientRect().width));
+  const padCount = () => page.locator("text=/^(SELECT|START)$/").count();
+  // Mean distance from grey, which is what "colourful" means to a passing eye.
+  const colourfulness = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector("canvas");
+      const style = getComputedStyle(canvas).filter;
+      const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        sum += (Math.max(r, g, b) - Math.min(r, g, b));
+      }
+      return { chroma: Math.round(sum / (data.length / 4)), filter: style };
+    });
+
+  const wide = await canvasWidth();
+  const padsBefore = await padCount();
+  check("normally the screen is full width", wide > 400, `${wide}px`);
+  check("and the controls are there", padsBefore > 0, `${padsBefore} labels`);
+
+  const toggle = page.getByRole("button", { name: "Discreet", exact: true });
+  const offered = await toggle.count();
+  check("a discreet toggle is offered", offered > 0);
+
+  if (offered) {
+    await toggle.click();
+    await page.waitForTimeout(800);
+
+    const narrow = await canvasWidth();
+    check("discreet shrinks the screen", narrow < wide / 2, `${wide}px -> ${narrow}px`);
+    check("and takes the controls away", (await padCount()) === 0);
+
+    const { filter } = await colourfulness();
+    check("and mutes the colour", /saturate\(0?\.45\)/.test(filter), filter);
+
+    // The game must not stop just because it is small.
+    const first = await brightness(page);
+    await page.waitForTimeout(2500);
+    const second = await brightness(page);
+    check("the emulator keeps running while discreet", first > 0 || second > 0,
+      `${first} then ${second}`);
+
+    // The detail has to survive the picture shrinking, or this is just hiding.
+    const said = await page.evaluate(() => document.body.innerText);
+    check("the readout still says what is happening", /fps/.test(said) && said.length > 20);
+
+    // And it has to come back.
+    await page.getByRole("button", { name: "Show", exact: true }).click();
+    await page.waitForTimeout(800);
+    check("showing it again restores the screen", (await canvasWidth()) > wide / 2,
+      `${await canvasWidth()}px`);
+    check("and the controls", (await padCount()) > 0);
+  }
+  check("no page errors around discreet mode", errors.length === 0, errors.join("; "));
   await page.close();
 }
 
