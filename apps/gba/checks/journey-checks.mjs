@@ -373,10 +373,29 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
     let screen = "overworld";
     let depth = 0;
     let picked = null;
+    // Somewhere to stand. The walker proves it is out of the menus by taking
+    // a step, so the fake has to have a floor -- and the floor must only move
+    // when no menu is up, which is the whole property being tested.
+    const where = { x: 5, y: 5 };
+    let held = 0;
+    let progress = 0;
     return {
       order,
       get screen() { return screen; },
+      get position() { return { x: where.x, y: where.y, map: { mapGroup: 3, mapNum: 24 } }; },
       press(keys) {
+        const dir = keys & (BTN.UP | BTN.DOWN | BTN.LEFT | BTN.RIGHT);
+        if (screen === "overworld" && dir) {
+          if (dir !== held) { held = dir; progress = 0; }
+          else if (++progress >= 8) {
+            progress = 0;
+            where.x += dir & BTN.RIGHT ? 1 : dir & BTN.LEFT ? -1 : 0;
+            where.y += dir & BTN.DOWN ? 1 : dir & BTN.UP ? -1 : 0;
+          }
+        } else if (!dir) {
+          held = 0;
+          progress = 0;
+        }
         const a = edge(keys, BTN.A);
         const b = edge(keys, BTN.B);
         const down = edge(keys, BTN.DOWN);
@@ -428,7 +447,9 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
     const want = order[target];
     const d = drive(() => leadWith(want), { budget: 200000 });
     for (let i = 0; i < 200000 && !d.done; i++) {
-      const out = d.step({ party: screen.order, inBattle: false, battle: null, position: null });
+      const out = d.step({
+        party: screen.order, inBattle: false, battle: null, position: screen.position,
+      });
       if (out.done) break;
       screen.press(out.keys);
     }
@@ -456,10 +477,43 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
     const order = [mon("CLEFAIRY", 15, 35, 333), mon("CHARIZARD", 36, 6, 111)];
     const d = drive(() => leadWith(order[0]));
     for (let i = 0; i < 50 && !d.done; i++) {
-      d.step({ party: order, inBattle: false, battle: null, position: null });
+      d.step({
+        party: order, inBattle: false, battle: null,
+        position: { x: 5, y: 5, map: { mapGroup: 3, mapNum: 24 } },
+      });
     }
     check("a Pokémon already at the front is left alone",
       d.result && d.result.ok && d.result.note === "already leading", JSON.stringify(d.result));
+  }
+
+  // The regression this was reported as: the swap lands, the party screen
+  // stays up, and the runner goes back to pressing directions at a menu that
+  // swallows them. On screen that is a frozen game. Success is being able to
+  // walk again, not having got what you came for.
+  {
+    const stuck = [mon("CHARIZARD", 36, 6, 111), mon("BEEDRILL", 19, 15, 222), mon("CLEFAIRY", 15, 35, 333)];
+    const order = stuck.slice();
+    const screen = partyScreen(order, 2);
+    // A screen that reorders as asked and then refuses to close.
+    const jammed = {
+      order,
+      get position() { return screen.position; },
+      press(keys) {
+        screen.press(keys & ~BTN.B); // B never gets through, so it never exits
+      },
+    };
+    const want = order[2];
+    const d = drive(() => leadWith(want), { budget: 200000 });
+    for (let i = 0; i < 200000 && !d.done; i++) {
+      const out = d.step({
+        party: jammed.order, inBattle: false, battle: null, position: jammed.position,
+      });
+      if (out.done) break;
+      jammed.press(out.keys);
+    }
+    check("a menu that will not close is reported, not called success",
+      d.result && !d.result.ok && /back out of the menus/i.test(d.result.reason),
+      JSON.stringify(d.result));
   }
 
   // Identity is the whole tuple. This player's party holds a CHARIZARD and a

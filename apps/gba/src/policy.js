@@ -238,6 +238,8 @@ export function runner(policy, route = null, world = null) {
   // the count, so this cannot accumulate a stop out of the one-frame race
   // between a battle ending and the damage that ended it.
   let lastHp = null;
+  /** Who `lastHp` belongs to. Comparing HP across two Pokémon is nonsense. */
+  let lastMon = null;
   let damageUnseen = 0;
   let blind = 0;
 
@@ -300,6 +302,12 @@ export function runner(policy, route = null, world = null) {
   // Frames spent in a battle the target is healthy for and somebody else is
   // fighting. See the check on it below -- one frame means nothing.
   let wrongFighter = 0;
+  // Frames since the player last stood somewhere new, and how many times a
+  // box has been advanced to get them moving again. Distinct from `stuckFor`,
+  // which the turning logic resets every twenty-eight frames and so can never
+  // notice something that lasts longer.
+  let sinceMoved = 0;
+  let nudges = 0;
   // Frames spent in a battle with a controller pointer this build does not
   // recognise. Without the menus the runner can only mash A, and A takes the
   // first move -- which looks exactly like the move picker choosing badly.
@@ -395,6 +403,12 @@ export function runner(policy, route = null, world = null) {
     },
     /** The hardest hit seen in a single battle here, which is what the
      *  decision to leave is actually measured against. */
+    /** Drops in HP with no battle to explain them. The run stops at three, so
+     *  being able to watch it climb is the difference between finding the
+     *  cause and guessing at it. */
+    get unexplained() {
+      return damageUnseen;
+    },
     get worstHit() {
       return worstHit;
     },
@@ -477,7 +491,46 @@ export function runner(policy, route = null, world = null) {
       }
 
       // -- the flag against reality ---------------------------------------
-      if (lastHp !== null && mon.hp < lastHp && !state.inBattle) damageUnseen++;
+      //
+      // A faint is not a mystery. The HP bar drains as the battle ends, and
+      // the battle flag has already gone false by then, so a Pokémon going
+      // down reads as several frames of damage nobody can account for -- three
+      // of them is the whole budget, and the run stopped on the one thing it
+      // was best equipped to handle. Reported as a freeze on "CLEFAIRY
+      // fainted...", which is exactly what it looks like from outside.
+      //
+      // So a drop is only unexplained while there is something left to lose.
+      // All of this compares one frame's HP against the last one's, which is
+      // only meaningful while they are the same Pokémon. Reordering the party
+      // moves somebody else under the slot for a frame, and a Charizard's 102
+      // becoming a Clefairy's 50 reads as fifty-two points of damage nobody
+      // can account for. Three of those is the whole budget, and the run
+      // ended on the very thing it had just done successfully.
+      const who = `${mon.name}/${mon.level}/${mon.maxHp}/${mon.record ? mon.record.personality : 0}`;
+      if (who !== lastMon) {
+        lastMon = who;
+        lastHp = null;
+        damageUnseen = 0;
+      }
+      const fainting = mon.hp === 0 || mon.fainted;
+      // Poison is not a mystery either, and it is the commonest thing that
+      // looks like one: a point of HP every few steps, out of battle, for as
+      // long as it takes to reach a Centre. Three of those and the run stopped
+      // -- while it was walking to the Centre to cure them. Measured here at
+      // 11, 10, 9 HP over eighty frames of a heal trip.
+      //
+      // So a single point is never evidence. The flag this guards against
+      // being wrong would mean something is *attacking*, and an attack takes
+      // more than one. And a trip already under way is a response in progress:
+      // stopping it to announce the problem it is solving helps nobody.
+      const drip = lastHp !== null && lastHp - mon.hp <= 1;
+      const responding = mode === "journey" && tripKind === "heal";
+      if (
+        lastHp !== null && mon.hp < lastHp && !state.inBattle &&
+        !fainting && !drip && !responding
+      ) {
+        damageUnseen++;
+      }
       lastHp = mon.hp;
       if (damageUnseen >= 3) {
         return {
@@ -641,10 +694,12 @@ export function runner(policy, route = null, world = null) {
       // did before and is still better than nothing.
       const here = state.position;
       if (here) {
-        if (lastTile && sameTile(here, lastTile)) stuckFor++;
+        if (lastTile && sameTile(here, lastTile)) { stuckFor++; sinceMoved++; }
         else {
           if (lastTile) everMoved = true;
           stuckFor = 0;
+          sinceMoved = 0;
+          nudges = 0;
         }
         lastTile = here;
         // Where this is anchored. With a route, that is the route's first
@@ -761,6 +816,37 @@ export function runner(policy, route = null, world = null) {
                     (out.result && out.result.reason) || "unknown"
                   }.`,
         };
+      }
+
+      // A box on screen, which the walking cannot see.
+      //
+      // "CLEFAIRY fainted..." is printed in the overworld with a "▼" waiting
+      // on A, and the walk never presses A on purpose -- an A press in the
+      // overworld talks to whoever is standing nearby. So the game sits there
+      // and every direction is swallowed, which looks exactly like a freeze
+      // and was reported as one.
+      //
+      // The nurse taught the rule and this is the same one: try to walk
+      // first, and only when walking is refused for longer than any real step
+      // could take is a press the right answer. That ordering is what keeps A
+      // away from a game that is merely slow.
+      // `everMoved` is the guard that keeps the two apart: a player who has
+      // never taken a step is walled in or standing somewhere they cannot
+      // walk, and that has its own answer further down. This is for a walk
+      // that was working and stopped.
+      if (here && everMoved && sinceMoved > 120 && !state.inBattle && mode === "grind") {
+        if (++nudges > 20) {
+          return {
+            keys: 0,
+            done: true,
+            reason:
+              "Something is on screen that will not clear -- twenty presses and " +
+              "the player still has not moved a tile. Stopping rather than " +
+              "pressing buttons at it all night.",
+          };
+        }
+        sinceMoved = 0;
+        return { keys: tapping(ticks) ? BTN.A : 0 };
       }
 
       // The party order comes first, before walking anywhere or fighting
