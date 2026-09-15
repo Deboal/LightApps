@@ -1155,7 +1155,11 @@ function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, 
         atlas && position
           ? atlas.placesNear(position.map).map((p) => ({ name: p.name, hops: p.hops, centre: p.centre, grass: p.tiles }))
           : [];
-      setPlan(await autopilot.compile(said, party, places));
+      const made = await autopilot.compile(said, party, places);
+      // Keep the sentence with the plan. A run that stops is usually resumed,
+      // and retyping what you already said is not a thing to make someone do.
+      made.asked = said;
+      setPlan(made);
     } catch (problem) {
       setError(problem.message);
     } finally {
@@ -1373,9 +1377,33 @@ function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, 
         {!blocked && !running && (
           <>
             {auto && auto.done && (
-              <p style={{ fontSize: 13, lineHeight: 1.5, margin: "0 0 14px" }}>
-                <strong>{auto.policy.name}</strong> stopped: {auto.done}
-              </p>
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                  <strong>{auto.policy.name}</strong> stopped: {auto.done}
+                </p>
+                {/* The plan is still here, so asking for it again is a waste
+                    of a request and of the player's typing. Most stops are
+                    something to go and fix -- put a Pokémon first, heal, move
+                    to the grass -- and then carry on with the same plan. */}
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <Button
+                    onClick={() => onStart(auto.policy)}
+                    tone="accent"
+                    style={{ fontSize: 13, padding: "8px 12px" }}
+                  >
+                    Run it again
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setPlan(auto.policy);
+                      setPrompt(auto.asked || "");
+                    }}
+                    style={{ fontSize: 13, padding: "8px 12px" }}
+                  >
+                    Change it
+                  </Button>
+                </div>
+              </div>
             )}
             <form onSubmit={think}>
               <input
@@ -2172,7 +2200,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         run: runner(withSpot, routeRef.current, atlasNow),
         frame: 0, code, slot: policy.slot || 0, mon: null,
       };
-      setAuto({ policy: withSpot, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null });
+      setAuto({ policy: withSpot, asked: policy.asked, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null });
       autoResume.current = baseSpeed.current;
       baseSpeed.current = 8;
       applySpeed();

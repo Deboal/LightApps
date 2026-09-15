@@ -345,6 +345,42 @@ export function* healInside(world, { limit = 60 * 60 * 4 } = {}) {
 }
 
 /**
+ * Get back out to the overworld, proven rather than assumed.
+ *
+ * Every menu here ends the same way and the temptation is always the same:
+ * press B a few times and declare it done, because the thing you went in for
+ * has visibly happened. It is the nurse all over again -- the party reads
+ * healed while she is still talking; the party reads reordered while the
+ * screen is still open -- and the failure looks identical from outside. The
+ * run carries on pressing directions at a menu that swallows them, which on
+ * screen is a frozen game.
+ *
+ * So the test is not how many times B was pressed. It is whether a step
+ * lands. All four directions, because a player standing against a wall would
+ * otherwise fail the test while standing in the overworld.
+ */
+export function* backToOverworld({ tries = 14 } = {}) {
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const state = yield 0;
+    // A battle starting is also a way out of a menu, and a fine one.
+    if (state && state.inBattle) return { ok: true, note: "a battle started" };
+    const before = state && state.position;
+    if (before) {
+      for (const way of [BTN.LEFT, BTN.RIGHT, BTN.UP, BTN.DOWN]) {
+        // B alongside the direction is the run latch; it is never pressed on
+        // its own here, so it cannot back out of anything by accident.
+        const after = yield* hold(way | BTN.B, 26);
+        if (after && after.inBattle) return { ok: true, note: "a battle started" };
+        const now = (yield* settle(6)).position;
+        if (now && !sameSpot(before, now)) return { ok: true, at: now };
+      }
+    }
+    yield* tap(BTN.B, { then: 40 });
+  }
+  return { ok: false, reason: "could not get back out of the menus" };
+}
+
+/**
  * Whether two party reads are the same Pokémon.
  *
  * Not by name, and not by personality either. This player's party contains a
@@ -400,7 +436,11 @@ export function* leadWith(want, { attempts = 5 } = {}) {
     state = yield* tap(BTN.A, { then: 180 });
 
     if (sameMon(partyNow()[0], want)) {
-      for (let i = 0; i < 4; i++) state = yield* tap(BTN.B, { then: 40 });
+      // The swap happened. That is not the same as being able to play again:
+      // the party screen is still up, and a run that returns here walks into
+      // a menu that eats every press.
+      const out = yield* backToOverworld();
+      if (!out.ok) return { ok: false, reason: `${want.name} is leading, but ${out.reason}` };
       return { ok: true, slot: 0, switchAt };
     }
     // Whatever that submenu entry was, back out of it and try the next.
