@@ -694,6 +694,35 @@ machine. `journey.js` is the harness's travel and heal routines moved over
 essentially unchanged, which is the point — the code that was debugged against
 a real cartridge is the code that runs in the tab.
 
+### Discreet
+
+Asked for so that playing is not conspicuous to someone walking past. That is a
+different problem from "less distracting", and it reorders what matters: the
+thing a passing eye catches is **motion**, then the d-pad -- the one element on
+the screen that cannot be mistaken for anything but a game -- and only then
+colour and size.
+
+So discreet mode shrinks the screen to 260px, mutes it
+(`saturate(.45) contrast(.92) brightness(.9)`), hides the touch controls
+entirely, and trims the header to nothing that names a cartridge. The keyboard
+still plays. Backtick toggles it, because reaching for a button is itself
+conspicuous.
+
+The part that makes it work rather than merely hide things: **the detail moves
+from pixels into text**. A line reading `CLEFAIRY Lv16 · 42/50` over `walking
+to a Centre — poison` is denser than watching the sprite walk, and text is
+nearly invisible to peripheral vision. Someone glancing across sees a person
+reading. You end up with more information than the picture was giving you.
+
+What it is not: a disguise. It defeats a glance, not a look. Making the page
+pass as a spreadsheet is a much larger project that fails the moment anyone
+focuses, and a small muted rectangle beside a text readout is already
+unremarkable.
+
+The checks measure the claims rather than eyeballing them: the canvas goes
+720px to 260px, the control labels go to zero, the computed filter carries the
+saturation, the emulator keeps running while small, and both come back.
+
 ### The update nobody could take
 
 Worth writing down because it wasted more of someone's time than any bug here.

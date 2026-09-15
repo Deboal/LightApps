@@ -2675,6 +2675,44 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     setSyncing(false);
   };
 
+  // Discreet mode.
+  //
+  // Not about distraction -- about not being conspicuous to someone walking
+  // past. What catches a passing eye is motion first, then the d-pad, which is
+  // the one thing on the screen that cannot be anything but a game. Colour and
+  // size come after those.
+  //
+  // The detail does not have to go with it. Moving it from pixels into text is
+  // what makes this work at all: a line of status is denser than watching a
+  // sprite walk, and text is nearly invisible to peripheral vision. Someone
+  // glancing over sees a person reading.
+  const [discreet, setDiscreet] = useState(() => {
+    try {
+      return localStorage.getItem("gba:discreet") === "1";
+    } catch {
+      return false; // private windows and blocked storage are not a failure
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("gba:discreet", discreet ? "1" : "0");
+    } catch {
+      // Remembering the choice is a convenience, not a requirement.
+    }
+  }, [discreet]);
+  // A key, because reaching for a button is itself conspicuous.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== "`" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      event.preventDefault();
+      setDiscreet((was) => !was);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // An update waiting to be taken.
   //
   // The service worker never swaps itself in on its own -- swapping the
@@ -2744,10 +2782,31 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100dvh", paddingTop: "env(safe-area-inset-top)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", fontSize: 13, color: "var(--dim)" }}>
-        <strong style={{ color: "var(--text)" }}>{code || "…"}</strong>
-        <span>{fps} fps</span>
-        <span style={{ color: backup === "error" ? "var(--accent2)" : undefined }}>{status}</span>
-        {note && <span style={{ color: "var(--accent)" }}>{note}</span>}
+        {/* Discreet trims the header to nothing that names a game. The
+            cartridge code, the frame rate and the sync state are all fine on
+            their own -- it is the four of them in a row above a d-pad that
+            reads as an emulator. */}
+        {!discreet && <strong style={{ color: "var(--text)" }}>{code || "…"}</strong>}
+        {!discreet && <span>{fps} fps</span>}
+        {!discreet && (
+          <span style={{ color: backup === "error" ? "var(--accent2)" : undefined }}>{status}</span>
+        )}
+        {!discreet && note && <span style={{ color: "var(--accent)" }}>{note}</span>}
+        <button
+          onClick={() => setDiscreet((was) => !was)}
+          title="Shrink and mute the screen, and hide the controls. Backtick toggles it."
+          style={{
+            background: "none",
+            border: "1px solid var(--line)",
+            borderRadius: 999,
+            color: "var(--dim)",
+            padding: "2px 9px",
+            fontSize: 12,
+            cursor: "pointer",
+          }}
+        >
+          {discreet ? "Show" : "Discreet"}
+        </button>
         {update && (
           <button
             onClick={takeUpdate}
@@ -2783,9 +2842,17 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         </button>
       </div>
 
-      <Shoulders held={padHeld} handlers={padHandlers} />
+      {!discreet && <Shoulders held={padHeld} handlers={padHandlers} />}
 
-      <div style={{ position: "relative", maxWidth: 720, margin: "0 auto", width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, width: "100%" }}>
+      <div
+        style={{
+          position: "relative",
+          maxWidth: discreet ? 260 : 720,
+          margin: discreet ? "0 0 0 14px" : "0 auto",
+          width: "100%",
+        }}
+      >
         <canvas
           ref={canvasRef}
           width={WIDTH}
@@ -2795,6 +2862,12 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             aspectRatio: `${WIDTH} / ${HEIGHT}`,
             display: "block",
             background: "#000",
+            // Legible head-on, unremarkable from three feet away. Saturation
+            // does most of the work: it is the colour that reads as a game
+            // across a room, not the shapes.
+            filter: discreet ? "saturate(.45) contrast(.92) brightness(.9)" : "none",
+            borderRadius: discreet ? 4 : 0,
+            transition: "max-width .18s ease, filter .18s ease",
           }}
         />
         {waiting && link && (
@@ -2824,6 +2897,49 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             </div>
           </div>
         )}
+      </div>
+
+      {/* Where the detail goes when the picture stops carrying it.
+          A line of text is denser than watching a sprite walk, and peripheral
+          vision barely registers it -- someone glancing across sees a person
+          reading. This is the half of discreet mode that makes the other half
+          acceptable. */}
+      {discreet && (
+        <div style={{ fontSize: 12, lineHeight: 1.7, color: "var(--dim)", minWidth: 0, paddingTop: 2 }}>
+          {party && party[0] ? (
+            <div style={{ color: "var(--text)" }}>
+              {party[0].name} <span style={{ color: "var(--dim)" }}>Lv</span> {party[0].level}{" "}
+              <span style={{ color: "var(--dim)" }}>·</span> {party[0].hp}/{party[0].maxHp}
+            </div>
+          ) : (
+            <div>no cartridge read</div>
+          )}
+          {auto && auto.running ? (
+            <>
+              <div>
+                {auto.phase === "battle"
+                  ? "fighting"
+                  : auto.mode === "journey"
+                    ? auto.trip === "travel"
+                      ? "walking to the grass"
+                      : `walking to a Centre — ${auto.healBecause || "hurt"}`
+                    : "looking for a fight"}
+              </div>
+              <div>
+                {auto.battles} battles{auto.heals ? ` · ${auto.heals} heals` : ""}
+              </div>
+              {auto.confined ? (
+                <div>{auto.confined.tiles}-tile patch</div>
+              ) : (
+                <div style={{ color: "var(--accent2)" }}>roaming</div>
+              )}
+            </>
+          ) : (
+            <div>{auto && auto.done ? "stopped" : "not running"}</div>
+          )}
+          <div style={{ opacity: 0.55, marginTop: 4 }}>{code} · {fps} fps · {build}</div>
+        </div>
+      )}
       </div>
 
       {link && link.phase === "live" && (
@@ -2945,7 +3061,10 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         </label>
       </div>
 
-      <Controls held={padHeld} handlers={padHandlers} run={run} onRun={toggleRun} />
+      {/* Hidden rather than shrunk: a d-pad is the one thing on this screen
+          that cannot be mistaken for anything else, and it is the cheapest
+          thing to remove. The keyboard still plays the game. */}
+      {!discreet && <Controls held={padHeld} handlers={padHandlers} run={run} onRun={toggleRun} />}
 
       {backupError && (
         <p style={{ color: "var(--accent2)", fontSize: 13, padding: "0 16px", lineHeight: 1.5 }}>{backupError}</p>
