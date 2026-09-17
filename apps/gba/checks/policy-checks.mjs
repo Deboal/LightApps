@@ -165,6 +165,41 @@ const fighting = (over) => (frame) => ({ frame, inBattle: true, party: [mon(over
 }
 
 {
+  // The same Pokémon, the same HP, against a trainer.
+  //
+  // "No! There's no running from a trainer battle!" -- the game refuses and
+  // puts the cursor back, and nothing here could see that happen. An
+  // interrupted walk pressed RUN at the Nugget Bridge for the full minute of
+  // patience and then reported that the battle had stopped responding; the
+  // battle was responding perfectly. `gBattleTypeFlags` says outright which
+  // kind of battle this is, and the only right answer to a trainer is to win.
+  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
+  const { keys, end } = drive(run, 40, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), hp: 12, record: { moves: [{ id: 84, pp: 20 }] } }],
+    battle: { menu: "action", action: 0, cursor: 0, active: 0, trainer: true },
+  }));
+  check("against a trainer it does not try to run", !keys.some((k) => k & (BTN.RIGHT | BTN.DOWN)));
+  check("it fights instead", keys.some((k) => k & BTN.A) && end === null);
+}
+
+{
+  // A cartridge whose battle type cannot be read says nothing rather than
+  // false, and nothing has to mean "try to run" -- the behaviour that existed
+  // before the flag did. Guessing "trainer" would turn every interrupted walk
+  // into a fight it did not ask for.
+  const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
+  const { keys } = drive(run, 24, (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), hp: 12, record: { moves: [{ id: 84, pp: 20 }] } }],
+    battle: { menu: "action", action: 0, cursor: 0, active: 0 },
+  }));
+  check("a battle type it cannot read still tries to run", keys.some((k) => k & BTN.RIGHT));
+}
+
+{
   // Already on RUN: confirm it rather than cycling past.
   const run = runner({ slot: 0, stopAtLevel: 30, fleeBelowHp: 0.34, stopBelowHp: 0.05 });
   const { keys } = drive(run, 24, (frame) => ({
@@ -879,6 +914,150 @@ function centreRoute() {
   check("the floor still applies when nothing has hit yet",
     unhit.worstHit === 0 && (unhit.mode === "journey" || unhit.healBecause === "hurt"),
     `${unhit.mode} / ${unhit.healBecause}`);
+}
+
+// -- a box on screen, which the walk cannot see -----------------------------
+//
+// "CLEFAIRY fainted…" prints in the overworld with a "▼" waiting on A, and
+// every direction is swallowed until it is pressed. That looked exactly like a
+// freeze and was reported as one twice. The old answer was the clock: two
+// seconds of a tile that will not change, then press A and hope. The new one
+// is `sLockFieldControls`, the byte the overworld sets while a script, a
+// cutscene or a message box has the controls.
+//
+// What is checked is both directions, because knowing changes both: a box is
+// answered four times faster, and a *wall* -- unlocked, not moving -- stops
+// being answered with an A press at all. An A press at a wall talks to
+// whoever is standing behind it, which is its own way to lose a run.
+{
+  // Walk for a while so `everMoved` is true -- a player who has never taken a
+  // step is walled in, which has a different answer -- then stop, locked.
+  const STOPS = 24;
+  // Three tiles, not thirty: far enough that `everMoved` is true, close enough
+  // that the leash does not decide it has wandered and take over first.
+  const frozen = (locked) => (frame) => ({
+    frame,
+    inBattle: false,
+    party: [mon()],
+    position: frame < STOPS ? tile(9 - Math.floor(frame / 8), 9) : tile(6, 9),
+    // The lock arrives with the stall, as a real box would.
+    ...(locked === null ? {} : { fieldLocked: locked && frame >= STOPS }),
+  });
+  const firstPress = (run) => run.keys.findIndex((k, i) => i > STOPS && k & BTN.A);
+
+  const boxed = drive(runner({ slot: 0, stopAtLevel: 30 }), 400, frozen(true));
+  const pressedAt = firstPress(boxed);
+  check(
+    "a message box is answered without waiting out the clock",
+    pressedAt > STOPS && pressedAt < 90,
+    pressedAt < 0 ? "never pressed A" : `pressed A at frame ${pressedAt}, where the clock alone needs ${STOPS + 121}`
+  );
+  check(
+    "and not the instant it stalls, which would press A at every warp",
+    pressedAt > STOPS + 30,
+    `half a second of held controls is the bar; this pressed ${pressedAt - STOPS} frames in`
+  );
+
+  // The same stall with the controls in the player's hands is a wall.
+  const walled = drive(runner({ slot: 0, stopAtLevel: 30 }), 400, frozen(false));
+  check(
+    "a wall is not answered by talking to it",
+    firstPress(walled) < 0,
+    "unlocked and not moving means blocked, and A in the overworld talks to whoever is there"
+  );
+
+  // A cartridge whose layout is unknown reads null, and null is not false.
+  // The clock is still the fallback, because guessing "no box" and walking
+  // into one is the freeze this whole thing exists to end.
+  const blind = drive(runner({ slot: 0, stopAtLevel: 30 }), 400, frozen(null));
+  const blindAt = firstPress(blind);
+  check(
+    "a cartridge that cannot answer falls back to the clock rather than to nothing",
+    blindAt > STOPS + 110,
+    blindAt < 0 ? "never pressed A, so an unknown build could freeze forever" : `pressed A at frame ${blindAt}`
+  );
+}
+
+// -- the cursor does not wrap -------------------------------------------------
+//
+// Both battle menus are two by two and the cursor moves by XOR, so any target
+// is at most two presses away. That much was right. What was missing is that
+// the direction within an axis is not free: **the cursor does not wrap**.
+// RIGHT from the right-hand column does nothing, DOWN from the bottom row does
+// nothing, and pressing one of those is indistinguishable from pressing
+// nothing at all.
+//
+// Every caller pressed RIGHT for bit 0 and DOWN for bit 1 regardless of where
+// the cursor was. From FIGHT, in the top left, that works — which is why it
+// survived. Found on a real cartridge: a CHARMELEON sat on METAL CLAW, the
+// bottom-right move, out of PP, pressing RIGHT at it for a full minute while
+// SCRATCH waited at the top left with thirty-five PP left. The same hole is
+// why a battle this ran from could never get its cursor back off RUN.
+//
+// So the simulated menus below refuse a press that would leave the grid, as
+// the game does. The old code cannot pass this.
+{
+  /** A 2x2 cursor that behaves like the game's: no wrapping. */
+  const menu = (start) => {
+    let at = start;
+    return {
+      get at() { return at; },
+      press(keys) {
+        if (keys & BTN.RIGHT && !(at & 1)) at |= 1;
+        if (keys & BTN.LEFT && at & 1) at &= ~1;
+        if (keys & BTN.DOWN && !(at & 2)) at |= 2;
+        if (keys & BTN.UP && at & 2) at &= ~2;
+      },
+    };
+  };
+
+  // Every starting corner, and the move it has to reach is the far one.
+  for (const from of [0, 1, 2, 3]) {
+    const want = 3 - from;
+    const moves = menu(from);
+    const run = runner({ slot: 0, stopAtLevel: 30 });
+    let confirmed = null;
+    for (let frame = 0; frame < 300 && confirmed === null; frame++) {
+      const out = run.step({
+        frame,
+        inBattle: true,
+        party: [{
+          ...mon(),
+          record: { moves: [0, 1, 2, 3].map((i) => ({ id: i === want ? 53 : 106, pp: 20 })) },
+        }],
+        battle: { menu: "move", cursor: moves.at, action: 0, active: 0 },
+      });
+      if (out.keys & BTN.A) confirmed = moves.at;
+      moves.press(out.keys);
+    }
+    check(
+      `from move ${from} it reaches move ${want} and presses A there`,
+      confirmed === want,
+      confirmed === null ? "never pressed A — it is pressing into a wall" : `pressed A on ${confirmed}`
+    );
+  }
+
+  // The action menu is the same grid, and the case that matters is RUN back to
+  // FIGHT: a battle this ran from leaves the cursor on 3, and 3 is the corner
+  // where both of the old presses are no-ops.
+  const actions = menu(3);
+  const run = runner({ slot: 0, stopAtLevel: 30 });
+  let landed = null;
+  for (let frame = 0; frame < 300 && landed === null; frame++) {
+    const out = run.step({
+      frame,
+      inBattle: true,
+      party: [{ ...mon(), record: { moves: [{ id: 52, pp: 20 }] } }],
+      battle: { menu: "action", cursor: 0, action: actions.at, active: 0 },
+    });
+    if (out.keys & BTN.A) landed = actions.at;
+    actions.press(out.keys);
+  }
+  check(
+    "a cursor left on RUN gets back to FIGHT",
+    landed === 0,
+    landed === null ? "never pressed A — stuck in the corner" : `pressed A on action ${landed}`
+  );
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall good");

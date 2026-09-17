@@ -157,6 +157,23 @@ export function world(meta, tiles) {
     return new Set((map ? map.w : []).map(([x, y]) => `${x},${y}`));
   };
 
+  /**
+   * Every warp on one map that leads to another, not just the first.
+   *
+   * A Pokémon Center's exit is three mats side by side, and they are not
+   * interchangeable: on a real cartridge only the middle one opens, and only
+   * to a press south while standing on it. Whether that is the game's rule or
+   * this atlas having two tiles wrong does not matter to a walk -- what
+   * matters is that aiming at one warp and finding it inert used to be the end
+   * of the trip. With all of them in hand the walker can try the next one.
+   */
+  const warpsTo = (mapGroup, mapNum, toMap) => {
+    const map = mapAt(mapGroup, mapNum);
+    const goal = indexOf(toMap.mapGroup, toMap.mapNum);
+    if (!map || goal < 0) return [];
+    return map.w.filter(([, , to]) => to === goal).map(([x, y]) => ({ x, y }));
+  };
+
   /** The Pokémon Center nearest a place, by hops rather than by distance. */
   const nearestCentre = (from) => {
     const start = indexOf(from.mapGroup, from.mapNum);
@@ -306,7 +323,7 @@ export function world(meta, tiles) {
   };
 
   return {
-    meta, covers, mapAt, gridOf, mapRoute, doorsOf, nearestCentre,
+    meta, covers, mapAt, gridOf, mapRoute, doorsOf, warpsTo, nearestCentre,
     grassOn, place, indexOf, placesNear, grindSpot, grassPatch, centreInside,
   };
 }

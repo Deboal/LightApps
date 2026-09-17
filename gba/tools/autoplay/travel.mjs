@@ -10,6 +10,7 @@
 // far better failure than a script that presses hopefully for an hour.
 
 import { BTN, game } from "./machine.mjs";
+import { cursorStep } from "../../../apps/gba/src/buttons.js";
 import { bestMove, spent } from "../../../apps/gba/src/policy.js";
 import { grid, path as planPath, pathToAny, layoutOf } from "./maps.mjs";
 
@@ -70,8 +71,8 @@ export function throughBattle(machine, { limit = 60000, runBelow = 0.3, prefer =
     if (battle.menu === "action") {
       if (running && ++asked > 6) running = false;
       const target = flee ? 3 : 0;
-      const differs = (battle.action ?? 0) ^ target;
-      machine.step(beat ? (differs ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : BTN.A) : 0);
+      const step = cursorStep(battle.action, target);
+      machine.step(beat ? (step || BTN.A) : 0);
       continue;
     }
     if (battle.menu === "move") {
@@ -79,8 +80,8 @@ export function throughBattle(machine, { limit = 60000, runBelow = 0.3, prefer =
         machine.step(beat ? BTN.B : 0);
         continue;
       }
-      const differs = (battle.cursor ?? 0) ^ want.index;
-      machine.step(beat ? (differs ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : BTN.A) : 0);
+      const step = cursorStep(battle.cursor, want.index);
+      machine.step(beat ? (step || BTN.A) : 0);
       continue;
     }
     machine.step(beat ? BTN.A : 0);

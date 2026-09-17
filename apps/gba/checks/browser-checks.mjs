@@ -31,21 +31,57 @@ const brightness = (page) =>
   });
 
 /**
- * Brightness averaged over a short window rather than sampled once.
+ * Every frame the canvas shows over `ms`, as a list of hashes.
  *
- * The title screen animates, so a single sample measures the animation's phase
- * as much as the frame. That made the save-state check a coin flip: it failed
- * at 16 against a threshold of 15, and its own baseline moved between runs
- * (93, then 77) with nothing in the code changed. Averaging a dozen samples
- * over three quarters of a second takes the phase out and leaves the frame.
+ * Mean brightness was the answer here twice and was wrong twice. A single
+ * sample measured the title screen's animation phase as much as its content,
+ * so the save-state check failed at 16 against a threshold of 15 with its own
+ * baseline wandering between runs. Averaging a dozen samples took the phase
+ * out and the check still failed about one run in three, on a margin of eight.
+ *
+ * The instrument was the problem, not the sampling. A save state returns the
+ * machine to an exact frame; "the average pixel is about as bright as it was"
+ * is a shadow of that claim, and a shadow needs a threshold to read.
+ *
+ * What a rewind really means is that the *same frames* come back. So this
+ * collects a hash per rendered frame -- on the page's own rAF, not on a timer,
+ * so nothing is missed -- and the check compares sets. Frames that match are
+ * proof. Measured: 100% and 0%, three runs out of three, where the brightness
+ * version read 106 against 98 and could not tell you what that meant.
  */
-const steady = async (page, samples = 12) => {
-  let total = 0;
-  for (let i = 0; i < samples; i++) {
-    total += await brightness(page);
-    await page.waitForTimeout(60);
-  }
-  return Math.round(total / samples);
+const filmstrip = (page, ms = 2000) =>
+  page.evaluate(
+    (ms) =>
+      new Promise((resolve) => {
+        const canvas = document.querySelector("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const seen = [];
+        const until = performance.now() + ms;
+        const tick = () => {
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          // FNV-1a over every fourth byte: enough to separate frames of an
+          // animation, cheap enough to run sixty times a second.
+          let hash = 0x811c9dc5;
+          for (let i = 0; i < data.length; i += 16) {
+            hash ^= data[i];
+            hash = Math.imul(hash, 0x01000193);
+          }
+          seen.push(hash >>> 0);
+          if (performance.now() < until) requestAnimationFrame(tick);
+          else resolve(seen);
+        };
+        requestAnimationFrame(tick);
+      }),
+    ms
+  );
+
+/** What fraction of `a` also appears in `b`. Not symmetric, and that is the
+ *  point: the question is whether everything shown after a resume was already
+ *  shown at the moment the state was taken. */
+const within = (a, b) => {
+  const inB = new Set(b);
+  const shared = a.filter((h) => inB.has(h)).length;
+  return a.length ? shared / a.length : 0;
 };
 
 let failures = 0;
@@ -115,22 +151,36 @@ async function newPage() {
   await page.click("text=States");
   await page.fill('input[placeholder*="Name this state"]', "checkpoint");
   await page.click("button:has-text('Save state')");
-  await page.waitForTimeout(1500);
-  const saved = await steady(page);
   await page.click("button:has-text('Close')");
+  // Six seconds of frames from the moment the state was taken. Everything the
+  // machine shows after a resume has to come out of this.
+  const saved = await filmstrip(page, 6000);
+  // Two seconds from further along, as the control: these are frames the
+  // machine reached by playing on rather than by rewinding, so none of them
+  // should appear above. Without this the check could pass on an animation
+  // that merely loops.
+  const moved = await filmstrip(page, 2000);
 
-  await page.waitForTimeout(9000);
-  const moved = await steady(page);
   await page.click("text=Library");
   await page.waitForSelector("text=checkpoint");
   await page.click("button:has-text('Load')");
+  // Decompressing the state and putting it back takes about a second, and the
+  // canvas shows the old frame throughout. Sampling across that boundary was
+  // measuring the wait, not the resume.
   await page.waitForTimeout(1500);
-  const resumed = await steady(page);
+  const resumed = await filmstrip(page, 2000);
 
+  const back = within(resumed, saved);
+  const drifted = within(moved, saved);
   check(
-    "resuming a state returns to the saved moment",
-    Math.abs(resumed - saved) < Math.abs(moved - saved) / 2,
-    `saved ${saved}, played on to ${moved}, resumed ${resumed}`
+    "every frame after resuming is one the saved moment already showed",
+    back > 0.9,
+    `${Math.round(back * 100)}% of ${resumed.length} frames`
+  );
+  check(
+    "and playing on instead reaches frames it never showed",
+    drifted < 0.05,
+    `${Math.round(drifted * 100)}% -- if this were high the frames would not distinguish anything`
   );
   check("no page errors in the state flow", errors.length === 0, errors.join("; "));
   await page.close();
@@ -314,7 +364,16 @@ async function newPage() {
 // the lockstep, and the two machines actually agreeing. If the two sides ever
 // computed different sessions, the fingerprints they trade would disagree and
 // the session would stop with an error -- which is the assertion that matters.
-{
+//
+// It needs a cartridge save, because a linked session boots both machines from
+// one and the app refuses to start without it. Without `GBA_SAV` this used to
+// run anyway and hang for thirty seconds waiting on a code that was never
+// coming -- and because the whole file is one script, that took down every
+// check after it, including the ones for the autoplay panel. Saying so and
+// moving on is worth more than a timeout that reads like a broken handshake.
+if (!SAV) {
+  check("a linked session between two tabs", true, "skipped — set GBA_SAV to a .sav to check the link flow");
+} else {
   // One browser context, two tabs. `browser.newPage()` makes a fresh context
   // each time, and a BroadcastChannel does not cross one -- so the two tabs
   // would never hear each other, which looks exactly like a broken handshake.
@@ -327,6 +386,8 @@ async function newPage() {
     await page.waitForSelector("text=Choose a ROM");
     await page.setInputFiles("input[type=file]", ROM);
     await page.waitForTimeout(9000);
+    await page.setInputFiles('input[accept*=".sav"]', SAV);
+    await page.waitForTimeout(6000);
     return { page, errors };
   };
 

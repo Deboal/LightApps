@@ -13,7 +13,7 @@
 // The comments below say which specific failure each defensive line exists to
 // prevent, because every one of them cost a run.
 
-import { BTN } from "./buttons.js";
+import { BTN, cursorStep } from "./buttons.js";
 import { hold, settle, tap, beat } from "./drive.js";
 import { bestMove, spent } from "./policy.js";
 import { pathToAny, path, edgeTiles, DIR } from "./world.js";
@@ -83,10 +83,12 @@ export function* throughBattle({ runBelow = 0.3, prefer = "fight", limit = 60 * 
     if (battle.menu === "action") {
       if (running && ++asked > 6) running = false;
       // FIGHT is 0 and RUN is 3 in a two-by-two grid, so the difference
-      // between where the cursor is and where it should be says which way to
-      // move it: the low bit is the column, the high bit the row.
-      const differs = (battle.action ?? 0) ^ (flee ? 3 : 0);
-      state = yield on ? (differs ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : BTN.A) : 0;
+      // between where the cursor is and where it should be says which bit to
+      // flip: the low one is the column, the high one the row. Which *press*
+      // flips it depends on where the cursor is, because the grid does not
+      // wrap -- `cursorStep` owns that, and it is the only place that should.
+      const step = cursorStep(battle.action, flee ? 3 : 0);
+      state = yield on ? (step || BTN.A) : 0;
       continue;
     }
     if (battle.menu === "move") {
@@ -94,8 +96,8 @@ export function* throughBattle({ runBelow = 0.3, prefer = "fight", limit = 60 * 
         state = yield on ? BTN.B : 0;
         continue;
       }
-      const differs = (battle.cursor ?? 0) ^ want.index;
-      state = yield on ? (differs ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : BTN.A) : 0;
+      const step = cursorStep(battle.cursor, want.index);
+      state = yield on ? (step || BTN.A) : 0;
       continue;
     }
     state = yield on ? BTN.A : 0;
@@ -223,9 +225,22 @@ export function* goTo(world, target, { hops = 24, allowed = null, patience = PAT
         return { ok: false, reason: "no route to that map", at: here };
       }
       leaving = route[0].via;
+      // Every warp to the next map, not only the one the route named. They are
+      // not interchangeable -- see `warpsTo` -- and a walk that can only aim
+      // at one of them ends at the first inert doormat it finds.
       goals = leaving.kind === "warp"
-        ? [{ x: leaving.x, y: leaving.y }]
+        ? (world.warpsTo
+            ? world.warpsTo(here.map.mapGroup, here.map.mapNum, route[0].to)
+            : [])
+          .filter((g) => !blocked.has(`${g.x},${g.y}`))
+          .concat(blocked.has(`${leaving.x},${leaving.y}`) ? [] : [{ x: leaving.x, y: leaving.y }])
+          .filter((g, i, all) => all.findIndex((o) => o.x === g.x && o.y === g.y) === i)
         : edgeTiles(grid, leaving.dir);
+      if (!goals.length) {
+        // Every way out of this map has been tried and none of them worked.
+        if (refused.size) { refused.clear(); continue; }
+        return { ok: false, reason: "no way out of this map that works", at: here };
+      }
     }
 
     // Doors and people go in as the overlay rather than as terrain, so the
@@ -257,9 +272,57 @@ export function* goTo(world, target, { hops = 24, allowed = null, patience = PAT
       continue;
     }
 
-    // Off the edge into the next map. Stepping onto a warp needs no extra
-    // press — arriving on the tile is the whole of it — so only an edge
-    // crossing has anything left to do here.
+    if (leaving && leaving.kind === "warp") {
+      // Long enough for a door to finish fading. A warp that worked is not
+      // done being read at twenty frames, and pressing directions at a screen
+      // mid-transition is how a tile that works gets written down as one that
+      // does not.
+      let after = (yield* settle(60)).position;
+
+      // Standing on the warp, still on the same map.
+      //
+      // "Arriving on the tile is the whole of it" is true of most warps and
+      // not of the one that matters most. A Pokémon Center's exit is three
+      // mats side by side and exactly one of them is a door: the middle one,
+      // and only if you press south while standing on it. Walking onto any of
+      // the three -- from the left, from above, at a run -- does nothing at
+      // all. Measured on a real cartridge, all nine ways.
+      //
+      // Nothing above notices. The walk succeeded, the goal tile was reached,
+      // so the next pass plans a path of zero tiles to where the player
+      // already is, walks it perfectly, and does that until the attempts run
+      // out. Told to leave the Cerulean Pokémon Center, this stood on the
+      // doormat forty times and then reported that it could not get there.
+      if (after && onMap(after, here.map)) {
+        // South first and by a distance -- an exit mat is in a building's
+        // south wall and the press that opens it is the one that would walk
+        // you through it. The others are tried because a door in another wall
+        // is not impossible, and stop the moment the pressing walks the
+        // player off the tile, since a press from the wrong tile proves
+        // nothing about this one.
+        for (const way of [BTN.DOWN, BTN.UP, BTN.LEFT, BTN.RIGHT]) {
+          yield* hold(way, 24);
+          after = (yield* settle(30)).position;
+          if (!after || !onMap(after, here.map)) break;
+          if (after.x !== found.target.x || after.y !== found.target.y) break;
+        }
+      }
+
+      // Tried, and still on this map. Whatever that tile is, it is not a way
+      // out -- so remember it exactly as a person standing in a doorway is
+      // remembered, and let the next pass aim at one of the others.
+      //
+      // Refused whether or not the pressing wandered off the mat. It was
+      // aimed at, it was stood on, it was pressed into, and nothing happened;
+      // where the player ended up is not evidence about the tile. Making this
+      // conditional on still standing there is how the first version of this
+      // walked back to the same doormat forever: pressing left stepped off it,
+      // so it was never written down as tried.
+      if (after && onMap(after, here.map)) refused.add(key(here, found.target));
+      continue;
+    }
+
+    // Off the edge into the next map.
     if (leaving && leaving.kind === "edge") {
       const before = (yield 0).position;
       const way = leaving.dir === DIR.DOWN ? BTN.DOWN
@@ -325,23 +388,25 @@ export function* healInside(world, { limit = 60 * 60 * 4 } = {}) {
   }
   if (!healed) return { ok: false, reason: "stood at the counter and was never healed" };
 
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const before = (yield 0).position;
-    const after = (yield* hold(BTN.DOWN, 40)) && (yield* settle(10)).position;
-    if (!after) continue;
-    if (after.map.mapNum !== inside.map.mapNum) return { ok: true, at: after };
-    if (!sameSpot(before, after)) {
-      // Free to walk. Straight south, out of the door.
-      for (let i = 0; i < 400; i++) {
-        const where = (yield BTN.DOWN).position;
-        if (where && where.map.mapNum !== inside.map.mapNum) return { ok: true, at: where };
-      }
-      break;
-    }
-    // Still boxed in: one press to advance the text, and look again.
-    yield* tap(BTN.A, { press: 4, then: 30 });
-  }
-  return { ok: false, reason: "healed, but could not get back out" };
+  // Healed. Getting out of the building is not this function's job.
+  //
+  // It used to be, and it did it by holding DOWN and hoping: straight south
+  // out of the door, up to sixty times. That works in a Centre whose counter
+  // happens to sit above the one mat that opens, and reports "healed, but
+  // could not get back out" in the others -- which is what a real run did,
+  // eight minutes into a grind, standing on a doormat that is not a door.
+  //
+  // `goTo` knows the rule now (aim at every warp, press into the one you
+  // reach, cross it off if nothing happens) and the caller runs it two lines
+  // later to walk back to the grass. So all that is needed here is proof the
+  // conversation is over and the player can move -- which is exactly what
+  // `backToOverworld` establishes, by taking a step rather than by counting
+  // presses.
+  // A, not B: what is on screen is the nurse finishing her sentence, and B
+  // does not advance a message box. The proof is still a step that lands.
+  const free = yield* backToOverworld({ clear: BTN.A });
+  if (!free.ok) return { ok: false, reason: `healed, but ${free.reason}` };
+  return { ok: true, at: free.at || (yield 0).position };
 }
 
 /**
@@ -358,8 +423,14 @@ export function* healInside(world, { limit = 60 * 60 * 4 } = {}) {
  * So the test is not how many times B was pressed. It is whether a step
  * lands. All four directions, because a player standing against a wall would
  * otherwise fail the test while standing in the overworld.
+ *
+ * `clear` is the button pressed between attempts, and it is B because a menu
+ * is what usually has to be closed. A *message box* is the other case and it
+ * wants A -- B does not advance the nurse, and a run that comes out of a heal
+ * pressing B at her is a run standing still in front of a talking nurse. The
+ * caller knows which it is looking at; this does not.
  */
-export function* backToOverworld({ tries = 14 } = {}) {
+export function* backToOverworld({ tries = 14, clear = BTN.B } = {}) {
   for (let attempt = 0; attempt < tries; attempt++) {
     const state = yield 0;
     // A battle starting is also a way out of a menu, and a fine one.
@@ -375,7 +446,7 @@ export function* backToOverworld({ tries = 14 } = {}) {
         if (now && !sameSpot(before, now)) return { ok: true, at: now };
       }
     }
-    yield* tap(BTN.B, { then: 40 });
+    yield* tap(clear, { then: 40 });
   }
   return { ok: false, reason: "could not get back out of the menus" };
 }
