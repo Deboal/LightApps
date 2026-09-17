@@ -6,40 +6,55 @@
 // policy, a readout — can act on what is actually true rather than on what a
 // screenshot appears to show.
 //
-// Every address here was found by searching a real machine's RAM for the
-// shape it must have, not taken on faith from a table. `gPlayerParty` is the
-// only run of six consecutive hundred-byte records whose level, current HP,
-// max HP and five stats are all in range and consistent; `gPlayerPartyCount`
-// is the only byte equal to the party size in the three hundred before it.
-// The check is repeatable: `partyOf` re-validates the shape on every read and
-// returns null rather than plausible nonsense if the cartridge is not the one
-// these addresses describe.
+// The addresses come from `symbols.js`, which is generated (see the table
+// below). The shape test that originally found them is still here and still
+// runs: `partyOf` re-validates on every read and returns null rather than
+// plausible nonsense. A named address and a shape that fits are different
+// kinds of evidence, and the second one still catches a record read
+// mid-write, which no address can.
 
 import { decode } from "./mon.js";
+import { SYMBOLS, PARTY_MENU_SLOT } from "./symbols.js";
 
 /** Cartridges this knows how to read, by the four-character code in the ROM
- *  header. FireRed and LeafGreen share a layout. */
+ *  header.
+ *
+ *  The addresses are no longer found by searching a running machine's RAM for
+ *  the shape they must have. That method worked -- and produced one answer
+ *  that was wrong for weeks. `0x0203b0a8`, believed to be "which Pokémon is
+ *  out in battle", is nine bytes into `gPartyMenu`; it reads zero in an
+ *  ordinary battle, which is the right answer for the wrong reason, so it
+ *  never failed loudly. They come from the decompilation's own symbol files
+ *  now (`tools/gen-symbols.mjs`), which agreed with every hand-found address
+ *  except that one.
+ *
+ *  FireRed and LeafGreen share their RAM layout exactly -- checked across both
+ *  published builds, not assumed -- so both get the same table. The battle
+ *  menus are ROM code addresses and do differ between builds, which is why
+ *  they are lists: the running one is recognised rather than assumed, and a
+ *  build in neither list simply fails to match and falls back to mashing A,
+ *  which is what this did before any of it.
+ */
+const LAYOUT = {
+  party: SYMBOLS.gPlayerParty,
+  partyCount: SYMBOLS.gPlayerPartyCount,
+  main: SYMBOLS.gMain,
+  saveBlock: SYMBOLS.gSaveBlock1Ptr,
+  controllerFuncs: SYMBOLS.gBattlerControllerFuncs,
+  actionCursor: SYMBOLS.gActionSelectionCursor,
+  moveCursor: SYMBOLS.gMoveSelectionCursor,
+  battlerParty: SYMBOLS.gBattlerPartyIndexes,
+  partyMenuSlot: PARTY_MENU_SLOT,
+  fieldLocked: SYMBOLS.sLockFieldControls,
+  battleType: SYMBOLS.gBattleTypeFlags,
+  atActionMenu: SYMBOLS.HandleInputChooseAction,
+  atMoveList: SYMBOLS.HandleInputChooseMove,
+  atPartyMenu: SYMBOLS.WaitForMonSelection,
+};
+
 const KNOWN = {
-  BPRE: {
-    name: "FireRed",
-    party: 0x02024284,
-    partyCount: 0x02024029,
-    main: 0x030030f0,
-    saveBlock: 0x03005008,
-    // Battle menus. These two are ROM addresses of a specific build, so
-    // unlike the RAM layout above they are emphatically not shared with
-    // LeafGreen -- a different build puts its code somewhere else. Absent
-    // them, `battleMenuOf` returns nothing and the runner falls back to
-    // mashing A, which is what it did before any of this.
-    controllerFuncs: 0x03004fe0,
-    actionCursor: 0x02023ff8,
-    moveCursor: 0x02023ffc,
-    battlerParty: 0x0203b0a8,
-    atActionMenu: 0x0802e44d,
-    atMoveList: 0x0802ea25,
-    atPartyMenu: 0x08030699,
-  },
-  BPRG: { name: "LeafGreen", party: 0x02024284, partyCount: 0x02024029, main: 0x030030f0, saveBlock: 0x03005008 },
+  BPRE: { name: "FireRed", ...LAYOUT },
+  BPRG: { name: "LeafGreen", ...LAYOUT },
 };
 
 const EWRAM_BASE = 0x02000000;
@@ -58,6 +73,9 @@ const IWRAM_BASE = 0x03000000;
  *  Read `inBattleOf` as evidence, not as fact. */
 const MAIN_FLAGS = 0x439;
 const IN_BATTLE = 1 << 1;
+
+/** `BATTLE_TYPE_TRAINER`, from the game's own constants. */
+const BATTLE_TYPE_TRAINER = 1 << 3;
 
 /** One party slot: eighty bytes of box data, then the fields that only a
  *  Pokémon in a party has. */
@@ -145,8 +163,11 @@ export function partyOf(view, code) {
  *
  *  The cursor is `gMoveSelectionCursor[0]`, and it moves by XOR: left and
  *  right flip bit 0, up and down flip bit 1. So any move is at most two
- *  presses away and the direction within an axis does not matter. Confirmed
- *  against all four values on a real cartridge.
+ *  presses away -- but *which* of the two directions is not free, because the
+ *  cursor does not wrap. RIGHT from the right-hand column does nothing at all.
+ *  `cursorStep` in `buttons.js` is the only place that should decide this; the
+ *  sentence that used to be here said the direction did not matter and cost a
+ *  full minute of pressing RIGHT at a move with no PP.
  *
  *  Returns null when this is not a build these addresses describe, and
  *  `{ menu: null }` when a battle is doing something other than waiting for
@@ -168,6 +189,11 @@ export function battleMenuOf(iwram, ewram, code) {
     const o = address - EWRAM_BASE;
     return o >= 0 && o < ewram.length ? ewram[o] : 0;
   };
+  const at32 = (address) => {
+    const o = address - EWRAM_BASE;
+    if (o < 0 || o + 4 > ewram.length) return 0;
+    return (ewram[o] | (ewram[o + 1] << 8) | (ewram[o + 2] << 16) | (ewram[o + 3] << 24)) >>> 0;
+  };
 
   return {
     /** The raw controller pointer. Kept so a build whose menus this does not
@@ -175,20 +201,39 @@ export function battleMenuOf(iwram, ewram, code) {
      *  which is exactly how a wrong one went unnoticed. */
     fn,
     menu:
-      fn === map.atActionMenu ? "action"
-      : fn === map.atMoveList ? "move"
+      // A list per build, because these are ROM code addresses and the two
+      // published builds put them twenty bytes apart. Matching against the
+      // list is its own proof that the right one was found.
+      map.atActionMenu.includes(fn) ? "action"
+      : map.atMoveList.includes(fn) ? "move"
       // "Choose a POKéMON", which the game also opens by itself when the one
       // that was out faints. Learned by opening it: A picks the highlighted
       // party member, and A again takes SHIFT, which is already under the
       // cursor. Two presses and the next one is out.
-      : fn === map.atPartyMenu ? "party"
+      : map.atPartyMenu.includes(fn) ? "party"
       : null,
     cursor: at8(map.moveCursor) & 3,
     /** FIGHT 0, BAG 1, POKéMON 2, RUN 3 — the same XOR grid as the moves. */
     action: at8(map.actionCursor) & 3,
-    /** Which party member is actually out. Without this a faint leaves the
-     *  runner judging the HP of a Pokémon that is no longer fighting. */
-    active: map.battlerParty ? at8(map.battlerParty) : 0,
+    /** Which party member is actually out.
+     *
+     *  `gBattlerPartyIndexes` is one entry per battler and the player is the
+     *  first, so the low byte of entry zero is the slot. This used to read
+     *  `gPartyMenu + 8` instead -- the party menu's *type* -- which is zero in
+     *  an ordinary battle and so looked correct until the menu opened. */
+    active: at8(map.battlerParty),
+    /** Where the cursor sits in the party menu, in battle or out of it. */
+    slot: at8(map.partyMenuSlot),
+    /** Whether this is a trainer, who cannot be run from.
+     *
+     *  Worth the address on its own. A run interrupted by a battle wants to
+     *  leave, so it steers the cursor to RUN and presses A -- and against a
+     *  trainer the game answers "No! There's no running from a trainer
+     *  battle!" and puts the cursor back. Nothing could see that, so the
+     *  policy pressed RUN at the Nugget Bridge for a full minute and then
+     *  reported that the battle had stopped responding. The battle was
+     *  responding perfectly. */
+    trainer: (at32(map.battleType) & BATTLE_TYPE_TRAINER) !== 0,
   };
 }
 
@@ -250,6 +295,32 @@ export function positionOf(iwram, ewram, code) {
     map: warpAt(ewram, base + SB.location),
     lastHeal: warpAt(ewram, base + SB.lastHeal),
   };
+}
+
+/**
+ * Whether the game currently has the controls.
+ *
+ * `sLockFieldControls` is one byte that the overworld sets whenever a script,
+ * a cutscene or a message box is in charge, and clears when the player can
+ * walk again. It is the direct answer to the question every freeze in this
+ * app has really been asking.
+ *
+ * Before this, the answer was inferred: press a direction for two seconds, and
+ * if the tile never changed, guess that something is on screen and press A.
+ * That works, and it is slow, and it cannot tell a message box from a wall.
+ * "CLEFAIRY fainted…" sat there for as long as the guard allowed because
+ * nothing could see the box.
+ *
+ * Null rather than false when it cannot be read: not knowing and knowing there
+ * is no lock are different, and a caller that treats them the same is the
+ * mistake this file keeps making.
+ */
+export function fieldLockedOf(iwram, code) {
+  const map = KNOWN[code];
+  if (!map || !map.fieldLocked || !iwram) return null;
+  const at = map.fieldLocked - IWRAM_BASE;
+  if (at < 0 || at >= iwram.length) return null;
+  return iwram[at] !== 0;
 }
 
 /** Whether two readings are the same tile of the same map. Being blocked and

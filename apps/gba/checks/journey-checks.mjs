@@ -94,6 +94,25 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
 }
 
 // -- battles ------------------------------------------------------------------
+//
+/**
+ * Move a 2x2 battle cursor the way the game does: **without wrapping**.
+ *
+ * These toys used to apply `^= 1` on RIGHT and `^= 2` on DOWN and ignore LEFT
+ * and UP entirely, which made them agree with a walker that only ever pressed
+ * RIGHT and DOWN — the two wrong out of four. A real cursor on the bottom-right
+ * move has nowhere to go in either of those directions, and a press that goes
+ * nowhere is indistinguishable from no press at all. Modelling it honestly is
+ * what turns "it reached the move" into evidence.
+ */
+const steer = (battle, field, keys) => {
+  const at = battle[field];
+  if (keys & BTN.RIGHT && !(at & 1)) battle[field] = at | 1;
+  else if (keys & BTN.LEFT && at & 1) battle[field] = at & ~1;
+  else if (keys & BTN.DOWN && !(at & 2)) battle[field] = at | 2;
+  else if (keys & BTN.UP && at & 2) battle[field] = at & ~2;
+};
+
 {
   // A move list where the strongest move is not the first, and one of the
   // strong ones has no PP left. This is the pair of bugs that made the player
@@ -113,8 +132,7 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
   for (let i = 0; i < 400 && !d.done; i++) {
     const out = d.step({ party, inBattle: true, battle, position: null });
     if (out.keys & BTN.A) { chose = battle.cursor; break; }
-    if (out.keys & BTN.RIGHT) battle.cursor ^= 1;
-    if (out.keys & BTN.DOWN) battle.cursor ^= 2;
+    steer(battle, "cursor", out.keys);
   }
   check("the strongest move with PP is the one chosen", chose === 2, `chose slot ${chose}`);
 }
@@ -127,8 +145,7 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
   for (let i = 0; i < 400 && !d.done; i++) {
     const out = d.step({ party, inBattle: true, battle, position: null });
     if (out.keys & BTN.A) { landed = battle.action; break; }
-    if (out.keys & BTN.RIGHT) battle.action ^= 1;
-    if (out.keys & BTN.DOWN) battle.action ^= 2;
+    steer(battle, "action", out.keys);
   }
   check("a hurt Pokémon is steered to RUN, not FIGHT", landed === 3, `landed on ${landed}`);
 }
@@ -143,8 +160,7 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
     const out = d.step({ party, inBattle: true, battle, position: null });
     if (out.keys & BTN.A && battle.action === 0) { fought = true; break; }
     if (out.keys & BTN.A && battle.action === 3) battle.action = 0; // the run failed
-    if (out.keys & BTN.RIGHT) battle.action ^= 1;
-    if (out.keys & BTN.DOWN) battle.action ^= 2;
+    steer(battle, "action", out.keys);
   }
   check("a battle that refuses to be fled is eventually fought", fought);
 }
@@ -210,8 +226,14 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
   };
   const { result } = play(() => healInside(atlas), machine, { limit: 60000 });
   check("the nurse heals the party", m.state.party[0].hp === 40);
-  check("and the player gets back out of the Center",
-    result.ok && m.state.mapNum === 5, `${result.ok ? "ok" : result.reason} on map ${m.state.mapNum}`);
+  // Not "is outside" -- leaving the building is `goTo`'s job now, and it is
+  // the only thing that knows which of a Centre's three doormats is a door.
+  // What this owes its caller is that the conversation is over and the player
+  // can move, which is a step that lands rather than a count of presses.
+  check("and the player can walk again afterwards",
+    result.ok, result.ok ? `free at ${result.at && result.at.x},${result.at && result.at.y}` : result.reason);
+  check("which means the nurse has stopped talking",
+    result.ok && !talking, talking ? "still mid-sentence" : "done");
   check("without talking to her again forever", apresses < 200, `${apresses} A presses`);
 }
 
@@ -526,6 +548,110 @@ function overworld({ open, x, y, mapGroup = 3, mapNum = 24, step = 8, onTile = n
       out.result.ok && out.order[0].name === "CHARIZARD" && out.order[0].level === 36,
       `${out.result.ok ? "ok" : out.result.reason} -> ${out.order[0].name} L${out.order[0].level}`);
   }
+}
+
+// -- getting out of a building ------------------------------------------------
+//
+// A Pokémon Center's exit is three mats side by side and exactly one of them
+// is a door: the middle one, and only if you press south while standing on it.
+// Walking onto any of the three -- from the left, from above, at a run -- does
+// nothing at all. That was measured on a real cartridge, all nine ways, after
+// a headless run reported that it could not leave the Cerulean Pokémon Center
+// and a screenshot showed it standing on the doormat.
+//
+// Nothing in the walker noticed. Reaching the goal tile *is* success, so the
+// next pass planned a path of zero tiles to where the player already stood,
+// walked it perfectly, and did that until the attempts ran out.
+const ROOM = { w: 9, h: 5 }, STREET = { w: 9, h: 9 };
+
+/** Two maps, both wide open, joined by three warp tiles along the room's south
+ *  wall. Two bits a tile, exactly as the generated file packs them. */
+function tinyWorld() {
+  const roomAt = 0, streetAt = Math.ceil((ROOM.w * ROOM.h) / 4);
+  const bytes = new Uint8Array(streetAt + Math.ceil((STREET.w * STREET.h) / 4));
+  const open = (at, count) => {
+    for (let i = 0; i < count; i++) bytes[at + (i >> 2)] |= 1 << ((i & 3) * 2);
+  };
+  open(roomAt, ROOM.w * ROOM.h);
+  open(streetAt, STREET.w * STREET.h);
+  return world(
+    {
+      games: ["BPRE"],
+      centres: [],
+      layouts: [{ w: ROOM.w, h: ROOM.h, at: roomAt }, { w: STREET.w, h: STREET.h, at: streetAt }],
+      maps: [
+        { g: 1, n: 1, name: "Room", l: 0, in: 1, w: [[3, 4, 1, 0], [4, 4, 1, 0], [5, 4, 1, 0]], c: [] },
+        { g: 2, n: 2, name: "Street", l: 1, w: [[4, 0, 0, 0]], c: [] },
+      ],
+    },
+    bytes
+  );
+}
+
+/** A player in that room. `door` decides which mat, if any, actually opens —
+ *  and it only opens on a press south, which is the whole point. */
+function building({ door = null } = {}) {
+  const state = {
+    x: 1, y: 1, mapGroup: 1, mapNum: 1,
+    party: [{ name: "TEST", hp: 40, maxHp: 40, record: { moves: [] } }],
+  };
+  let held = 0, progress = 0;
+  const pressedInto = [];
+  return {
+    state, pressedInto,
+    look: () => ({
+      party: state.party, inBattle: false, battle: null,
+      position: { x: state.x, y: state.y, map: { mapGroup: state.mapGroup, mapNum: state.mapNum } },
+    }),
+    press(keys) {
+      const dir = keys & (BTN.UP | BTN.DOWN | BTN.LEFT | BTN.RIGHT);
+      if (!dir || dir !== held) { held = dir; progress = 0; return; }
+      if (++progress < 8) return;
+      progress = 0;
+      if (dir & BTN.DOWN && state.mapGroup === 1 && state.y === 4) {
+        pressedInto.push(state.x);
+        if (door !== null && state.x === door) {
+          Object.assign(state, { mapGroup: 2, mapNum: 2, x: 4, y: 1 });
+        }
+        return; // the south wall: a press into it either opens or does nothing
+      }
+      const dx = dir & BTN.RIGHT ? 1 : dir & BTN.LEFT ? -1 : 0;
+      const dy = dir & BTN.DOWN ? 1 : dir & BTN.UP ? -1 : 0;
+      const size = state.mapGroup === 1 ? ROOM : STREET;
+      const nx = state.x + dx, ny = state.y + dy;
+      if (nx < 0 || ny < 0 || nx >= size.w || ny >= size.h) return;
+      state.x = nx; state.y = ny;
+    },
+  };
+}
+
+{
+  const W = tinyWorld();
+  const made = building({ door: 4 });
+  const { result } = play(() => goTo(W, { mapGroup: 2, mapNum: 2, x: 6, y: 6 }), made, { limit: 80000 });
+  check(
+    "a mat that only opens when you press into it is pressed into",
+    result.ok && made.state.mapGroup === 2,
+    result.ok ? `out of the building and across the street to ${made.state.x},${made.state.y}` : result.reason
+  );
+  check(
+    "and a mat that is not a door does not end the trip",
+    new Set(made.pressedInto).size > 1,
+    `tried the mats at x = ${[...new Set(made.pressedInto)].join(", ")}`
+  );
+}
+
+{
+  // The same room with no working mat at all. This has to end, and say so,
+  // rather than walk the three of them until the sun comes up.
+  const W = tinyWorld();
+  const sealed = building({ door: null });
+  const { result } = play(() => goTo(W, { mapGroup: 2, mapNum: 2, x: 6, y: 6 }), sealed, { limit: 80000 });
+  check(
+    "a room with no working way out is reported, not walked forever",
+    result && !result.ok,
+    result && result.reason
+  );
 }
 
 console.log(failures === 0 ? "\nall good" : `\n${failures} failed`);

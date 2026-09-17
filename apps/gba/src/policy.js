@@ -10,7 +10,7 @@
 // vocabulary those parameters select from. A policy that could emit behaviour
 // would be a policy that could do anything while nobody was watching.
 
-import { BTN } from "./buttons.js";
+import { BTN, cursorStep } from "./buttons.js";
 import { sameTile } from "./game.js";
 import { MOVES, moveName } from "./moves.js";
 import { follower, usable, ROUTE_STUCK } from "./route.js";
@@ -307,6 +307,11 @@ export function runner(policy, route = null, world = null) {
   // which the turning logic resets every twenty-eight frames and so can never
   // notice something that lasts longer.
   let sinceMoved = 0;
+  let lockedFor = 0;
+  // The battle as a string, and how long it has read exactly the same. A
+  // battle that is not changing is stuck; one that is merely long is not.
+  let lastBeat = null;
+  let stillFor = 0;
   let nudges = 0;
   // Frames spent in a battle with a controller pointer this build does not
   // recognise. Without the menus the runner can only mash A, and A takes the
@@ -386,6 +391,22 @@ export function runner(policy, route = null, world = null) {
     get heals() {
       return heals;
     },
+    /** Why the last trip to a Pokémon Center was made. "It keeps going back"
+     *  is a complaint nobody can act on without this. */
+    get healBecause() {
+      return healBecause;
+    },
+    /** Drops in HP with no battle to explain them. The run stops at three, so
+     *  being able to watch it climb is the difference between finding the
+     *  cause and guessing at it. */
+    get unexplained() {
+      return damageUnseen;
+    },
+    /** The hardest hit seen in a single battle here, which is what the
+     *  decision to leave is actually measured against. */
+    get worstHit() {
+      return worstHit;
+    },
     /**
      * The patch of grass this grind is confined to, or null if it is walking
      * on the leash instead.
@@ -396,22 +417,6 @@ export function runner(policy, route = null, world = null) {
      * A screenshot of the wrong one is indistinguishable from a stale tab, and
      * that cost a round trip of "I cannot reproduce this".
      */
-    /** Why the last trip to a Pokémon Center was made. "It keeps going back"
-     *  is a complaint nobody can act on without this. */
-    get healBecause() {
-      return healBecause;
-    },
-    /** The hardest hit seen in a single battle here, which is what the
-     *  decision to leave is actually measured against. */
-    /** Drops in HP with no battle to explain them. The run stops at three, so
-     *  being able to watch it climb is the difference between finding the
-     *  cause and guessing at it. */
-    get unexplained() {
-      return damageUnseen;
-    },
-    get worstHit() {
-      return worstHit;
-    },
     get confined() {
       return patch ? { tiles: patch.tiles.size, x: patch.seed.x, y: patch.seed.y } : null;
     },
@@ -587,6 +592,8 @@ export function runner(policy, route = null, world = null) {
           // self-check below had counted was the one-frame race at the end of
           // the last one, not evidence against the flag.
           damageUnseen = 0;
+          lastBeat = null;
+          stillFor = 0;
         }
         if (phase === "seek") {
           fleeing = 0;
@@ -601,15 +608,36 @@ export function runner(policy, route = null, world = null) {
       const elapsed = inPhase++;
 
       if (phase === "battle") {
-        if (elapsed > BATTLE_PATIENCE) {
+        const battle = state.battle;
+
+        // Whether the battle is *responding*, rather than how long it has
+        // lasted.
+        //
+        // This used to be a minute in `inBattle` and then stop. That is not
+        // the same question, and the Nugget Bridge is where the difference
+        // shows: five trainers challenge you back to back with no walk in
+        // between, so the flag never falls, so a run that was fighting and
+        // winning was stopped for taking too long to do it. Thirty battles in
+        // and levelling nicely, reported as "a battle stopped responding".
+        //
+        // What a real stall looks like is nothing changing at all: the same
+        // controller pointer, the same menu, the same cursor, the same HP,
+        // frame after frame. That is what is measured now. A battle can take
+        // all afternoon as long as something in it keeps moving.
+        const beat = battle
+          ? `${battle.fn}/${battle.menu}/${battle.cursor}/${battle.action}/${battle.active}/${mon ? mon.hp : "?"}`
+          : `blind/${party.map((p) => p.hp).join(",")}`;
+        if (beat !== lastBeat) { lastBeat = beat; stillFor = 0; }
+        else if (++stillFor > BATTLE_PATIENCE) {
           return {
             keys: 0,
             done: true,
-            reason: "A battle stopped responding. Stopping before this goes anywhere strange.",
+            reason:
+              "A battle stopped responding -- a full minute with nothing on " +
+              "screen changing at all. Stopping before this goes anywhere strange.",
           };
         }
 
-        const battle = state.battle;
         // Who is actually out. Without this a faint leaves the runner judging
         // the HP of a Pokémon that stopped fighting a minute ago -- it reads
         // zero, and every decision after that is about the wrong animal.
@@ -629,16 +657,26 @@ export function runner(policy, route = null, world = null) {
           return { keys: tapping(elapsed) ? BTN.A : 0 };
         }
 
-        // Reasons to be somewhere else. Note what is *not* among them: being
-        // hurt is not a reason to stop, it is a reason to go to a Centre --
-        // and a Centre restores PP as well as HP, so running dry has exactly
-        // the same remedy as running low.
         // Why to be somewhere else, as a reason rather than a boolean. Being
         // hurt is not among them: that is a reason to go to a Centre, not to
         // stop, and a Centre restores PP as well as HP so running dry has the
         // same remedy as running low.
+        //
+        // A trainer cannot be fled, and the game says so directly --
+        // `gBattleTypeFlags`, read through `battle.trainer`. Without it the
+        // only evidence was the cursor snapping back off RUN, which nothing
+        // was watching, so an interrupted walk pressed RUN at the Nugget
+        // Bridge until the patience ran out and then reported that the battle
+        // had stopped responding. The battle was responding perfectly.
+        //
+        // Undefined rather than false on a cartridge this cannot read, and the
+        // fallback is the old behaviour: try to run. Guessing "trainer" for
+        // every wild encounter would turn every interrupted walk into a fight.
+        const canFlee = !(battle && battle.trainer === true);
+
         const why =
-          mode !== "grind" ? "the walk was interrupted"
+          !canFlee ? null
+          : mode !== "grind" ? "the walk was interrupted"
             // `spent`, not `!bestMove`: an unreadable record is not an empty
             // one, and treating it as one is a trip to a Centre for nothing.
             : spent(fighter) ? "out of PP"
@@ -650,13 +688,15 @@ export function runner(policy, route = null, world = null) {
         if (why) {
           if (canHeal) { needsHeal = true; healBecause = healBecause || why; }
           // RUN is the fourth option, and the cursor reaches it the way the
-          // move cursor does -- by XOR, one axis per press, checked rather
-          // than counted. This replaces a blind B/DOWN/RIGHT/A sequence that
-          // only worked from a cursor position nobody was reading.
+          // move cursor does -- one axis per press, checked rather than
+          // counted, and with the direction chosen from where the cursor is
+          // because the menu does not wrap. This replaces a blind
+          // B/DOWN/RIGHT/A sequence that only worked from a cursor position
+          // nobody was reading.
           if (battle && battle.menu === "action") {
-            const differs = actionAt ^ RUN;
-            if (differs) {
-              return { keys: tapping(elapsed) ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : 0 };
+            const step = cursorStep(actionAt, RUN);
+            if (step) {
+              return { keys: tapping(elapsed) ? step : 0 };
             }
             return { keys: tapping(elapsed) ? BTN.A : 0 };
           }
@@ -672,9 +712,9 @@ export function runner(policy, route = null, world = null) {
         if (battle && battle.menu === "move") {
           const want = bestMove(fighter);
           if (want) {
-            const differs = battle.cursor ^ want.index;
-            if (differs) {
-              return { keys: tapping(elapsed) ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : 0 };
+            const step = cursorStep(battle.cursor, want.index);
+            if (step) {
+              return { keys: tapping(elapsed) ? step : 0 };
             }
           }
         }
@@ -682,8 +722,7 @@ export function runner(policy, route = null, world = null) {
         // there and nothing here moves it -- except a battle this ran from,
         // which leaves it on RUN.
         if (battle && battle.menu === "action" && actionAt !== FIGHT) {
-          const differs = actionAt ^ FIGHT;
-          return { keys: tapping(elapsed) ? (differs & 1 ? BTN.RIGHT : BTN.DOWN) : 0 };
+          return { keys: tapping(elapsed) ? cursorStep(actionAt, FIGHT) : 0 };
         }
         // The action menu on FIGHT, battle text, an animation: A for all.
         return { keys: tapping(elapsed) ? BTN.A : 0 };
@@ -834,7 +873,26 @@ export function runner(policy, route = null, world = null) {
       // never taken a step is walled in or standing somewhere they cannot
       // walk, and that has its own answer further down. This is for a walk
       // that was working and stopped.
-      if (here && everMoved && sinceMoved > 120 && !state.inBattle && mode === "grind") {
+      // There is a better answer than the clock, and it is the game's own
+      // `sLockFieldControls`: the byte the overworld sets whenever a script, a
+      // cutscene or a message box has the controls, and clears when the
+      // player can walk again. `state.fieldLocked` is that byte. It is null on
+      // a cartridge whose layout is not known, and null is not false -- the
+      // clock is still the fallback there, because guessing "no box" and
+      // walking into one is the freeze this whole block exists to end.
+      //
+      // Knowing it changes the answer in both directions:
+      //   locked   -- a box really is up, so stop waiting out two seconds of
+      //               swallowed directions and press A after half of one.
+      //   unlocked -- the player *can* walk and simply is not moving, which
+      //               means a wall, not a box. Pressing A at a wall talks to
+      //               whoever is standing behind it. Don't.
+      const locked = state.fieldLocked === true ? true : state.fieldLocked === false ? false : null;
+      if (locked === true) lockedFor++;
+      else lockedFor = 0;
+      const boxIsUp = locked === true ? lockedFor > 30 : locked === false ? false : sinceMoved > 120;
+
+      if (here && everMoved && boxIsUp && !state.inBattle && mode === "grind") {
         if (++nudges > 20) {
           return {
             keys: 0,
@@ -846,6 +904,7 @@ export function runner(policy, route = null, world = null) {
           };
         }
         sinceMoved = 0;
+        lockedFor = 0;
         return { keys: tapping(ticks) ? BTN.A : 0 };
       }
 

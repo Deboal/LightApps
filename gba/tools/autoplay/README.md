@@ -13,10 +13,51 @@ That single rule is most of what makes it work, and it is the part worth
 stealing for anything else that drives an emulator, a game, or any other
 system that has no API and only a screen.
 
+## Start here: `play.mjs`
+
+The rest of this folder is the toolkit. `play.mjs` is the thing you run, and
+it is the app's own autoplayer with the browser taken out — the same policy,
+the same wasm core, the same atlas, the same reads. Not a second
+implementation: that already existed, in the other files here, and the bugs it
+did *not* share with the app were the expensive ones. `leadWith` lived here,
+worked here, and was never ported, so for a week the app went back to the
+Pokémon Center after every single battle.
+
+```
+node gba/tools/autoplay/play.mjs \
+  --rom FireRed.gba --sav game.sav --mon CHARIZARD --to 40 --out after.sav
+```
+
+| flag | |
+|---|---|
+| `--rom` `--sav` | the cartridge and the save to start from. Required, and neither belongs in this repo. |
+| `--mon` / `--slot` | who to train, by nickname or by party position. |
+| `--to` | the level to stop at. Required. |
+| `--spot` | the map to fight on. The default is where you are standing, or — because that is usually the upstairs of a Pokémon Center — the nearest map with grass. |
+| `--out` | write the cartridge save here at the end; import it in the app under **Import .sav**. |
+| `--minutes` | wall-clock budget, default 30. |
+| `--tries` | how many times to pick the run back up after it stops, default 3. Each retry moves to the next place on the list. |
+| `--dump` | a save state, a screenshot and the reason, written on every stop. |
+| `--show` | draw the screen in the terminal while it runs. |
+
+Two things make it worth having. It runs six to ten times faster than watching
+does, because nothing renders unless `--show` asks; a twenty-minute grind
+takes two or three minutes. And a stop here is a file you can look at rather
+than one line in a panel on a phone.
+
+`--show` costs about a fifth of that speed and is usually worth it — a run
+that is going wrong looks wrong long before it says so.
+
+The browser is still where this is meant to be *watched*. It is a poor place
+to debug it: a run takes as long as the game takes, and a fix cannot be tried
+without a build, a deploy, and a service worker that may or may not have
+noticed.
+
 ## The pieces
 
 | file | what it owns |
 |---|---|
+| `play.mjs` | the entry point above: the app's policy and atlas, driven headless. |
 | `machine.mjs` | boot / step / press / read. `look()` returns party, position, battle and menu state. `save()` returns the flash image. |
 | `maps.mjs` | walls and grass, from pokefirered's `map.bin` + `metatile_attributes.bin`. `path()` and `pathToAny()` are BFS over that. |
 | `menus.mjs` | the menus that need verifying: `leadWith`, `healHere`, `saveGame`. |
@@ -73,11 +114,29 @@ clothes: believing an input landed because it was sent.
 - **Menus drift.** The party submenu index depends on which Pokémon knows
   Cut; the field menu is sticky and wraps. Search for the entry and verify
   what you landed on — never count presses from a remembered index.
+- **A cursor that moves by XOR is not a cursor that wraps.** Both battle menus
+  are 2×2 and left/right flip bit 0, up/down flip bit 1 — so any target is two
+  presses away and it is tempting to always press RIGHT then DOWN. From the
+  top-left that works. From the right column RIGHT does nothing, and from the
+  bottom row DOWN does nothing, and a press that does nothing looks exactly
+  like no press. A CHARMELEON sat on METAL CLAW — bottom-right, no PP left —
+  pressing RIGHT at it for a full minute while SCRATCH waited at the top left
+  with thirty-five. Pick the direction from where the cursor *is*
+  (`cursorStep` in `apps/gba/src/buttons.js`).
+- **"Too long" is not "stuck".** A battle that has lasted a minute and a
+  battle that has not changed in a minute are different claims, and only the
+  second is evidence. Five trainers in a row on the Nugget Bridge keep
+  `inBattle` true the whole time.
 - **Leave before you need to.** Setting off for a Centre at 44% HP means
   arriving at 0%, because the route between is full of trainers you cannot
   run from. The departure threshold is 80% for that reason.
 - **The save file is written by the game, not by you.** `gba_read_save` reads
   flash. Without an in-game save, the image you export is the one you loaded.
+- **Not every warp is a door you can walk through.** A Pokémon Center's exit
+  is three mats side by side; exactly one of them opens, and only to a press
+  *south* while standing on it. Walking onto any of the three from any
+  direction does nothing. Aim at every warp that leads where you are going,
+  press into the one you reach, and cross it off if nothing happens.
 
 ## Where this ended up
 

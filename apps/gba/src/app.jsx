@@ -984,7 +984,7 @@ function PartyPanel({ party, world, gameName, onClose }) {
               Battle menu{" "}
               {world.battle
                 ? world.battle.menu
-                  ? `${world.battle.menu} (cursor ${world.battle.cursor}, action ${world.battle.action}, out ${world.battle.active})`
+                  ? `${world.battle.menu} (cursor ${world.battle.cursor}, action ${world.battle.action}, out ${world.battle.active}, party slot ${world.battle.slot}${world.battle.trainer ? ", a trainer — no running" : ""})`
                   : `not recognised — 0x${(world.battle.fn >>> 0).toString(16).toUpperCase()}`
                 : "unreadable"}
             </div>
@@ -994,6 +994,13 @@ function PartyPanel({ party, world, gameName, onClose }) {
                 {world.inBattle === null ? "unreadable" : world.inBattle ? "ON" : "off"}
               </span>
               {world.inBattle === false && " — unverified; it has never been seen turn on"}
+            </div>
+            <div>
+              Controls{" "}
+              <span style={{ color: world.fieldLocked ? "var(--accent)" : "var(--dim)", fontWeight: world.fieldLocked ? 700 : 400 }}>
+                {world.fieldLocked === null ? "unreadable" : world.fieldLocked ? "the game's" : "yours"}
+              </span>
+              {world.fieldLocked === true && " — a script, a cutscene or a message box is up"}
             </div>
           </div>
         )}
@@ -2011,7 +2018,13 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       // case: a game that has initialised its flash without the player ever
       // saving looks the same from here, and telling those apart would mean
       // knowing this particular game's save format.
-      if (readSave().length === 0) {
+      // Null, not just empty: a cartridge the core has no save backing for at
+      // all -- one whose header it does not recognise -- returns nothing here.
+      // Reading `.length` off that threw inside the click handler, which left
+      // the panel sitting open with no error and nothing happening. The two
+      // cases have the same answer, so they get the same message.
+      const saved = readSave();
+      if (!saved || saved.length === 0) {
         return setLinkError(
           "This cartridge has no save yet. Save in the game first, or the linked session will start a new one."
         );
@@ -2253,6 +2266,10 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         // pointer that matches nothing is the difference between "the move
         // picker is off" and "the move picker is running and choosing badly".
         battle: game.battleMenuOf(iwram, ewram, code),
+        // Whether a script or a message box currently has the controls. Shown
+        // raw because it is the one read that separates "frozen" from "being
+        // talked to", and those looked identical here for weeks.
+        fieldLocked: game.fieldLockedOf(iwram, code),
       });
     };
     read();
@@ -2345,6 +2362,11 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             // being blocked by an item ball from walking. Null is fine: it
             // falls back to turning on the clock alone.
             position: game.positionOf(iwram, ewram, drive.code),
+            // Whether the game has the controls -- a script, a cutscene, or a
+            // message box. This is the direct answer to the question every
+            // freeze reported here has really been asking, and null when the
+            // cartridge is not one whose layout is known.
+            fieldLocked: game.fieldLockedOf(iwram, drive.code),
           });
           keys = out.keys;
           if (out.done) {

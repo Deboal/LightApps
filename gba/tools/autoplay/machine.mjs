@@ -71,6 +71,10 @@ export async function boot({ rom, save, code = "BPRE" }) {
         inBattle: game.inBattleOf(iwram, code) === true,
         battle: game.battleMenuOf(iwram, ewram, code),
         position: game.positionOf(iwram, ewram, code),
+        // Whether the game has the controls. The policy uses it to tell a
+        // message box from a wall, so the headless runner has to hand it over
+        // too or it gets the app's old behaviour and none of the fix.
+        fieldLocked: game.fieldLockedOf(iwram, code),
       };
     },
 

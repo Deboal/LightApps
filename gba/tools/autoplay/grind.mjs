@@ -31,7 +31,11 @@ export async function grind(machine, {
   onProgress = () => {},
 } = {}) {
   const lead = () => machine.look().party[slot];
-  const spent = () => {
+  // Named for what it asks, not for what it calls. The obvious name shadowed
+  // the import it was meant to wrap, so this function called itself until the
+  // stack ran out -- and it is only reached once a run is already in trouble,
+  // which is the worst place to discover it.
+  const outOfMoves = () => {
     const mon = lead();
     return !!mon && spent(mon);
   };
@@ -57,7 +61,7 @@ export async function grind(machine, {
       return { ok: true, at: lead(), heals, battles };
     }
 
-    if (hurt() || spent()) {
+    if (hurt() || outOfMoves()) {
       onProgress({ what: "healing", mon: lead(), heals, battles });
       const there = goTo(machine, { ...centre, toward: BTN.DOWN }, { allowed });
       if (!there.ok) {
