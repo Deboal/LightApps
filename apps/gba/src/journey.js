@@ -18,6 +18,7 @@ import { hold, settle, tap, beat } from "./drive.js";
 import { bestMove, spent } from "./policy.js";
 import { pathToAny, path, edgeTiles, DIR } from "./world.js";
 import { MENU } from "./game.js";
+import { sameMon, slotOfMon } from "./recovery.js";
 
 /** Frames to keep pressing towards a tile before calling it blocked. A step is
  *  sixteen frames and a turn on the spot eight, so ninety is many steps' worth
@@ -462,14 +463,6 @@ export function* backToOverworld({ tries = 14, clear = BTN.B } = {}) {
  * compares the whole tuple, which is unique enough for the only question being
  * asked: did the one we meant end up at the front?
  */
-const sameMon = (a, b) =>
-  !!a && !!b &&
-  a.name === b.name &&
-  a.level === b.level &&
-  a.maxHp === b.maxHp &&
-  (a.record && a.record.species) === (b.record && b.record.species) &&
-  (a.record && a.record.personality) === (b.record && b.record.personality);
-
 /**
  * Move a party member into the lead.
  *
@@ -503,7 +496,11 @@ const sameMon = (a, b) =>
 export function* leadWith(want, { tries = 3 } = {}) {
   let state = yield 0;
   const partyNow = () => (state && state.party) || [];
-  const at = partyNow().findIndex((mon) => sameMon(mon, want));
+  // `slotOfMon` rather than a bare search, because a search answers "not
+  // here" for a frame whose record did not decode -- and the party is read
+  // out of memory the game is writing to, so torn reads are ordinary. One of
+  // them should not abort a switch with "it is not in the party any more".
+  const at = slotOfMon(partyNow(), want, -1);
   if (at < 0) return { ok: false, reason: `${want.name} is not in the party any more` };
   if (at === 0) return { ok: true, note: "already leading", slot: 0 };
 

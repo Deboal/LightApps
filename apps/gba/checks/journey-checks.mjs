@@ -379,9 +379,13 @@ const steer = (battle, field, keys) => {
 {
   const { leadWith } = await import("../src/journey.js");
   const { MENU } = await import("../src/game.js");
-  const mon = (name, level, species, personality) => ({
+  // `otId` because the real decoder always provides one: it is half of the
+  // pair Gen 3 encrypts a record with, and it is half of what identifies a
+  // Pokémon across a party that keeps reordering. A fake without it is a fake
+  // that exercises a fallback path instead of the real one.
+  const mon = (name, level, species, personality, otId = 24601) => ({
     name, level, species, maxHp: 40, hp: 40,
-    record: { species, personality, moves: [{ id: 52, pp: 20 }] },
+    record: { species, personality, otId, moves: [{ id: 52, pp: 20 }] },
   });
 
   /**

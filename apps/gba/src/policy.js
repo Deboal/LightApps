@@ -19,6 +19,7 @@ import { follower, usable, ROUTE_STUCK } from "./route.js";
 // inside functions rather than at module scope, which is what makes it safe --
 // by the time either is called, both modules have finished evaluating.
 import { drive } from "./drive.js";
+import { slotOfMon } from "./recovery.js";
 import { healTrip, goTo, leadWith } from "./journey.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
@@ -456,6 +457,24 @@ export function runner(policy, route = null, world = null) {
 
     step(state) {
       const party = state && state.party;
+
+      // Who this is about, found rather than indexed.
+      //
+      // `targetSlot` is a number and the party is a list that reorders: the
+      // first thing a run does is put its target in front, and from that
+      // moment the slot it was given belongs to somebody else. Reading the
+      // level out of that slot is how a run asked to train a CLEFAIRY to 20
+      // stopped six seconds in, having noticed that the PIKACHU which
+      // inherited slot six was already 22, and called it done.
+      //
+      // So the slot is re-derived every frame from the Pokémon itself. `want`
+      // is captured on the first frame whose record decodes, because an
+      // identity taken from a torn read is an identity that matches nothing.
+      if (!want && party && party[targetSlot] && party[targetSlot].record) {
+        want = party[targetSlot];
+      }
+      if (want && party) targetSlot = slotOfMon(party, want, targetSlot);
+
       if (!party || !party[targetSlot]) {
         // Hold still rather than act on a read that failed, and only give up
         // once it has failed for long enough to mean something.
@@ -943,7 +962,6 @@ export function runner(policy, route = null, world = null) {
       // starts grinding with the wrong one in front is a run that cannot
       // succeed no matter how well everything after this works.
       if (!ordered && here && !state.inBattle) {
-        want = want || mon;
         mode = "journey";
         tripKind = "order";
         trip = drive(() => leadWith(want));
