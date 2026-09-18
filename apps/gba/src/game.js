@@ -46,6 +46,9 @@ const LAYOUT = {
   battlerParty: SYMBOLS.gBattlerPartyIndexes,
   partyMenuSlot: PARTY_MENU_SLOT,
   fieldLocked: SYMBOLS.sLockFieldControls,
+  partyMenu: SYMBOLS.gPartyMenu,
+  partyMenuInternal: SYMBOLS.sPartyMenuInternal,
+  listMenu: SYMBOLS.sMenu,
   battleType: SYMBOLS.gBattleTypeFlags,
   atActionMenu: SYMBOLS.HandleInputChooseAction,
   atMoveList: SYMBOLS.HandleInputChooseMove,
@@ -321,6 +324,92 @@ export function fieldLockedOf(iwram, code) {
   const at = map.fieldLocked - IWRAM_BASE;
   if (at < 0 || at >= iwram.length) return null;
   return iwram[at] !== 0;
+}
+
+/**
+ * `MENU_*`, the ids the party submenu is built from.
+ *
+ * Read rather than counted. The submenu is not a fixed list -- it grows an
+ * entry for every field move the selected Pokémon knows -- and the two ways to
+ * cope with that are to compute the offset or to find out. Computing it means
+ * keeping a list of every field move in the game and being right about it
+ * forever. Finding out means reading four bytes.
+ *
+ * What made this worth doing rather than interesting: the old code searched by
+ * *trying*. It pressed A on entry one, saw whether the party had reordered,
+ * pressed A on entry two, and so on. Entry three is ITEM, and pressing A there
+ * opens GIVE, and the next A in the sequence gave a Moon Stone to the player's
+ * Charizard. A menu where the wrong guess costs somebody an item is a menu you
+ * read before you press.
+ */
+export const MENU = { SUMMARY: 0, SWITCH: 1, CANCEL: 2, ITEM: 3, GIVE: 4, TAKE: 5, SHIFT: 10 };
+
+/** `gPartyMenu.action` while a Pokémon is held, waiting to be put somewhere. */
+const SWITCHING = 8;
+
+/**
+ * The party menu as something to act on: which entries its submenu is
+ * offering, where the cursor is, and which slot is held.
+ *
+ * Null when nothing can be read. Every field is a fact from the game's own
+ * memory, so a caller can press one button and then check that the thing it
+ * meant actually happened -- which is the rule this app keeps re-learning.
+ */
+export function partyMenuOf(ewram, code) {
+  const map = KNOWN[code];
+  if (!map || !map.partyMenuInternal || !ewram) return null;
+
+  const at8 = (address) => {
+    const o = address - EWRAM_BASE;
+    return o >= 0 && o < ewram.length ? ewram[o] : 0;
+  };
+  const at32 = (address) => {
+    const o = address - EWRAM_BASE;
+    if (o < 0 || o + 4 > ewram.length) return 0;
+    return (ewram[o] | (ewram[o + 1] << 8) | (ewram[o + 2] << 16) | (ewram[o + 3] << 24)) >>> 0;
+  };
+
+  // The scratch struct is allocated when the screen opens and freed when it
+  // closes, so a null pointer is the ordinary answer for "no party menu".
+  const internal = at32(map.partyMenuInternal);
+  let actions = null;
+  if (internal > EWRAM_BASE && internal < EWRAM_BASE + ewram.length) {
+    const count = at8(internal + 23);
+    // Eight is the array's size. A count outside it means this is not the
+    // struct -- freed memory, a build that moved it -- and the honest answer
+    // is that the entries are unknown, never a list read out of whatever is
+    // there now.
+    if (count >= 1 && count <= 8) {
+      actions = [];
+      for (let i = 0; i < count; i++) actions.push(at8(internal + 15 + i));
+    }
+  }
+
+  return {
+    /**
+     * Whether the party screen is up at all.
+     *
+     * The scratch struct is allocated when it opens and freed when it closes,
+     * so this is the game's own answer rather than an inference from a cursor
+     * that might just be stale. It matters because every other field here
+     * reads zero in the overworld, and zero is a legitimate cursor position --
+     * a caller that cannot tell "closed" from "on the first entry" starts
+     * pressing at a game that is not listening.
+     */
+    open: internal > EWRAM_BASE && internal < EWRAM_BASE + ewram.length,
+    /** The submenu entries as `MENU_*` ids, or null when they cannot be read. */
+    actions,
+    /** Where the cursor sits in whichever list menu is up. */
+    cursor: at8(map.listMenu + 2),
+    /** The last valid index, so a cursor can be walked without falling off. */
+    lastIndex: at8(map.listMenu + 4),
+    /** The party slot under the cursor, or being held during a switch. */
+    slot: at8(map.partyMenu + 9),
+    /** Where a held Pokémon will go when A is pressed. */
+    moveTo: at8(map.partyMenu + 10),
+    /** True once SWITCH has been taken and the game is asking "move where?". */
+    switching: at8(map.partyMenu + 11) === SWITCHING,
+  };
 }
 
 /** Whether two readings are the same tile of the same map. Being blocked and

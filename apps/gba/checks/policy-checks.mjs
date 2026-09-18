@@ -1060,5 +1060,91 @@ function centreRoute() {
   );
 }
 
+// -- which stops are worth picking back up ------------------------------------
+//
+// Both drivers -- the tab and `play.mjs` -- now restart a stopped run rather
+// than ending the night on one bad minute. That is only safe if the runner
+// says which stops must not be restarted, because the two that matter look
+// exactly like the recoverable ones from outside: a fainted lead with nowhere
+// to heal, and nothing left with any PP. Restarting either walks into the
+// same wall with less to fight it with, which is how an unattended grind
+// becomes a white-out.
+//
+// Reaching the goal is the third: not a failure at all, and restarting on it
+// is how a run that finished grinds all night anyway.
+{
+  const stopOf = (run, frames, at) => {
+    for (let frame = 0; frame < frames; frame++) {
+      const out = run.step(at(frame));
+      if (out.done) return out;
+    }
+    return null;
+  };
+
+  const reached = stopOf(runner({ slot: 0, stopAtLevel: 22 }), 40, (frame) => ({
+    frame, inBattle: false, party: [mon()],
+  }));
+  check("reaching the level is final", reached && reached.final === true, reached && reached.reason);
+
+  // Fainted, with no route and no atlas, so there is nowhere to heal.
+  const fainted = stopOf(runner({ slot: 0, stopAtLevel: 30 }), 40, (frame) => ({
+    frame, inBattle: false, party: [{ ...mon(), hp: 0, fainted: true }],
+  }));
+  check("a faint with nowhere to heal is final", fainted && fainted.final === true, fainted && fainted.reason);
+
+  // Out of PP everywhere, same situation.
+  const dry = stopOf(runner({ slot: 0, stopAtLevel: 30 }), 200, (frame) => ({
+    frame, inBattle: false,
+    party: [{ ...mon(), record: { moves: [{ id: 52, pp: 0 }, { id: 84, pp: 0 }] } }],
+  }));
+  check("no PP anywhere is final", dry && dry.final === true, dry && dry.reason);
+
+  // And the ordinary kind. Walking forever without an encounter is a stumble:
+  // somewhere else to stand usually fixes it, which is what a restart is.
+  const barren = stopOf(runner({ slot: 0, stopAtLevel: 30 }), 90 * 60 + 200, (frame) => ({
+    frame, inBattle: false, party: [mon()],
+    position: { x: 9, y: 9, map: { mapGroup: 3, mapNum: 24 } },
+  }));
+  check(
+    "but finding no encounters is not — that one is worth another go",
+    barren && !barren.final,
+    barren ? barren.reason : "never stopped"
+  );
+}
+
+// -- the party menu the game opens after a faint ------------------------------
+//
+// Its submenu is SHIFT / SUMMARY / CANCEL. No ITEM, so unlike the field menu
+// nothing here can be given away -- but A does not close a summary screen, so
+// a run that mashes A onto SUMMARY sits in a stat page until its patience runs
+// out, which on screen is a frozen game.
+{
+  const inBattleParty = (menu) => (frame) => ({
+    frame,
+    inBattle: true,
+    party: [{ ...mon(), record: { moves: [{ id: 52, pp: 20 }] } }],
+    battle: { menu: "party", cursor: 0, action: 0, active: 0 },
+    menu,
+  });
+
+  // Cursor already on the send-out: press A.
+  const ready = drive(runner({ slot: 0, stopAtLevel: 30 }), 24,
+    inBattleParty({ open: true, actions: [10, 0, 2], cursor: 0, lastIndex: 2, slot: 0, moveTo: 0, switching: false }));
+  check("on the send-out entry it presses A", ready.keys.some((k) => k & BTN.A));
+  check("and does not wander off it first", !ready.keys.some((k) => k & (BTN.UP | BTN.DOWN)));
+
+  // Cursor on SUMMARY: walk back up before pressing anything.
+  const wrong = drive(runner({ slot: 0, stopAtLevel: 30 }), 24,
+    inBattleParty({ open: true, actions: [10, 0, 2], cursor: 1, lastIndex: 2, slot: 0, moveTo: 0, switching: false }));
+  check("on SUMMARY it moves before it presses", wrong.keys.some((k) => k & BTN.UP));
+  check("and does not press A from there", !wrong.keys.some((k) => k & BTN.A),
+    "A on SUMMARY opens a screen A cannot close");
+
+  // Nothing readable: the old behaviour, which mostly works and never made
+  // anything worse.
+  const blind = drive(runner({ slot: 0, stopAtLevel: 30 }), 24, inBattleParty(null));
+  check("with nothing readable it still mashes A", blind.keys.some((k) => k & BTN.A));
+}
+
 console.log(failures ? `\n${failures} failed` : "\nall good");
 process.exit(failures ? 1 : 0);

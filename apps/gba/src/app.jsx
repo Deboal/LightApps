@@ -7,6 +7,7 @@ import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 import { BTN, DPAD } from "./buttons.js";
 import { runner, previewOf } from "./policy.js";
+import { recovery } from "./recovery.js";
 import { loadWorld } from "./world.js";
 import * as route from "./route.js";
 import * as autopilot from "./autopilot.js";
@@ -1388,6 +1389,20 @@ function AutoPanel({ party, atlas, position, auto, route: healRoute, recording, 
                 <p style={{ fontSize: 13, lineHeight: 1.5, margin: 0 }}>
                   <strong>{auto.policy.name}</strong> stopped: {auto.done}
                 </p>
+                {/* What it tried before giving up. A run that picked itself up
+                    three times and hit the same wall each time is a different
+                    thing from one that stopped once, and the difference is the
+                    only clue worth having about which. */}
+                {auto.stops && auto.stops.length > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--dim)", lineHeight: 1.6 }}>
+                    It picked itself back up {auto.stops.length}× first:
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                      {auto.stops.map((stop, i) => (
+                        <li key={i}>{stop}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {/* The plan is still here, so asking for it again is a waste
                     of a request and of the player's typing. Most stops are
                     something to go and fix -- put a Pokémon first, heal, move
@@ -2212,14 +2227,65 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       autoRef.current = {
         run: runner(withSpot, routeRef.current, atlasNow),
         frame: 0, code, slot: policy.slot || 0, mon: null,
+        // Kept so a stop can be picked back up without asking again.
+        policy: withSpot, atlas: atlasNow, recovery: recovery(), stops: [], recovering: 0,
+        // The one being trained, by identity rather than by slot: putting it
+        // in front reorders the party, so the slot it started in belongs to
+        // somebody else by the time anything goes wrong.
+        want: null,
       };
-      setAuto({ policy: withSpot, asked: policy.asked, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null });
+      setAuto({ policy: withSpot, asked: policy.asked, running: true, phase: "seek", mode: "grind", battles: 0, mon: null, done: null, stops: [] });
       autoResume.current = baseSpeed.current;
       baseSpeed.current = 8;
       applySpeed();
       setAutoOpen(false);
     },
     [code, applySpeed]
+  );
+
+  /**
+   * Pick a stopped run back up.
+   *
+   * The headless runner has done this since it was written and the app never
+   * did, which is most of why the two behaved so differently: in a tab, one
+   * bad minute ended the night. What it does is deliberately dumb -- let go of
+   * everything, press B for a couple of seconds to close whatever is open, and
+   * hand a *fresh* runner the same plan. Fresh because the runner's counters
+   * are the evidence a stop is judged against, and carrying "it has not moved
+   * in ninety seconds" into the next attempt judges the new one on the old
+   * one's trouble.
+   *
+   * The target is found again by name. It is not in the slot it started in --
+   * the first thing a run does is put it in front, which reorders the party.
+   */
+  const recoverAuto = useCallback(
+    (stop) => {
+      const last = autoRef.current;
+      if (!last) return false;
+
+      // The judgement is shared with `play.mjs` rather than written again
+      // here. Written twice is how the tab ended the night on a stop the
+      // command line would have picked back up.
+      const party = game.partyOf(game.ewram(core), last.code);
+      const next = last.recovery.after(stop, { party, want: last.want, fallbackSlot: last.slot });
+      if (next.action !== "retry") return false;
+      const { reason, slot } = next;
+
+      last.stops = [...last.stops, reason];
+      last.run = runner({ ...last.policy, slot }, routeRef.current, last.atlas);
+      last.frame = 0;
+      last.slot = slot;
+      // Two seconds of B, tapped rather than held: B closes a menu on the way
+      // down, and a held B is one press. Nothing else is pressed, because A in
+      // the overworld talks to whoever is standing there.
+      last.recovering = 120;
+      keysRef.current = 0;
+      setAuto((prev) =>
+        prev ? { ...prev, done: null, running: true, stops: [...(prev.stops || []), reason] } : prev
+      );
+      return true;
+    },
+    [core]
   );
 
   const stopAuto = useCallback(
@@ -2234,7 +2300,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       applySpeed();
       setAuto((prev) =>
         prev
-          ? { ...prev, running: false, phase: last.run.phase, mode: last.run.mode, battles: last.run.battles, mon: last.mon, done: reason || "Stopped." }
+          ? { ...prev, running: false, phase: last.run.phase, mode: last.run.mode, battles: last.run.battles, mon: last.mon, done: reason || "Stopped.", stops: last.stops || [] }
           : prev
       );
     },
@@ -2270,6 +2336,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         // raw because it is the one read that separates "frozen" from "being
         // talked to", and those looked identical here for weeks.
         fieldLocked: game.fieldLockedOf(iwram, code),
+        menu: game.partyMenuOf(ewram, code),
       });
     };
     read();
@@ -2287,6 +2354,28 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       if (sessionRef.current) sessionRef.current.leave();
     };
   }, []);
+
+  /**
+   * Running without drawing.
+   *
+   * Set out honestly, because the obvious claim for this is wrong and was
+   * measured to be wrong: **it is not faster.** The emulator core runs at
+   * about 3.5x real time here, and that is the ceiling whether the screen is
+   * drawn or not -- 210 frames a second drawing at 4x, 200 not drawing, and
+   * 209 in Node with no browser involved at all. The 150 KB copy per frame
+   * that this skips costs nothing next to the frame itself.
+   *
+   * What it does buy: the game runs flat out without holding the speed
+   * control down, the tab stops spending anything on the canvas (worth more
+   * on a phone than on a laptop), and there is nothing on screen. The readout
+   * underneath keeps working, because that is read out of the game's memory
+   * rather than off the picture.
+   *
+   * If a grind feels slow, the answer is not here. It is the core.
+   */
+  const [headless, setHeadless] = useState(false);
+  const headlessRef = useRef(false);
+  useEffect(() => { headlessRef.current = headless; }, [headless]);
 
   // The frame loop. Time is accumulated rather than assuming one animation
   // frame equals one GBA frame, so a 120 Hz display does not run the game at
@@ -2313,9 +2402,20 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
       let ran = 0;
       let stalled = false;
       const live = liveRef.current;
+      // With the screen off, the limit is a slice of wall time rather than a
+      // frame count: the point of not drawing is to stop being paced by the
+      // drawing. Ten milliseconds of a sixteen-millisecond frame leaves the
+      // tab responsive -- the readout still updates, the buttons still work,
+      // and taking the controls back still stops the run on the next tick.
+      const blind = headlessRef.current && !live;
+      const cap = blind ? 4096 : 16;
+      const deadline = blind ? performance.now() + 10 : Infinity;
       // Cap the catch-up so a backgrounded tab does not return and try to
       // simulate a minute of gameplay in one frame.
-      while (owed >= period && ran < 16) {
+      // Blind, the wall clock stops being the pacer -- that is the whole
+      // point. `owed` is what keeps the game at real speed for a person
+      // watching it, and there is nobody watching.
+      while ((blind || owed >= period) && ran < cap) {
         let keys = keysRef.current;
         if (runRef.current && keys & DPAD) keys |= BTN.B;
 
@@ -2345,8 +2445,20 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           stopAuto("You took over.");
           break;
         }
+        if (drive && drive.recovering > 0) {
+          // Closing whatever was open, before a fresh runner sees the game.
+          drive.recovering -= 1;
+          keys = drive.recovering % 20 < 6 ? BTN.B : 0;
+          core.gba_run_frame(keys);
+          owed -= period;
+          ran += 1;
+          continue;
+        }
         if (drive) {
           const seen = game.partyOf(game.ewram(core), drive.code);
+          // Remembered on the first frame that can see the party, so a
+          // recovery can find the same Pokémon after the order changes.
+          if (!drive.want && seen && seen[drive.slot]) drive.want = seen[drive.slot].name;
 
           if (seen && seen[drive.slot]) drive.mon = seen[drive.slot];
           const iwram = game.iwram(core);
@@ -2367,11 +2479,21 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             // freeze reported here has really been asking, and null when the
             // cartridge is not one whose layout is known.
             fieldLocked: game.fieldLockedOf(iwram, drive.code),
+            // What the party menu is offering, so a switch can read the
+            // entries instead of pressing A at each one to find out. That
+            // search is what gave somebody's Charizard a Moon Stone.
+            menu: game.partyMenuOf(ewram, drive.code),
           });
           keys = out.keys;
           if (out.done) {
-            stopAuto(out.reason);
-            break;
+            // `final` means the run is over on purpose: the level was reached,
+            // or carrying on would cost the party. Everything else is a
+            // stumble worth one more go.
+            if (!recoverAuto(out)) {
+              stopAuto(out.reason);
+              break;
+            }
+            keys = 0;
           }
         }
 
@@ -2393,21 +2515,31 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         }
         owed -= period;
         ran += 1;
+        // Checked every sixteen frames rather than every frame: the clock read
+        // is not free, and sixteen frames is a quarter of a millisecond.
+        if ((ran & 3) === 0 && performance.now() >= deadline) break;
       }
       // Stalling banks time so the session catches up once input arrives, but
       // only so much: a ten-second hiccup should not become a ten-second
       // fast-forward.
       if (stalled) owed = Math.min(owed, period * 30);
+      // Nothing is owed after running blind: the time that passed was spent.
+      // Without this, showing the screen again would fast-forward through
+      // however long the run was hidden for.
+      if (blind) owed = 0;
       if (ran === 0) return;
 
-      const ptr = live ? core.gba_link_pixels(live.seat) : core.gba_pixels();
-      image.data.set(new Uint8Array(core.memory.buffer, ptr, WIDTH * HEIGHT * 4));
-      ctx.putImageData(image, 0, 0);
+      // The 150 KB copy this whole mode exists to skip.
+      if (!blind) {
+        const ptr = live ? core.gba_link_pixels(live.seat) : core.gba_pixels();
+        image.data.set(new Uint8Array(core.memory.buffer, ptr, WIDTH * HEIGHT * 4));
+        ctx.putImageData(image, 0, 0);
+      }
 
       // The partner's screen, which is free: this device is already simulating
       // their machine. Seeing whether they have reached the counter yet is
       // most of what the two of you would otherwise be typing to each other.
-      if (live && partnerRef.current) {
+      if (!blind && live && partnerRef.current) {
         const other = core.gba_link_pixels_alt(live.seat ^ 1);
         const view = partnerRef.current.getContext("2d");
         const frame = view.createImageData(WIDTH, HEIGHT);
@@ -2469,7 +2601,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
 
     handle = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(handle);
-  }, [core, persist, stopAuto, code]);
+  }, [core, persist, stopAuto, recoverAuto, code]);
 
   // Flush on the way out. iOS can kill a backgrounded tab without warning, so
   // hiding the page is the last reliable moment to write.
@@ -2829,6 +2961,28 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         >
           {discreet ? "Show" : "Discreet"}
         </button>
+        <button
+          onClick={() => setHeadless((was) => !was)}
+          disabled={!!link}
+          title={
+            link
+              ? "Not while linked — the other console is drawing your screen too."
+              : "Run flat out with nothing drawn. Not faster — the core is the limit either way — but it costs the tab nothing and shows nothing."
+          }
+          style={{
+            background: headless ? "var(--accent)" : "none",
+            border: "1px solid var(--line)",
+            borderRadius: 999,
+            color: headless ? "#000" : "var(--dim)",
+            fontWeight: headless ? 700 : 400,
+            padding: "2px 9px",
+            fontSize: 12,
+            cursor: link ? "not-allowed" : "pointer",
+            opacity: link ? 0.4 : 1,
+          }}
+        >
+          {headless ? "Watching off" : "No screen"}
+        </button>
         {update && (
           <button
             onClick={takeUpdate}
@@ -2892,6 +3046,40 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             transition: "max-width .18s ease, filter .18s ease",
           }}
         />
+        {headless && !link && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              background: "var(--panel, #0b1220)",
+              border: "1px solid var(--line)",
+              color: "var(--dim)",
+              textAlign: "center",
+              padding: 16,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>Running without the screen</div>
+            <div style={{ fontSize: 12, maxWidth: 330, lineHeight: 1.5 }}>
+              {fps} frames a second — the fastest this cartridge runs here, drawn or not.
+              Turning the screen off does not speed it up; it just stops it being on.
+              The readout below is live either way.
+            </div>
+            <button
+              onClick={() => setHeadless(false)}
+              style={{
+                marginTop: 4, background: "var(--accent)", color: "#000", border: 0,
+                borderRadius: 999, padding: "4px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              Show me
+            </button>
+          </div>
+        )}
         {waiting && link && (
           <div
             style={{

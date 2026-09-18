@@ -904,5 +904,51 @@ if (!SAV) {
   await page.close();
 }
 
+// 16. Running with the screen off.
+//
+// The claim this was first built on was wrong and the measurement is in the
+// code: the core runs at about the same rate drawn or not, so this is not a
+// speed feature. What it has to do is stop drawing, say so, keep the readout
+// alive, and give the screen back -- and above all not quietly claim a
+// speed-up, because that is the thing that had to be taken back out.
+{
+  const { page, errors } = await newPage();
+  await page.waitForTimeout(13000);
+
+  const lit = () =>
+    page.evaluate(() => {
+      const c = document.querySelector("canvas");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let s = 0;
+      for (let i = 0; i < d.length; i += 4) s += (d[i] + d[i + 1] + d[i + 2]) / 3;
+      return Math.round(s / (d.length / 4));
+    });
+
+  const before = await lit();
+  check("the game is on screen to begin with", before > 10, `luminance ${before}`);
+
+  await page.getByRole("button", { name: "No screen", exact: true }).click();
+  await page.waitForTimeout(3000);
+  check("turning the screen off covers it", await page.locator("text=Running without the screen").isVisible());
+  check(
+    "and says plainly that it is not a speed-up",
+    await page.locator("text=does not speed it up").isVisible(),
+    "an earlier version claimed six to ten times faster, which measurement did not support"
+  );
+
+  // The point of the mode: the game keeps running with nothing drawn. The
+  // frame counter is read out of the loop, not off the canvas.
+  const rate = Number(((await page.textContent("body")).match(/(\d+) fps/) || [0, 0])[1]);
+  check("the game is still running underneath", rate > 0, `${rate} fps with nothing drawn`);
+
+  await page.getByRole("button", { name: "Show me" }).click();
+  await page.waitForTimeout(2500);
+  const after = await lit();
+  check("and showing it again gives the screen back", after > 10, `luminance ${after}`);
+  check("the toggle offers to hide it again", await page.locator("text=No screen").isVisible());
+  check("no page errors around the screen toggle", errors.length === 0, errors.join("; "));
+  await page.close();
+}
+
 await browser.close();
 process.exit(failures ? 1 : 0);

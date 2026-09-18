@@ -126,9 +126,15 @@ battle had stopped responding.
 
 `node gba/tools/autoplay/play.mjs --rom X.gba --sav Y.sav --mon NAME --to 40`
 runs the app's own autoplayer with the browser taken out — same policy, same
-core, same atlas, same reads — six to ten times faster, with `--show` to draw
-the screen in the terminal and `--dump` to write a save state and a screenshot
-on every stop. `gba/tools/autoplay/README.md` has the flags.
+core, same atlas, same reads — with `--show` to draw the screen in the
+terminal and `--dump` to write a save state, a screenshot and the reason on
+every stop. `gba/tools/autoplay/README.md` has the flags.
+
+It is **not faster**, and an earlier version of this page claimed it was: the
+core runs at 209 frames a second in Node and 210 in the browser, about 3.5×
+real time in both. Drawing is not the bottleneck and turning it off does not
+help. What headless buys is that a stop becomes a file you can replay, rather
+than one line in a panel on somebody's phone.
 
 The important word is *same*. The other files in that folder are an older,
 second autoplayer, and the bugs it did not share with the app were the

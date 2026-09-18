@@ -26,7 +26,11 @@ export const SYMBOLS = {
   gPlayerPartyCount: 0x02024029,
   /** the six hundred bytes the whole policy is judged from */
   gPlayerParty: 0x02024284,
-  /** slotId at +9 is the cursor; switch training needs it */
+  /** the generic menu cursor: position at +2, last valid index at +4. Every list menu in the field uses it, so nothing has to count its own presses */
+  sMenu: 0x0203ade4,
+  /** a pointer to the party menu's scratch struct. actions[] at +15 and numActions at +23 are the submenu entries as ids -- which is how the run can know SWITCH from ITEM instead of pressing A at both */
+  sPartyMenuInternal: 0x0203b09c,
+  /** slotId at +9 is the cursor, slotId2 at +10 is where a held Pokémon will go, action at +11 */
   gPartyMenu: 0x0203b0a0,
   /** TRUE while the game holds the controls -- a script, a cutscene, or a message box. Every freeze reported so far is this byte being set while the walk pressed directions at it */
   sLockFieldControls: 0x03000f9c,

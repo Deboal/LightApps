@@ -14,8 +14,11 @@
 // so the app booked a trip to the Pokémon Center after every battle for a week
 // and nothing that ran headless could see it.
 //
-// It is also six to ten times faster than watching, because nothing renders
-// unless asked. A twenty-minute grind takes two or three minutes.
+// It is not faster, whatever the first version of this comment said. The core
+// runs at 209 frames a second here and 210 in a browser tab -- the same 3.5x
+// real time -- and the rendering this skips costs nothing next to it. What it
+// buys is that a stop becomes a file: `--dump` writes the state, the screen
+// and the reason, and every bug in this thing was found by looking at one.
 //
 //   node gba/tools/autoplay/play.mjs --rom FireRed.gba --sav game.sav \
 //     --mon CHARIZARD --to 40 --out after.sav --show
@@ -41,6 +44,7 @@ import { boot, resume, BTN } from "./machine.mjs";
 import { saveGame } from "./menus.mjs";
 import { world } from "../../../apps/gba/src/world.js";
 import { runner } from "../../../apps/gba/src/policy.js";
+import { recovery, slotOf } from "../../../apps/gba/src/recovery.js";
 
 const ARGS = (() => {
   const out = { minutes: 30, tries: 3 };
@@ -179,26 +183,17 @@ if (ARGS.show) process.stdout.write("\x1b[2J");
 /** Everything the browser hands the policy each frame, read the same way. */
 const look = () => ({ ...machine.look(), frame: machine.frames });
 
-/** Where the one being trained is *now*.
- *
- *  Not a constant. The first thing a run does is put the target in front,
- *  which reorders the party for real -- so the slot the run was started with
- *  belongs to somebody else by the time it stops. Handing that stale number to
- *  the next attempt trains whoever inherited it, which is exactly what the
- *  first version of this file did: told to train CHARMELEON, it recovered from
- *  a stop by trying to promote PIKACHU. */
-const slotNow = () => {
-  const party = machine.look().party;
-  if (!party) return slot;
-  const found = party.findIndex((m) => m.name === target.name);
-  return found < 0 ? slot : found;
-};
+// Where the one being trained is now, and whether a stop is worth another go.
+// Both shared with the app rather than written again here -- the last time
+// they were written twice, the tab did not recover at all.
+const slotNow = () => slotOf(machine.look().party, target.name, slot);
+const supervisor = recovery({ tries: Number(ARGS.tries) });
 
 let attempt = 0;
 let outcome = null;
 const stops = [];
 
-while (attempt <= Number(ARGS.tries) && !outcome && Date.now() - began < BUDGET) {
+while (!outcome && Date.now() - began < BUDGET) {
   // A fresh runner each attempt, on purpose. Its counters are what a stop is
   // judged against -- how long since anything moved, how hard the hardest hit
   // was -- and carrying them across a recovery means judging the next attempt
@@ -213,7 +208,7 @@ while (attempt <= Number(ARGS.tries) && !outcome && Date.now() - began < BUDGET)
   while (Date.now() - began < BUDGET) {
     const state = look();
     const out = run.step(state);
-    if (out.done) { stopped = out.reason; break; }
+    if (out.done) { stopped = out; break; }
     machine.step(out.keys);
 
     if (ARGS.show && machine.frames % 6 === 0) draw(machine.core);
@@ -236,33 +231,33 @@ while (attempt <= Number(ARGS.tries) && !outcome && Date.now() - began < BUDGET)
 
   if (!stopped) break; // out of budget, not out of ideas
 
-  // The goal is a stop like any other as far as the runner is concerned, so
-  // ask before treating it as a problem. Asked by name, because the party has
-  // been reordered by now and the slot this started with belongs to somebody
-  // else -- looking there found a PIKACHU still at level 22 and cheerfully
-  // started the whole grind again on the next route along.
-  const reachedNow = machine.look().party;
-  const trained = reachedNow && reachedNow.find((m) => m.name === target.name);
-  if (trained && trained.level >= Number(ARGS.to)) { outcome = "reached"; break; }
+  // Reaching the goal is a stop like any other as far as the runner is
+  // concerned, and it says so with `final`. Everything else gets another go.
+  const verdict = supervisor.after(stopped, {
+    party: machine.look().party, want: target.name, fallbackSlot: slot,
+  });
 
-  // A run that stopped for any other reason is the thing worth keeping. The
+  // A run that stopped for a reason worth keeping. The
   // state is a scenario the checks can replay in seconds; the picture is for
   // the reasons that all read the same and look completely different.
-  if (dumpDir) {
+  // Dumped whenever the stop was a real problem -- which includes the last
+  // one, the stop it gave up on. That is the most interesting of the lot and
+  // an earlier version of this line threw it away.
+  if (dumpDir && !verdict.final) {
     const tag = `${Date.now()}-${attempt}`;
     const state = machine.snapshot();
     if (state) writeFileSync(`${dumpDir}/stop-${tag}.state`, state);
     machine.shoot(`${dumpDir}/stop-${tag}.png`);
     writeFileSync(
       `${dumpDir}/stop-${tag}.json`,
-      JSON.stringify({ reason: stopped, at: machine.look().position, attempt, mon: target.name, spot: where }, null, 2)
+      JSON.stringify({ reason: verdict.reason, at: machine.look().position, attempt, mon: target.name, spot: where }, null, 2)
     );
   }
 
-  stops.push(stopped);
-  attempt++;
-  if (attempt > Number(ARGS.tries)) break;
-  console.error(`\nstopped: ${stopped}\npicking it back up (attempt ${attempt} of ${ARGS.tries})`);
+  if (verdict.action !== "retry") { outcome = verdict.final ? "reached" : "gave up"; break; }
+  stops.push(verdict.reason);
+  attempt = verdict.attempt;
+  console.error(`\nstopped: ${verdict.reason}\npicking it back up (attempt ${attempt} of ${ARGS.tries})`);
 
   // Recovery, such as it is: let go of everything, close whatever is open, and
   // hand a fresh runner the machine. B rather than A -- B backs out of menus,

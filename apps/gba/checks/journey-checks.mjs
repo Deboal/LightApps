@@ -362,29 +362,44 @@ const steer = (battle, field, keys) => {
 // -- putting the right Pokémon at the front -----------------------------------
 //
 // Only the one that fights earns experience, so this is the difference between
-// a run that works and one that cannot. The submenu is the fiddly part: it
-// grows an entry per field move the selected Pokémon knows, so SWITCH is not
-// at a fixed position, and counting presses quietly does the wrong thing on
-// somebody else's party.
+// a run that works and one that cannot.
+//
+// The submenu is the fiddly part: it grows an entry for every field move the
+// selected Pokémon knows, so SWITCH sits at a different index for a Charmeleon
+// than for a Beedrill that knows Cut. The first version of this coped by
+// searching -- press A on entry one, look at the party, press A on entry two,
+// and so on. Entry three is ITEM. Pressing A there opens GIVE, and the next A
+// in the sequence reaches into the bag and hands over whatever is at the top,
+// which is how a player's Charizard came out of a two-level grind holding a
+// Moon Stone.
+//
+// So the fake below is not a menu that politely ignores the wrong entry. ITEM
+// costs an item, exactly as it does on the cartridge, and the check that
+// matters is the one that says the bag was never opened.
 {
   const { leadWith } = await import("../src/journey.js");
+  const { MENU } = await import("../src/game.js");
   const mon = (name, level, species, personality) => ({
     name, level, species, maxHp: 40, hp: 40,
     record: { species, personality, moves: [{ id: 52, pp: 20 }] },
   });
 
   /**
-   * The field menu, the party screen, and the submenu that SWITCH lives in.
+   * The field menu, the party screen, the submenu, and "move to where?".
    *
-   * All three, because the walk to SWITCH goes through all three and a fake
-   * that starts at the party screen mis-reads the START/DOWN/A that opens it
-   * as party-cursor movement. That off-by-one made attempt one look like
-   * attempt three, which reads exactly like a fault in the code being tested.
+   * All four, because the walk to SWITCH goes through all four and a fake that
+   * starts at the party screen mis-reads the START/A that opens it as cursor
+   * movement. That off-by-one made attempt one look like attempt three, which
+   * reads exactly like a fault in the code being tested.
    *
    * Edge-triggered per button, like the hardware: one shared "was it down"
    * flag across buttons is the other way a fake like this lies.
+   *
+   * `fieldMoves` is how many entries sit between SUMMARY and SWITCH, and
+   * `readable` is whether the actions can be read at all -- a cartridge whose
+   * layout is unknown has to end with nothing pressed rather than a guess.
    */
-  const partyScreen = (order, switchAt) => {
+  const partyScreen = (order, { fieldMoves = 0, readable = true } = {}) => {
     const was = {};
     const edge = (keys, bit) => {
       const now = !!(keys & bit);
@@ -392,19 +407,42 @@ const steer = (battle, field, keys) => {
       was[bit] = now;
       return fired;
     };
+    // SUMMARY, then one entry per field move, then SWITCH, ITEM, CANCEL --
+    // the order the cartridge builds them in.
+    const actions = [MENU.SUMMARY, ...Array(fieldMoves).fill(MENU.SUMMARY), MENU.SWITCH, MENU.ITEM, MENU.CANCEL];
+    const FIELD_ENTRIES = 7; // POKéDEX POKéMON BAG PLAYER SAVE OPTION EXIT
+
     let screen = "overworld";
-    let depth = 0;
+    let cursor = 0;
+    let slot = 0;
+    let moveTo = 0;
     let picked = null;
-    // Somewhere to stand. The walker proves it is out of the menus by taking
-    // a step, so the fake has to have a floor -- and the floor must only move
-    // when no menu is up, which is the whole property being tested.
+    let openedBag = 0;
     const where = { x: 5, y: 5 };
-    let held = 0;
-    let progress = 0;
+    let held = 0, progress = 0;
+
+    const lastIndex = () =>
+      screen === "field" ? FIELD_ENTRIES - 1 : screen === "submenu" ? actions.length - 1 : 0;
+
     return {
       order,
+      get openedBag() { return openedBag; },
       get screen() { return screen; },
       get position() { return { x: where.x, y: where.y, map: { mapGroup: 3, mapNum: 24 } }; },
+      get menu() {
+        if (screen === "overworld") return null;
+        // The field menu is a list like any other, and its cursor is the same
+        // `sMenu` the party submenu uses -- so the fake reports one too.
+        return {
+          open: screen === "party" || screen === "submenu" || screen === "moving",
+          actions: screen === "submenu" && readable ? actions.slice() : null,
+          cursor,
+          lastIndex: lastIndex(),
+          slot: picked === null ? slot : picked,
+          moveTo,
+          switching: screen === "moving",
+        };
+      },
       press(keys) {
         const dir = keys & (BTN.UP | BTN.DOWN | BTN.LEFT | BTN.RIGHT);
         if (screen === "overworld" && dir) {
@@ -414,85 +452,120 @@ const steer = (battle, field, keys) => {
             where.x += dir & BTN.RIGHT ? 1 : dir & BTN.LEFT ? -1 : 0;
             where.y += dir & BTN.DOWN ? 1 : dir & BTN.UP ? -1 : 0;
           }
-        } else if (!dir) {
-          held = 0;
-          progress = 0;
-        }
+        } else if (!dir) { held = 0; progress = 0; }
+
         const a = edge(keys, BTN.A);
         const b = edge(keys, BTN.B);
         const down = edge(keys, BTN.DOWN);
-        const left = edge(keys, BTN.LEFT);
+        const up = edge(keys, BTN.UP);
         const start = edge(keys, BTN.START);
 
-        if (start && screen === "overworld") { screen = "field"; depth = 0; return; }
+        if (start && screen === "overworld") { screen = "field"; cursor = 0; return; }
         if (b) {
           screen = screen === "moving" ? "submenu"
             : screen === "submenu" ? "party"
               : screen === "party" ? "field" : "overworld";
-          depth = 0;
+          cursor = 0;
           if (screen === "field" || screen === "overworld") picked = null;
           return;
         }
-        if (down) { depth++; return; }
 
-        if (!a) return;
-        if (screen === "field") { screen = "party"; depth = 0; return; }
-        if (screen === "party") {
-          // The cursor starts on the lead and the first press is eaten while
-          // the screen opens, which is why the walker sends one more than the
-          // slot index.
-          picked = Math.max(0, depth - 1);
-          screen = "submenu";
-          depth = 0;
+        // Cursors. None of them wrap, and each list has its own.
+        if (down || up) {
+          const step = down ? 1 : -1;
+          if (screen === "field" || screen === "submenu") {
+            cursor = Math.max(0, Math.min(lastIndex(), cursor + step));
+          } else if (screen === "party") {
+            slot = Math.max(0, Math.min(order.length - 1, slot + step));
+          } else if (screen === "moving") {
+            moveTo = Math.max(0, Math.min(order.length - 1, moveTo + step));
+          }
           return;
         }
+
+        if (!a) return;
+        if (screen === "field") {
+          if (cursor === 1) { screen = "party"; cursor = 0; slot = 0; }
+          return;
+        }
+        if (screen === "party") { picked = slot; screen = "submenu"; cursor = 0; return; }
         if (screen === "submenu") {
-          // Only one entry is SWITCH. Every other one opens something
-          // harmless -- a summary, the bag -- which B closes again.
-          if (depth === switchAt) { screen = "moving"; depth = 0; }
+          const chose = actions[cursor];
+          if (chose === MENU.SWITCH) { screen = "moving"; moveTo = picked; cursor = 0; }
+          else if (chose === MENU.ITEM) { openedBag++; }   // the Moon Stone
           return;
         }
         if (screen === "moving") {
           const [m] = order.splice(picked, 1);
-          order.unshift(m);
+          order.splice(moveTo, 0, m);
           picked = null;
           screen = "party";
-          depth = 0;
+          cursor = 0;
         }
       },
     };
   };
 
-  const run = (switchAt, party, target) => {
+  const run = (party, target, options = {}) => {
     const order = party.slice();
-    const screen = partyScreen(order, switchAt);
+    const screen = partyScreen(order, options);
     const want = order[target];
     const d = drive(() => leadWith(want), { budget: 200000 });
     for (let i = 0; i < 200000 && !d.done; i++) {
       const out = d.step({
-        party: screen.order, inBattle: false, battle: null, position: screen.position,
+        party: screen.order, inBattle: false, battle: null,
+        position: screen.position, menu: screen.menu,
       });
       if (out.done) break;
       screen.press(out.keys);
     }
-    return { result: d.result, order: screen.order };
+    return { result: d.result, order: screen.order, openedBag: screen.openedBag };
   };
 
   const three = [mon("CHARIZARD", 36, 6, 111), mon("BEEDRILL", 19, 15, 222), mon("CLEFAIRY", 15, 35, 333)];
 
-  const second = run(2, three, 2);
-  check("it finds SWITCH when it is the second submenu entry",
-    second.result.ok && second.order[0].name === "CLEFAIRY",
-    `${second.result.ok ? "ok" : second.result.reason} -> ${second.order[0].name}`);
+  // First: can this fake even notice the thing it is here to notice? A test
+  // that cannot fail is worse than no test, and three of the fakes in this
+  // file have been wrong in exactly that direction before. So walk a cursor
+  // onto ITEM by hand and press A, and check that it costs something.
+  {
+    const screen = partyScreen(three.slice());
+    const push = (b) => { screen.press(b); screen.press(0); };
+    push(BTN.START);
+    push(BTN.DOWN);            // POKéDEX -> POKéMON
+    push(BTN.A);               // the party screen
+    push(BTN.A);               // the submenu, on SUMMARY
+    push(BTN.DOWN);            // SWITCH
+    push(BTN.DOWN);            // ITEM
+    push(BTN.A);
+    check("the fake charges for ITEM, so the check below can fail",
+      screen.openedBag === 1, `bag opened ${screen.openedBag}× — the old blind search did this five times a run`);
+  }
 
-  const third = run(3, three, 2);
-  check("and when a field move pushes it to the third",
-    third.result.ok && third.order[0].name === "CLEFAIRY",
-    `${third.result.ok ? "ok" : third.result.reason} -> ${third.order[0].name}`);
+  // The check this whole rewrite exists for.
+  for (const fieldMoves of [0, 1, 3]) {
+    const out = run(three, 2, { fieldMoves });
+    check(
+      `with ${fieldMoves} field move${fieldMoves === 1 ? "" : "s"} in the way it still finds SWITCH`,
+      out.result.ok && out.order[0].name === "CLEFAIRY",
+      `${out.result.ok ? "ok" : out.result.reason} -> ${out.order[0].name}`
+    );
+    check(
+      `and never opens the bag getting there`,
+      out.openedBag === 0,
+      out.openedBag ? `pressed A on ITEM ${out.openedBag}×` : "the bag was never opened"
+    );
+  }
 
-  const never = run(99, three, 2);
-  check("a party that will not reorder is reported rather than retried forever",
-    !never.result.ok && /could not move/i.test(never.result.reason), String(never.result.reason));
+  // A cartridge whose party menu cannot be read. Nothing is pressed, and that
+  // is the right answer -- the alternative is pressing A at an unknown entry.
+  {
+    const out = run(three, 2, { readable: false });
+    check("a party menu it cannot read is refused rather than guessed at",
+      !out.result.ok && /could not read/i.test(out.result.reason), String(out.result.reason));
+    check("and nothing is bought, given or thrown away finding that out",
+      out.openedBag === 0, `bag opened ${out.openedBag}×`);
+  }
 
   // Already leading is not work.
   {
@@ -500,7 +573,7 @@ const steer = (battle, field, keys) => {
     const d = drive(() => leadWith(order[0]));
     for (let i = 0; i < 50 && !d.done; i++) {
       d.step({
-        party: order, inBattle: false, battle: null,
+        party: order, inBattle: false, battle: null, menu: null,
         position: { x: 5, y: 5, map: { mapGroup: 3, mapNum: 24 } },
       });
     }
@@ -515,20 +588,19 @@ const steer = (battle, field, keys) => {
   {
     const stuck = [mon("CHARIZARD", 36, 6, 111), mon("BEEDRILL", 19, 15, 222), mon("CLEFAIRY", 15, 35, 333)];
     const order = stuck.slice();
-    const screen = partyScreen(order, 2);
-    // A screen that reorders as asked and then refuses to close.
+    const screen = partyScreen(order);
     const jammed = {
       order,
       get position() { return screen.position; },
-      press(keys) {
-        screen.press(keys & ~BTN.B); // B never gets through, so it never exits
-      },
+      get menu() { return screen.menu; },
+      press(keys) { screen.press(keys & ~BTN.B); }, // B never gets through
     };
     const want = order[2];
     const d = drive(() => leadWith(want), { budget: 200000 });
     for (let i = 0; i < 200000 && !d.done; i++) {
       const out = d.step({
-        party: jammed.order, inBattle: false, battle: null, position: jammed.position,
+        party: jammed.order, inBattle: false, battle: null,
+        position: jammed.position, menu: jammed.menu,
       });
       if (out.done) break;
       jammed.press(out.keys);
@@ -543,7 +615,7 @@ const steer = (battle, field, keys) => {
   // share a name, so neither field identifies a Pokémon on its own.
   {
     const clash = [mon("CHARMELEON", 27, 5, 2003283047), mon("BEEDRILL", 19, 15, 222), mon("CHARIZARD", 36, 6, 2003283047)];
-    const out = run(2, clash, 2);
+    const out = run(clash, 2);
     check("a shared personality does not confuse one Pokémon for another",
       out.result.ok && out.order[0].name === "CHARIZARD" && out.order[0].level === 36,
       `${out.result.ok ? "ok" : out.result.reason} -> ${out.order[0].name} L${out.order[0].level}`);

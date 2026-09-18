@@ -49,7 +49,14 @@ const WANTED = {
   gMoveSelectionCursor: "which of the four moves is under the cursor",
   gBattleTypeFlags: "a trainer battle cannot be fled; this says which it is",
   // The party menu, in battle and out of it.
-  gPartyMenu: "slotId at +9 is the cursor; switch training needs it",
+  gPartyMenu: "slotId at +9 is the cursor, slotId2 at +10 is where a held Pokémon will go, action at +11",
+  sPartyMenuInternal:
+    "a pointer to the party menu's scratch struct. actions[] at +15 and " +
+    "numActions at +23 are the submenu entries as ids -- which is how the " +
+    "run can know SWITCH from ITEM instead of pressing A at both",
+  sMenu:
+    "the generic menu cursor: position at +2, last valid index at +4. Every " +
+    "list menu in the field uses it, so nothing has to count its own presses",
   // The overworld's own answer to 'can the player act right now'.
   sLockFieldControls:
     "TRUE while the game holds the controls -- a script, a cutscene, or a " +
@@ -65,6 +72,20 @@ const WANTED = {
 /** Symbols that are Thumb code rather than data: the pointer has bit 0 set. */
 const CODE = new Set(["HandleInputChooseAction", "HandleInputChooseMove", "WaitForMonSelection"]);
 
+/**
+ * Names that appear more than once, and the size that picks the right one.
+ *
+ * "The first occurrence wins" is a fine rule for a battle controller, where
+ * the player's is the one in the lowest bank. It is the wrong rule for a
+ * `static` that several translation units happen to share a name for: there
+ * are two `sMenu`s, four bytes apart in the listing and nothing alike, and
+ * taking the first would have shipped a four-byte one where the menu cursor
+ * was wanted. A size is the cheapest thing that tells them apart and it is
+ * checked rather than assumed -- a build that changes it fails here instead
+ * of reading somebody else's variable at run time.
+ */
+const SIZED = { sMenu: 0x0c };
+
 const found = new Map(); // name -> Set of addresses across the builds
 for (const source of SOURCES) {
   const seen = new Set();
@@ -72,8 +93,9 @@ for (const source of SOURCES) {
     // "02024284 g 00000258 gPlayerParty"
     const parts = line.trim().split(/\s+/);
     if (parts.length < 4) continue;
-    const [address, , , name] = parts;
+    const [address, , size, name] = parts;
     if (!(name in WANTED) || seen.has(name)) continue;
+    if (name in SIZED && parseInt(size, 16) !== SIZED[name]) continue;
     // A name can appear more than once -- several battle controllers have a
     // function called HandleInputChooseAction. The player's is the first, in
     // the lowest bank, which is what the hand-found addresses agreed with.
