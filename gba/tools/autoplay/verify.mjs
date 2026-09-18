@@ -36,7 +36,19 @@ const arg = (name, fallback) => {
   const at = process.argv.indexOf(`--${name}`);
   return at > 0 && process.argv[at + 1] ? process.argv[at + 1] : fallback;
 };
+// The budget is in *emulated frames*, not wall-clock minutes.
+//
+// Wall clock was the first version and it makes this tool lie: the emulator
+// runs at whatever rate the machine can manage, so a verifier run with a
+// browser suite running alongside it gets less game time for the same six
+// minutes, and a scenario can flip from pass to fail because of what else was
+// running. A number that moves with the load on the box is not a measurement.
+//
+// Frames are what the game experiences. Sixty a second, so the minutes people
+// think in still convert, and the answer is the same on a busy machine as on
+// an idle one -- it just takes longer to arrive.
 const MINUTES = Number(arg("minutes", 6));
+const FRAME_BUDGET = Math.round(MINUTES * 60 * 60);
 const ONLY = arg("only", null);
 const DUMPS = arg("dump", "/tmp/verify-dumps");
 mkdirSync(DUMPS, { recursive: true });
@@ -92,13 +104,14 @@ async function scenario({ name, monName, levels }) {
   if (!plans.length) return { name, ok: false, why: "nowhere with grass near the save" };
 
   const began = Date.now();
-  const budget = MINUTES * 60 * 1000;
+  const startedAt = machine.frames;
+  const spent = () => machine.frames - startedAt;
   const supervisor = recovery();
   const stops = [];
   let attempt = 0;
   let ended = null;
 
-  while (!ended && Date.now() - began < budget) {
+  while (!ended && spent() < FRAME_BUDGET) {
     const on = plans[Math.min(attempt, plans.length - 1)];
     const policy = {
       slot: slotOfMon(machine.look().party, want, at),
@@ -107,7 +120,7 @@ async function scenario({ name, monName, levels }) {
     };
     const run = runner(policy, null, atlas);
     let stopped = null;
-    while (Date.now() - began < budget) {
+    while (spent() < FRAME_BUDGET) {
       const out = run.step({ ...machine.look(), frame: machine.frames });
       if (out.done) { stopped = out; break; }
       machine.step(out.keys);
@@ -152,10 +165,12 @@ async function scenario({ name, monName, levels }) {
   return {
     name, ok,
     why: !reached
-      ? `${monName} went ${from} -> ${now ? now.level : "?"} of ${to}${ended ? ` (${ended.reason})` : ""}`
+      ? `${monName} went ${from} -> ${now ? now.level : "?"} of ${to} in ${(spent() / 3600).toFixed(1)}` +
+        ` game-minutes${ended ? ` (${ended.reason})` : " (ran out of budget)"}`
       : !walked
         ? "reached the level but the game was left in a menu nobody can walk out of"
-        : `${monName} ${from} -> ${now.level} in ${((Date.now() - began) / 60000).toFixed(1)}m`,
+        : `${monName} ${from} -> ${now.level} in ${(spent() / 3600).toFixed(1)} game-minutes` +
+          ` (${((Date.now() - began) / 60000).toFixed(1)}m of yours)`,
     stops,
   };
 }
