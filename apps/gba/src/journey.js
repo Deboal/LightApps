@@ -175,8 +175,32 @@ export function* goTo(world, target, { hops = 24, allowed = null, patience = PAT
   const permitted = (here) =>
     !allowed || allowed.some((m) => onMap(here, m));
 
-  for (let hop = 0; hop < hops; hop++) {
+  // The budget is attempts that got nowhere, not attempts.
+  //
+  // It used to be a flat count of times round this loop, which quietly made
+  // the limit a function of how far away the target was: a five-tile walk had
+  // twenty-four goes at it and a fifty-four-tile walk across a town full of
+  // people who keep stepping into the way had the same twenty-four, most of
+  // them spent on hops that were working. Cerulean City is fifty-four tiles
+  // from Route 24's grass, and a run that had to cross it reported "too many
+  // attempts" while standing in the street, having walked most of the way
+  // there three times.
+  //
+  // Counting only the hops that end where they began bounds the *failure*
+  // instead of the work. A walk that is getting somewhere can take as long as
+  // it takes; a walk that is not gives up as quickly as it ever did.
+  let wasted = 0;
+  let before = null;
+  // An absolute ceiling as well, because "making progress" is measured by a
+  // tile that could in principle oscillate forever between two squares.
+  for (let hop = 0; hop < 400 && wasted < hops; hop++) {
     let state = yield 0;
+    const at = state && state.position;
+    if (at) {
+      if (before && sameSpot(at, before)) wasted += 1;
+      else wasted = 0;
+      before = at;
+    }
     if (state && state.inBattle) {
       const out = yield* throughBattle();
       if (!out.ok) return out;
