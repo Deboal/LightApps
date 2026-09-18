@@ -1189,5 +1189,92 @@ function centreRoute() {
   check("with nothing readable it still mashes A", blind.keys.some((k) => k & BTN.A));
 }
 
+// -- a trip to be healed has to be able to heal something ---------------------
+//
+// The margin rule asks whether what is left covers a few more of the fights
+// this place has been giving. For anything whose max HP is smaller than three
+// of those hits, the answer is no *at full health*, so it walked to a Pokémon
+// Center, was healed to full, walked back, and decided on arrival that it
+// needed healing again.
+//
+// Measured on the cartridge before this was fixed: a level-ten CLEFAIRY with
+// 36 max HP, hit for twelve, made two round trips to Cerulean in ninety
+// seconds and did not fight a single battle. Both verifier scenarios that used
+// it failed this way, identically, to the frame.
+{
+  const atFull = (over = {}) => ({
+    ...mon(),
+    hp: 36, maxHp: 36,
+    record: { moves: [{ id: 52, pp: 20 }] },
+    ...over,
+  });
+  // Enough of an atlas for the runner to believe it can heal. The grind path
+  // asks it for a patch of grass, so a bare object is not enough -- answering
+  // null is, and is honest: there is no map here, only a question about when
+  // to set off for a Centre.
+  const canHeal = {
+    grassPatch: () => null,
+    gridOf: () => null,
+    nearestCentre: () => null,
+    mapAt: () => null,
+    grindSpot: () => null,
+  };
+
+  // A hit of twelve against a maximum of thirty-six: a third, so three of them
+  // can never be covered, however healthy it is. It is left on twenty-four,
+  // which is two thirds and nowhere near the fraction floor -- so nothing here
+  // is a reason to walk anywhere, and the old code walked anyway.
+  const hitThenFine = (frame) => ({
+    frame,
+    inBattle: frame > 40 && frame < 120,
+    party: [atFull({ hp: frame > 60 ? 24 : 36 })],
+    position: { x: 5, y: 5, map: { mapGroup: 3, mapNum: 24 } },
+  });
+  const run = runner({ slot: 0, stopAtLevel: 30 }, null, canHeal);
+  drive(run, 400, hitThenFine);
+  check(
+    "a hit it cannot build a margin against is not a reason to leave",
+    run.trip !== "heal",
+    `mode ${run.mode}, trip ${run.trip}, because ${run.healBecause}`
+  );
+  check("and nothing claims it is short of health", !/enough left/.test(run.healBecause || ""),
+    String(run.healBecause));
+
+  // Back to full, and still nowhere to go.
+  const settled = drive(run, 400, (frame) => ({
+    frame: 400 + frame,
+    inBattle: false,
+    party: [atFull()],
+    position: { x: 5, y: 5, map: { mapGroup: 3, mapNum: 24 } },
+  }));
+  check(
+    "at full health it does not set off for a Pokémon Center",
+    run.trip !== "heal",
+    `mode ${run.mode}, trip ${run.trip} — healing a full Pokémon changes nothing`
+  );
+  void settled;
+
+  // The rule still has to work for something the margin *can* cover: a
+  // hundred max HP against a twelve-point hit wants healing below 36.
+  const big = runner({ slot: 0, stopAtLevel: 30 }, null, canHeal);
+  drive(big, 200, (frame) => ({
+    frame,
+    inBattle: frame > 40 && frame < 120,
+    party: [{ ...mon(), hp: frame > 60 ? 88 : 100, maxHp: 100, record: { moves: [{ id: 52, pp: 20 }] } }],
+    position: { x: 5, y: 5, map: { mapGroup: 3, mapNum: 24 } },
+  }));
+  drive(big, 400, (frame) => ({
+    frame: 200 + frame,
+    inBattle: false,
+    party: [{ ...mon(), hp: 30, maxHp: 100, record: { moves: [{ id: 52, pp: 20 }] } }],
+    position: { x: 5, y: 5, map: { mapGroup: 3, mapNum: 24 } },
+  }));
+  check(
+    "but a margin that is reachable still sends it when it is low",
+    big.trip === "heal" || /enough left|hurt/.test(big.healBecause || ""),
+    `mode ${big.mode}, trip ${big.trip}, because ${big.healBecause}`
+  );
+}
+
 console.log(failures ? `\n${failures} failed` : "\nall good");
 process.exit(failures ? 1 : 0);
