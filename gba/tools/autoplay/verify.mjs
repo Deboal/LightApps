@@ -47,7 +47,14 @@ const arg = (name, fallback) => {
 // Frames are what the game experiences. Sixty a second, so the minutes people
 // think in still convert, and the answer is the same on a busy machine as on
 // an idle one -- it just takes longer to arrive.
-const MINUTES = Number(arg("minutes", 6));
+// Twenty, because that is roughly what the old wall-clock six bought.
+//
+// Worth spelling out, because switching the unit and keeping the number
+// silently cut every budget by three and a half and turned a 3-of-4 run into
+// a 0-of-4 one that looked exactly like a regression. Six minutes of wall
+// clock at three and a half times real time is twenty-one minutes of game.
+// The unit is the game's now, so the number has to be the game's too.
+const MINUTES = Number(arg("minutes", 20));
 const FRAME_BUDGET = Math.round(MINUTES * 60 * 60);
 const ONLY = arg("only", null);
 const DUMPS = arg("dump", "/tmp/verify-dumps");
@@ -66,7 +73,10 @@ const atlas = world(
 // One boot, then a save state. Every scenario starts from exactly the same
 // moment, which is what makes the results comparable rather than anecdotal.
 const machine = await boot({ rom: ROM, save: SAV, code });
-console.log(`cartridge ${code} rev ${rom[0xbc]} — booting once, then replaying from that moment\n`);
+console.log(
+  `cartridge ${code} rev ${rom[0xbc]} — booting once, then replaying from that moment` +
+  `\n${MINUTES} game-minutes a scenario (${FRAME_BUDGET} frames), so the result does not move with the load on the box\n`
+);
 resume(machine);
 const START = machine.snapshot();
 const startParty = machine.look().party;
