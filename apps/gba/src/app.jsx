@@ -7,6 +7,7 @@ import * as cloud from "./cloud.js";
 import { makeStates } from "./states.js";
 import { BTN, DPAD } from "./buttons.js";
 import { runner, previewOf } from "./policy.js";
+import { recovery } from "./recovery.js";
 import { loadWorld } from "./world.js";
 import * as route from "./route.js";
 import * as autopilot from "./autopilot.js";
@@ -2227,7 +2228,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
         run: runner(withSpot, routeRef.current, atlasNow),
         frame: 0, code, slot: policy.slot || 0, mon: null,
         // Kept so a stop can be picked back up without asking again.
-        policy: withSpot, atlas: atlasNow, attempt: 0, stops: [], recovering: 0,
+        policy: withSpot, atlas: atlasNow, recovery: recovery(), stops: [], recovering: 0,
         // The one being trained, by identity rather than by slot: putting it
         // in front reorders the party, so the slot it started in belongs to
         // somebody else by the time anything goes wrong.
@@ -2241,16 +2242,6 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
     },
     [code, applySpeed]
   );
-
-  /**
-   * How many times a run picks itself back up before it gives up.
-   *
-   * Three, because the second attempt is worth a lot and the fourth is worth
-   * nothing: a stop that survives three fresh starts is a situation, not a
-   * stumble, and the right answer to a situation is to say so rather than to
-   * keep prodding the cartridge unattended.
-   */
-  const RECOVERIES = 3;
 
   /**
    * Pick a stopped run back up.
@@ -2268,16 +2259,18 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
    * the first thing a run does is put it in front, which reorders the party.
    */
   const recoverAuto = useCallback(
-    (reason) => {
+    (stop) => {
       const last = autoRef.current;
       if (!last) return false;
-      if (last.attempt >= RECOVERIES) return false;
 
+      // The judgement is shared with `play.mjs` rather than written again
+      // here. Written twice is how the tab ended the night on a stop the
+      // command line would have picked back up.
       const party = game.partyOf(game.ewram(core), last.code);
-      const named = last.want && party ? party.findIndex((m) => m.name === last.want) : -1;
-      const slot = named >= 0 ? named : 0;
+      const next = last.recovery.after(stop, { party, want: last.want, fallbackSlot: last.slot });
+      if (next.action !== "retry") return false;
+      const { reason, slot } = next;
 
-      last.attempt += 1;
       last.stops = [...last.stops, reason];
       last.run = runner({ ...last.policy, slot }, routeRef.current, last.atlas);
       last.frame = 0;
@@ -2496,7 +2489,7 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
             // `final` means the run is over on purpose: the level was reached,
             // or carrying on would cost the party. Everything else is a
             // stumble worth one more go.
-            if (out.final || !recoverAuto(out.reason)) {
+            if (!recoverAuto(out)) {
               stopAuto(out.reason);
               break;
             }
