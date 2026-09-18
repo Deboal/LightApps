@@ -14,8 +14,11 @@
 // so the app booked a trip to the Pokémon Center after every battle for a week
 // and nothing that ran headless could see it.
 //
-// It is also six to ten times faster than watching, because nothing renders
-// unless asked. A twenty-minute grind takes two or three minutes.
+// It is not faster, whatever the first version of this comment said. The core
+// runs at 209 frames a second here and 210 in a browser tab -- the same 3.5x
+// real time -- and the rendering this skips costs nothing next to it. What it
+// buys is that a stop becomes a file: `--dump` writes the state, the screen
+// and the reason, and every bug in this thing was found by looking at one.
 //
 //   node gba/tools/autoplay/play.mjs --rom FireRed.gba --sav game.sav \
 //     --mon CHARIZARD --to 40 --out after.sav --show

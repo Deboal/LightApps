@@ -195,6 +195,19 @@ export function previewOf(policy, party) {
   return { name: mon.name, move: moveName(want.id), power: want.power, pp: want.pp };
 }
 
+/**
+ * `final` on a stop means *do not pick this up again*.
+ *
+ * Most stops are the run losing its footing: boxed in, lost the route, a
+ * battle that stopped answering. Starting over from where it stands is a
+ * reasonable answer to all of those, and is what a person would do.
+ *
+ * A few are not. The goal being reached is not a failure to recover from.
+ * A fainted lead with nowhere to heal, or no PP anywhere, means the next
+ * attempt walks into the same wall with less to fight it with -- and the run
+ * after that is how an unattended grind turns into a white-out. Those say
+ * `final` and the caller is expected to honour it.
+ */
 export function runner(policy, route = null, world = null) {
   const { slot = 0, stopAtLevel = 100, fleeBelowHp = 0.34, stopBelowHp = 0.15 } = policy || {};
   // Where the Pokémon being trained actually is, which changes the moment the
@@ -557,6 +570,7 @@ export function runner(policy, route = null, world = null) {
           return {
             keys: 0,
             done: true,
+            final: true,
             reason: `${mon.name} has no PP left in any move. Nothing to fight with.`,
           };
         }
@@ -565,11 +579,11 @@ export function runner(policy, route = null, world = null) {
       if (mon.fainted) {
         // With a route this is an errand, not an ending: the game sends out
         // the next Pokémon, this runs from the fight and walks to a Centre.
-        if (!canHeal) return { keys: 0, done: true, reason: `${mon.name} fainted.` };
+        if (!canHeal) return { keys: 0, done: true, final: true, reason: `${mon.name} fainted.` };
         needsHeal = true;
       }
       if (mon.level >= stopAtLevel) {
-        return { keys: 0, done: true, reason: `${mon.name} reached level ${mon.level}.` };
+        return { keys: 0, done: true, final: true, reason: `${mon.name} reached level ${mon.level}.` };
       }
       // With a route this is an errand rather than an ending, so the floor
       // only applies when there is nowhere to go.
@@ -577,6 +591,7 @@ export function runner(policy, route = null, world = null) {
         return {
           keys: 0,
           done: true,
+          final: true,
           reason: `${mon.name} is down to ${mon.hp}/${mon.maxHp} and there is no way to heal from here.`,
         };
       }
@@ -654,6 +669,21 @@ export function runner(policy, route = null, world = null) {
         // already under the cursor. Learned by opening it and looking at it.
         if (battle && battle.menu === "party") {
           if (canHeal) needsHeal = true;
+          // "Choose a POKéMON", which the game opens by itself the moment the
+          // one that was out faints. Its submenu is SHIFT / SUMMARY / CANCEL
+          // -- no ITEM, so mashing A here cannot give anything away, which is
+          // why this is a smaller worry than the field menu was. It can still
+          // land on SUMMARY, which A does not close, and that is a run sitting
+          // in a stat screen until its patience runs out.
+          //
+          // So when the entries can be read, walk to the first one (the send-
+          // out) and only then press. When they cannot, mash A as before --
+          // that is the behaviour this has always had, and it mostly works.
+          const open = state.menu;
+          if (open && open.actions && open.actions.length > 0) {
+            const step = open.cursor === 0 ? 0 : BTN.UP;
+            return { keys: tapping(elapsed) ? step || BTN.A : 0 };
+          }
           return { keys: tapping(elapsed) ? BTN.A : 0 };
         }
 

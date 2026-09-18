@@ -75,6 +75,9 @@ export async function boot({ rom, save, code = "BPRE" }) {
         // message box from a wall, so the headless runner has to hand it over
         // too or it gets the app's old behaviour and none of the fix.
         fieldLocked: game.fieldLockedOf(iwram, code),
+        // The party menu's own entries. Without this a switch is back to
+        // pressing A at each one to find out which is SWITCH.
+        menu: game.partyMenuOf(ewram, code),
       };
     },
 

@@ -17,6 +17,7 @@ import { BTN, cursorStep } from "./buttons.js";
 import { hold, settle, tap, beat } from "./drive.js";
 import { bestMove, spent } from "./policy.js";
 import { pathToAny, path, edgeTiles, DIR } from "./world.js";
+import { MENU } from "./game.js";
 
 /** Frames to keep pressing towards a tile before calling it blocked. A step is
  *  sixteen frames and a turn on the spot eight, so ninety is many steps' worth
@@ -480,44 +481,162 @@ const sameMon = (a, b) =>
  *
  * The fiddly part is that the party submenu is not a fixed list: it grows an
  * entry for every field move the selected Pokémon knows, so SWITCH is second
- * for a Charmeleon and third for a Beedrill that knows Cut. Counting presses
- * is how a script quietly does the wrong thing on somebody else's party. So
- * the submenu position is searched, and the result is checked against the
- * party itself rather than assumed.
+ * for a Charmeleon and third for a Beedrill that knows Cut.
+ *
+ * This used to deal with that by *searching*: press A on entry one, look at
+ * the party, press A on entry two, and so on up to five. It is hard to
+ * overstate how bad that was. Entry three is ITEM. Pressing A there opens
+ * GIVE, and the next A in the sequence walks into the bag and hands over
+ * whatever is at the top of it -- which is how a player's Charizard ended up
+ * holding a Moon Stone, from a run that had been asked to do nothing but
+ * gain two levels. Every blind press in a menu is a press on whatever
+ * happens to be under the cursor, and in this menu some of those cost
+ * something that cannot be got back.
+ *
+ * So the submenu is read (`partyMenuOf` -> `actions`, straight out of the
+ * game's own scratch struct) and A is pressed only once the cursor is
+ * verifiably on SWITCH. If the entries cannot be read, or SWITCH is not among
+ * them, or the cursor will not go where it is sent, this backs out with B and
+ * says so. Doing nothing is always available and always safe; guessing is
+ * neither.
  */
-export function* leadWith(want, { attempts = 5 } = {}) {
+export function* leadWith(want, { tries = 3 } = {}) {
   let state = yield 0;
   const partyNow = () => (state && state.party) || [];
   const at = partyNow().findIndex((mon) => sameMon(mon, want));
   if (at < 0) return { ok: false, reason: `${want.name} is not in the party any more` };
   if (at === 0) return { ok: true, note: "already leading", slot: 0 };
 
-  for (let switchAt = 1; switchAt <= attempts; switchAt++) {
-    // Open the party from the field menu.
-    yield* tap(BTN.START, { then: 50 });
-    yield* tap(BTN.DOWN, { then: 30 }); // POKéMON
-    yield* tap(BTN.A, { then: 90 });
-    // One press per slot. The first is eaten while the screen opens, which is
-    // why this is one more than the slot index.
-    for (let i = 0; i < at + 1; i++) yield* tap(BTN.DOWN, { then: 30 });
-    yield* tap(BTN.A, { then: 60 }); // SUMMARY / [field moves] / SWITCH / ITEM / CANCEL
-    for (let i = 0; i < switchAt; i++) yield* tap(BTN.DOWN, { then: 30 });
-    yield* tap(BTN.A, { then: 60 }); // "Move to where?"
-    yield* tap(BTN.LEFT, { then: 30 }); // the lead is the box on its own
-    state = yield* tap(BTN.A, { then: 180 });
+  /** Back out of whatever is open, then say why. Never leave a menu up: the
+   *  walk that follows would press directions into it forever. */
+  function* giveUp(reason) {
+    const out = yield* backToOverworld();
+    return { ok: false, reason: out.ok ? reason : `${reason} (and ${out.reason})` };
+  }
 
+  for (let attempt = 0; attempt < tries; attempt++) {
+    // Into the party screen. The field menu is sticky, so the entry is found
+    // by walking the cursor to it rather than by counting from the top --
+    // `menu.cursor` is the game's own, and `lastIndex` is where the list ends.
+    // Settle first. Pressing START while the player is still finishing a step
+    // does nothing at all -- measured: zero idle frames and the menu never
+    // opens, sixty and it always does -- and a run that presses on regardless
+    // then counts cursor moves in a menu that is not there.
+    yield* settle(60);
+    yield* tap(BTN.START, { then: 50 });
+    const opened = yield* toPartySlot(at);
+    if (!opened.ok) { const bail = yield* giveUp(opened.reason); return bail; }
+    state = opened.state;
+
+    // The submenu. This is the part that used to cost items.
+    state = yield* tap(BTN.A, { then: 80 });
+    const menu = state && state.menu;
+    if (!menu || !menu.actions) {
+      return yield* giveUp("could not read what the party menu is offering, so nothing was pressed");
+    }
+    const wantSwitchAt = menu.actions.indexOf(MENU.SWITCH);
+    if (wantSwitchAt < 0) {
+      return yield* giveUp(`this party menu has no SWITCH entry (it offers ${menu.actions.join(", ")})`);
+    }
+
+    const onIt = yield* cursorTo(wantSwitchAt);
+    if (!onIt.ok) return yield* giveUp(onIt.reason);
+    state = onIt.state;
+
+    // Only now.
+    state = yield* tap(BTN.A, { then: 80 });
+    if (!state || !state.menu || !state.menu.switching) {
+      return yield* giveUp("SWITCH was taken but the game is not asking where to move to");
+    }
+
+    // "Move to where?" -- and the destination is a cursor we can read too.
+    const home = yield* moveCursorTo(0);
+    if (!home.ok) return yield* giveUp(home.reason);
+
+    state = yield* tap(BTN.A, { then: 180 });
     if (sameMon(partyNow()[0], want)) {
       // The swap happened. That is not the same as being able to play again:
       // the party screen is still up, and a run that returns here walks into
       // a menu that eats every press.
       const out = yield* backToOverworld();
       if (!out.ok) return { ok: false, reason: `${want.name} is leading, but ${out.reason}` };
-      return { ok: true, slot: 0, switchAt };
+      return { ok: true, slot: 0 };
     }
-    // Whatever that submenu entry was, back out of it and try the next.
-    for (let i = 0; i < 5; i++) state = yield* tap(BTN.B, { then: 40 });
+    // It did not take. Close everything and start the whole thing over rather
+    // than pressing on from a screen whose state is now a guess.
+    const out = yield* backToOverworld();
+    if (!out.ok) return { ok: false, reason: `the swap did not take, and ${out.reason}` };
   }
   return { ok: false, reason: `could not move ${want.name} to the front of the party` };
+}
+
+/** Walk the party screen's cursor onto `slot`, checking it each time. */
+function* toPartySlot(slot) {
+  // POKéMON in the field menu. The list is short and the cursor is readable,
+  // so this walks to the entry rather than assuming where the menu opened.
+  const FIELD_POKEMON = 1;
+  const onEntry = yield* cursorTo(FIELD_POKEMON);
+  if (!onEntry.ok) return { ok: false, reason: `could not reach POKéMON in the menu: ${onEntry.reason}` };
+  let state = yield* tap(BTN.A, { then: 140 });
+
+  // Wait for the screen itself, not for a cursor value. `open` is the party
+  // menu's scratch struct existing, which is the game allocating it.
+  for (let frame = 0; frame < 120; frame++) {
+    if (state && state.menu && state.menu.open) break;
+    state = yield 0;
+  }
+  if (!state || !state.menu || !state.menu.open) {
+    return { ok: false, reason: "the party screen did not open" };
+  }
+
+  for (let press = 0; press <= 8; press++) {
+    const now = state && state.menu;
+    if (now && now.slot === slot) return { ok: true, state };
+    state = yield* tap(BTN.DOWN, { then: 40 });
+  }
+  return { ok: false, reason: `the party cursor would not go to slot ${slot + 1}` };
+}
+
+/**
+ * Walk a list menu's cursor to `index`, one press at a time, checking.
+ *
+ * Waits for the menu to exist first. `lastIndex` is the game's own "how far
+ * this list goes", and it reads zero when no list is up -- so a menu that has
+ * not finished opening is indistinguishable from a one-entry menu until it
+ * does. Counting presses at that is how a run walks a cursor that is not on
+ * screen and then reports that the cursor would not move.
+ */
+function* cursorTo(index, { wait = 90 } = {}) {
+  let state = yield 0;
+  for (let frame = 0; frame < wait; frame++) {
+    const menu = state && state.menu;
+    if (menu && menu.lastIndex >= index) break;
+    state = yield 0;
+  }
+  const ready = state && state.menu;
+  if (!ready || ready.lastIndex < index) {
+    return { ok: false, reason: `no menu with an entry ${index} in it opened` };
+  }
+
+  for (let press = 0; press <= 12; press++) {
+    const menu = state && state.menu;
+    if (!menu) return { ok: false, reason: "the menu closed while its cursor was being moved" };
+    if (menu.cursor === index) return { ok: true, state };
+    state = yield* tap(menu.cursor < index ? BTN.DOWN : BTN.UP, { then: 40 });
+  }
+  return { ok: false, reason: `the cursor would not settle on entry ${index}` };
+}
+
+/** The same, for the second cursor the game uses while holding a Pokémon. */
+function* moveCursorTo(slot) {
+  let state = yield 0;
+  for (let press = 0; press <= 8; press++) {
+    const menu = state && state.menu;
+    if (!menu) return { ok: false, reason: "lost the party menu mid-switch" };
+    if (menu.moveTo === slot) return { ok: true, state };
+    state = yield* tap(menu.moveTo < slot ? BTN.DOWN : BTN.UP, { then: 40 });
+  }
+  return { ok: false, reason: `could not aim the switch at slot ${slot + 1}` };
 }
 
 /**

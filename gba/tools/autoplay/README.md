@@ -40,13 +40,20 @@ node gba/tools/autoplay/play.mjs \
 | `--dump` | a save state, a screenshot and the reason, written on every stop. |
 | `--show` | draw the screen in the terminal while it runs. |
 
-Two things make it worth having. It runs six to ten times faster than watching
-does, because nothing renders unless `--show` asks; a twenty-minute grind
-takes two or three minutes. And a stop here is a file you can look at rather
-than one line in a panel on a phone.
+What makes it worth having is **not** speed, and the first version of this
+paragraph said otherwise. Measured: the core runs at 209 frames a second in
+Node and 210 in the browser, which is the same 3.5× real time either way. The
+rendering this skips costs nothing next to the emulation.
 
-`--show` costs about a fifth of that speed and is usually worth it — a run
-that is going wrong looks wrong long before it says so.
+What it buys is that a stop here is a *file*. `--dump` writes the save state,
+a screenshot and the reason, so a run that goes wrong can be replayed and
+picked apart in seconds instead of described from memory over a phone. Every
+bug in this thing was found that way. It is also scriptable, it needs no tab,
+and it will tell you the answer while you do something else.
+
+`--show` draws the screen in the terminal and costs about a fifth of the
+speed. It is usually worth it — a run that is going wrong looks wrong long
+before it says so.
 
 The browser is still where this is meant to be *watched*. It is a poor place
 to debug it: a run takes as long as the game takes, and a fix cannot be tried
