@@ -1096,10 +1096,34 @@ export function runner(policy, route = null, world = null) {
       // plus the walk, which has fights in it too. `healBelowHp` stays as the
       // floor underneath it, for the case where nothing has hit hard enough
       // yet to have been measured.
-      const cannotTakeMore = worstHit > 0 && mon.hp <= worstHit * FIGHTS_OF_MARGIN;
+      //
+      // Two guards, and both exist because without them this rule sends a
+      // Pokémon to a Pokémon Center at full health, forever.
+      //
+      // The first: a margin that full health cannot cover is not a margin, it
+      // is a verdict about the place. A CLEFAIRY with 36 max HP being hit for
+      // 12 needs 36 to clear three fights' worth, so `cannotTakeMore` is true
+      // at 36 out of 36 -- it walks to the Centre, is healed to full, walks
+      // back, and decides on arrival that it needs healing again. Measured:
+      // two round trips in ninety seconds and not one battle fought. Where
+      // the margin is unreachable the plain fraction is used instead, which
+      // is the rule this had before any of it and is merely conservative
+      // rather than impossible.
+      //
+      // The second: healing is only ever a reason to move when there is
+      // something to heal. Full is full.
+      const marginPossible = mon.maxHp > worstHit * FIGHTS_OF_MARGIN;
+      const cannotTakeMore =
+        worstHit > 0 && marginPossible && mon.hp < mon.maxHp && mon.hp <= worstHit * FIGHTS_OF_MARGIN;
       if (cannotTakeMore && !healBecause) healBecause = "not enough left for another fight";
       if (share < healBelowHp && !everyoneWhole(party) && !healBecause) healBecause = "hurt";
-      if (canHeal && here && (needsHeal || cannotTakeMore || (share < healBelowHp && !everyoneWhole(party)))) {
+      // A trip to be healed has to be able to change something. Setting off at
+      // full health is the loop above, and it is worth the extra clause here
+      // as well as the one that computes `cannotTakeMore`: `needsHeal` is set
+      // in several places and only some of them are about HP.
+      const worthGoing = mon.hp < mon.maxHp || spent(mon) || mon.fainted || !everyoneWhole(party);
+      if (canHeal && here && worthGoing &&
+          (needsHeal || cannotTakeMore || (share < healBelowHp && !everyoneWhole(party)))) {
         needsHeal = false;
         walkStuck = 0;
         if (canPlan) {
