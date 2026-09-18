@@ -2458,7 +2458,9 @@ function Player({ core, rom, romSha, user, backup, backupError, onBackup, onEjec
           const seen = game.partyOf(game.ewram(core), drive.code);
           // Remembered on the first frame that can see the party, so a
           // recovery can find the same Pokémon after the order changes.
-          if (!drive.want && seen && seen[drive.slot]) drive.want = seen[drive.slot].name;
+          if (!drive.want && seen && seen[drive.slot] && seen[drive.slot].record) {
+            drive.want = seen[drive.slot];
+          }
 
           if (seen && seen[drive.slot]) drive.mon = seen[drive.slot];
           const iwram = game.iwram(core);

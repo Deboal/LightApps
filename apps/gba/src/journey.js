@@ -18,6 +18,7 @@ import { hold, settle, tap, beat } from "./drive.js";
 import { bestMove, spent } from "./policy.js";
 import { pathToAny, path, edgeTiles, DIR } from "./world.js";
 import { MENU } from "./game.js";
+import { sameMon, slotOfMon } from "./recovery.js";
 
 /** Frames to keep pressing towards a tile before calling it blocked. A step is
  *  sixteen frames and a turn on the spot eight, so ninety is many steps' worth
@@ -174,8 +175,32 @@ export function* goTo(world, target, { hops = 24, allowed = null, patience = PAT
   const permitted = (here) =>
     !allowed || allowed.some((m) => onMap(here, m));
 
-  for (let hop = 0; hop < hops; hop++) {
+  // The budget is attempts that got nowhere, not attempts.
+  //
+  // It used to be a flat count of times round this loop, which quietly made
+  // the limit a function of how far away the target was: a five-tile walk had
+  // twenty-four goes at it and a fifty-four-tile walk across a town full of
+  // people who keep stepping into the way had the same twenty-four, most of
+  // them spent on hops that were working. Cerulean City is fifty-four tiles
+  // from Route 24's grass, and a run that had to cross it reported "too many
+  // attempts" while standing in the street, having walked most of the way
+  // there three times.
+  //
+  // Counting only the hops that end where they began bounds the *failure*
+  // instead of the work. A walk that is getting somewhere can take as long as
+  // it takes; a walk that is not gives up as quickly as it ever did.
+  let wasted = 0;
+  let before = null;
+  // An absolute ceiling as well, because "making progress" is measured by a
+  // tile that could in principle oscillate forever between two squares.
+  for (let hop = 0; hop < 400 && wasted < hops; hop++) {
     let state = yield 0;
+    const at = state && state.position;
+    if (at) {
+      if (before && sameSpot(at, before)) wasted += 1;
+      else wasted = 0;
+      before = at;
+    }
     if (state && state.inBattle) {
       const out = yield* throughBattle();
       if (!out.ok) return out;
@@ -462,14 +487,6 @@ export function* backToOverworld({ tries = 14, clear = BTN.B } = {}) {
  * compares the whole tuple, which is unique enough for the only question being
  * asked: did the one we meant end up at the front?
  */
-const sameMon = (a, b) =>
-  !!a && !!b &&
-  a.name === b.name &&
-  a.level === b.level &&
-  a.maxHp === b.maxHp &&
-  (a.record && a.record.species) === (b.record && b.record.species) &&
-  (a.record && a.record.personality) === (b.record && b.record.personality);
-
 /**
  * Move a party member into the lead.
  *
@@ -503,7 +520,11 @@ const sameMon = (a, b) =>
 export function* leadWith(want, { tries = 3 } = {}) {
   let state = yield 0;
   const partyNow = () => (state && state.party) || [];
-  const at = partyNow().findIndex((mon) => sameMon(mon, want));
+  // `slotOfMon` rather than a bare search, because a search answers "not
+  // here" for a frame whose record did not decode -- and the party is read
+  // out of memory the game is writing to, so torn reads are ordinary. One of
+  // them should not abort a switch with "it is not in the party any more".
+  const at = slotOfMon(partyNow(), want, -1);
   if (at < 0) return { ok: false, reason: `${want.name} is not in the party any more` };
   if (at === 0) return { ok: true, note: "already leading", slot: 0 };
 

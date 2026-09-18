@@ -1126,23 +1126,66 @@ function centreRoute() {
     battle: { menu: "party", cursor: 0, action: 0, active: 0 },
     menu,
   });
+  void inBattleParty;
 
-  // Cursor already on the send-out: press A.
-  const ready = drive(runner({ slot: 0, stopAtLevel: 30 }), 24,
-    inBattleParty({ open: true, actions: [10, 0, 2], cursor: 0, lastIndex: 2, slot: 0, moveTo: 0, switching: false }));
-  check("on the send-out entry it presses A", ready.keys.some((k) => k & BTN.A));
+  // The cursor is on somebody who can fight: press A.
+  const ready = drive(runner({ slot: 0, stopAtLevel: 30 }, null, {}), 24,
+    inBattleParty({ open: true, actions: [11, 0, 2], cursor: 0, lastIndex: 2, slot: 0, moveTo: 0, switching: false }));
+  check("on a Pokémon that can fight it presses A", ready.keys.some((k) => k & BTN.A));
   check("and does not wander off it first", !ready.keys.some((k) => k & (BTN.UP | BTN.DOWN)));
+}
 
-  // Cursor on SUMMARY: walk back up before pressing anything.
-  const wrong = drive(runner({ slot: 0, stopAtLevel: 30 }), 24,
-    inBattleParty({ open: true, actions: [10, 0, 2], cursor: 1, lastIndex: 2, slot: 0, moveTo: 0, switching: false }));
-  check("on SUMMARY it moves before it presses", wrong.keys.some((k) => k & BTN.UP));
-  check("and does not press A from there", !wrong.keys.some((k) => k & BTN.A),
-    "A on SUMMARY opens a screen A cannot close");
+// -- and the one the game opens it for ----------------------------------------
+//
+// The cursor starts on the Pokémon that just fainted, and A on a fainted
+// Pokémon does nothing at all. Pressing it anyway is a frozen game, and was: a
+// level-ten CLEFAIRY sent to Route 24 was knocked out, the game asked who
+// should come in, and the run pressed A at the corpse for a full minute and
+// then reported that the battle had stopped responding — three times in a row,
+// every time that scenario ran. It is the screen the player photographed.
+{
+  const fainted = (name) => ({ ...mon({ name }), hp: 0, fainted: true });
+  const fit = (name) => mon({ name });
+  const atSlot = (slot, party) => (frame) => ({
+    frame,
+    inBattle: true,
+    party,
+    battle: { menu: "party", cursor: 0, action: 0, active: 0 },
+    menu: { open: true, actions: [11, 0, 2], cursor: 0, lastIndex: 2, slot, moveTo: 0, switching: false },
+  });
+
+  // With an atlas in hand the runner can heal, so a faint is an errand rather
+  // than the end of the run -- which is the situation this screen appears in.
+  // Without one, an earlier branch stops the run before the screen is reached,
+  // and these checks would be testing that branch instead.
+  const canHeal = {};
+  const down = drive(runner({ slot: 0, stopAtLevel: 30 }, null, canHeal), 40,
+    atSlot(0, [fainted("CLEFAIRY"), fit("BEEDRILL"), fit("PIKACHU")]));
+  check("on a fainted one it moves the cursor instead", down.keys.some((k) => k & BTN.DOWN));
+  check("and does not press A at it", !down.keys.some((k) => k & BTN.A),
+    "A on a fainted Pokémon does nothing, which is what the freeze was");
+
+  // The healthy one is above the cursor, so the press has to be the other way.
+  const up = drive(runner({ slot: 0, stopAtLevel: 30 }, null, canHeal), 40,
+    atSlot(2, [fit("BEEDRILL"), fit("PIKACHU"), fainted("CLEFAIRY")]));
+  check("it goes up when that is where the healthy one is", up.keys.some((k) => k & BTN.UP));
+
+  // Nobody left. There is no press that prevents a white-out, so say so and
+  // do not spend a minute of patience finding out.
+  const wiped = drive(runner({ slot: 0, stopAtLevel: 30 }, null, canHeal), 60,
+    atSlot(0, [fainted("CLEFAIRY"), fainted("BEEDRILL")]));
+  check("a wiped party is reported at once", wiped.end && /nobody left/i.test(wiped.end.reason),
+    wiped.end ? wiped.end.reason : "never stopped");
+  check("and is final, because there is no recovering from it", wiped.end && wiped.end.final === true);
 
   // Nothing readable: the old behaviour, which mostly works and never made
   // anything worse.
-  const blind = drive(runner({ slot: 0, stopAtLevel: 30 }), 24, inBattleParty(null));
+  const blind = drive(runner({ slot: 0, stopAtLevel: 30 }, null, canHeal), 24, (frame) => ({
+    frame, inBattle: true,
+    party: [fit("BEEDRILL")],
+    battle: { menu: "party", cursor: 0, action: 0, active: 0 },
+    menu: null,
+  }));
   check("with nothing readable it still mashes A", blind.keys.some((k) => k & BTN.A));
 }
 

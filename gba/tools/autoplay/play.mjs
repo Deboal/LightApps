@@ -44,7 +44,7 @@ import { boot, resume, BTN } from "./machine.mjs";
 import { saveGame } from "./menus.mjs";
 import { world } from "../../../apps/gba/src/world.js";
 import { runner } from "../../../apps/gba/src/policy.js";
-import { recovery, slotOf } from "../../../apps/gba/src/recovery.js";
+import { recovery, slotOfMon } from "../../../apps/gba/src/recovery.js";
 
 const ARGS = (() => {
   const out = { minutes: 30, tries: 3 };
@@ -186,7 +186,7 @@ const look = () => ({ ...machine.look(), frame: machine.frames });
 // Where the one being trained is now, and whether a stop is worth another go.
 // Both shared with the app rather than written again here -- the last time
 // they were written twice, the tab did not recover at all.
-const slotNow = () => slotOf(machine.look().party, target.name, slot);
+const slotNow = () => slotOfMon(machine.look().party, target, slot);
 const supervisor = recovery({ tries: Number(ARGS.tries) });
 
 let attempt = 0;
@@ -216,7 +216,7 @@ while (!outcome && Date.now() - began < BUDGET) {
       // By name, not by slot. Putting the target in front reorders the party
       // for real -- a slot number stops meaning what it meant the moment the
       // run does the one thing it was asked to do first.
-      const mon = state.party && (state.party.find((m) => m.name === target.name) || state.party[slot]);
+      const mon = state.party && state.party[slotOfMon(state.party, target, slot)];
       const minutes = ((Date.now() - began) / 60000).toFixed(1);
       console.error(
         `[${minutes}m] ${mon ? `${mon.name} L${mon.level} ${mon.hp}/${mon.maxHp}` : "party unreadable"}` +
@@ -234,7 +234,7 @@ while (!outcome && Date.now() - began < BUDGET) {
   // Reaching the goal is a stop like any other as far as the runner is
   // concerned, and it says so with `final`. Everything else gets another go.
   const verdict = supervisor.after(stopped, {
-    party: machine.look().party, want: target.name, fallbackSlot: slot,
+    party: machine.look().party, want: target, fallbackSlot: slot,
   });
 
   // A run that stopped for a reason worth keeping. The
@@ -254,7 +254,17 @@ while (!outcome && Date.now() - began < BUDGET) {
     );
   }
 
-  if (verdict.action !== "retry") { outcome = verdict.final ? "reached" : "gave up"; break; }
+  if (verdict.action !== "retry") {
+    // Say why, always. An earlier version of this line broke out silently on
+    // a final stop, so a run that ended six seconds in printed a level that
+    // had not changed and nothing else at all -- which is indistinguishable
+    // from the tool being broken, and wasted a debugging session proving it
+    // was not.
+    outcome = verdict.final ? "final" : "gave up";
+    console.error(`\nstopped: ${verdict.reason}`);
+    if (verdict.exhausted) console.error(`gave up after ${supervisor.attempt} attempts.`);
+    break;
+  }
   stops.push(verdict.reason);
   attempt = verdict.attempt;
   console.error(`\nstopped: ${verdict.reason}\npicking it back up (attempt ${attempt} of ${ARGS.tries})`);
@@ -269,13 +279,13 @@ while (!outcome && Date.now() - began < BUDGET) {
 // -- what happened -----------------------------------------------------------
 
 const ended = machine.look();
-const mon = ended.party && ended.party.find((m) => m.name === target.name);
+const mon = ended.party && ended.party[slotOfMon(ended.party, target, slot)];
 const minutes = ((Date.now() - began) / 60000).toFixed(1);
 
 if (ARGS.show) process.stdout.write("\x1b[2J\x1b[H");
 console.error("");
 if (mon) console.error(`${mon.name}: level ${target.level} -> ${mon.level} in ${minutes} minutes`);
-if (stops.length) console.error(`stopped and picked back up ${stops.length}×:\n  ${stops.join("\n  ")}`);
+if (stops.length) console.error(`picked back up ${stops.length}× along the way:\n  ${stops.join("\n  ")}`);
 
 if (ARGS.out) {
   // In-game first. `gba_read_save` reads the cartridge's flash, and the game

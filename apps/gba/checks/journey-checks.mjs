@@ -379,9 +379,13 @@ const steer = (battle, field, keys) => {
 {
   const { leadWith } = await import("../src/journey.js");
   const { MENU } = await import("../src/game.js");
-  const mon = (name, level, species, personality) => ({
+  // `otId` because the real decoder always provides one: it is half of the
+  // pair Gen 3 encrypts a record with, and it is half of what identifies a
+  // Pokémon across a party that keeps reordering. A fake without it is a fake
+  // that exercises a fallback path instead of the real one.
+  const mon = (name, level, species, personality, otId = 24601) => ({
     name, level, species, maxHp: 40, hp: 40,
-    record: { species, personality, moves: [{ id: 52, pp: 20 }] },
+    record: { species, personality, otId, moves: [{ id: 52, pp: 20 }] },
   });
 
   /**
@@ -724,6 +728,75 @@ function building({ door = null } = {}) {
     result && !result.ok,
     result && result.reason
   );
+}
+
+// -- a long walk is not a stuck walk ------------------------------------------
+//
+// `goTo` used to budget times round its loop, which made the limit a function
+// of distance: a five-tile walk had twenty-four goes and a fifty-four-tile
+// walk across a town had the same twenty-four, most of them spent on hops
+// that were working. A real run reported "too many attempts" while standing
+// in a Cerulean street, having walked most of the way to Route 24 three times.
+//
+// The budget is hops that got nowhere now, so this walks a corridor longer
+// than the old limit and expects to arrive.
+{
+  const LONG = 60;
+  const bytes = new Uint8Array(Math.ceil((LONG * 3) / 4));
+  for (let i = 0; i < LONG * 3; i++) bytes[i >> 2] |= 1 << ((i & 3) * 2);
+  const W = world(
+    {
+      games: ["BPRE"], centres: [],
+      layouts: [{ w: LONG, h: 3, at: 0 }],
+      maps: [{ g: 1, n: 1, name: "Long", l: 0, w: [], c: [] }],
+    },
+    bytes
+  );
+
+  // People. Without them this test cannot fail and does not deserve to exist:
+  // an unobstructed corridor is walked in one hop no matter what the budget
+  // is, so the first version of this check passed against the very code it
+  // was written to catch. A town is a corridor with somebody in it every few
+  // tiles, and that is what costs hops -- each one is a walk that gets part
+  // of the way, is refused, and has to be planned again.
+  const standing = new Set();
+  for (let x = 4; x < LONG - 2; x += 2) standing.add(x);
+  const open = (x, y) => {
+    if (x < 0 || x >= LONG || y < 0 || y >= 3) return false;
+    return !(y === 1 && standing.has(x));
+  };
+  check(
+    "the corridor has more people in it than the old budget had attempts",
+    standing.size > 24,
+    `${standing.size} in the way, against a budget of 24`
+  );
+
+  const m = overworld({ open, x: 0, y: 1, mapGroup: 1, mapNum: 1 });
+  const { result } = play(() => goTo(W, { mapGroup: 1, mapNum: 1, x: LONG - 1, y: 1 }), m, { limit: 400000 });
+  check(
+    `a ${LONG}-tile walk past ${standing.size} of them arrives rather than running out of attempts`,
+    result.ok && m.state.x === LONG - 1,
+    result.ok ? `reached ${m.state.x}` : `${result.reason} at ${m.state.x},${m.state.y}`
+  );
+}
+
+{
+  // And the other half: a walk that genuinely cannot move still gives up
+  // quickly. Hemmed in on every side, one tile of floor.
+  const bytes = new Uint8Array(Math.ceil((9 * 9) / 4));
+  for (let i = 0; i < 9 * 9; i++) bytes[i >> 2] |= 1 << ((i & 3) * 2);
+  const W = world(
+    {
+      games: ["BPRE"], centres: [],
+      layouts: [{ w: 9, h: 9, at: 0 }],
+      maps: [{ g: 1, n: 1, name: "Cell", l: 0, w: [], c: [] }],
+    },
+    bytes
+  );
+  const stuck = overworld({ open: (x, y) => x === 4 && y === 4, x: 4, y: 4, mapGroup: 1, mapNum: 1 });
+  const { result, frames } = play(() => goTo(W, { mapGroup: 1, mapNum: 1, x: 8, y: 8 }), stuck, { limit: 200000 });
+  check("a walk that cannot move still gives up", !result.ok, result.reason);
+  check("and does not take all day about it", frames < 120000, `${frames} frames`);
 }
 
 console.log(failures === 0 ? "\nall good" : `\n${failures} failed`);

@@ -19,6 +19,7 @@ import { follower, usable, ROUTE_STUCK } from "./route.js";
 // inside functions rather than at module scope, which is what makes it safe --
 // by the time either is called, both modules have finished evaluating.
 import { drive } from "./drive.js";
+import { slotOfMon } from "./recovery.js";
 import { healTrip, goTo, leadWith } from "./journey.js";
 
 /** Buttons have to be released to be pressed again: the game reads edges, so a
@@ -456,6 +457,24 @@ export function runner(policy, route = null, world = null) {
 
     step(state) {
       const party = state && state.party;
+
+      // Who this is about, found rather than indexed.
+      //
+      // `targetSlot` is a number and the party is a list that reorders: the
+      // first thing a run does is put its target in front, and from that
+      // moment the slot it was given belongs to somebody else. Reading the
+      // level out of that slot is how a run asked to train a CLEFAIRY to 20
+      // stopped six seconds in, having noticed that the PIKACHU which
+      // inherited slot six was already 22, and called it done.
+      //
+      // So the slot is re-derived every frame from the Pokémon itself. `want`
+      // is captured on the first frame whose record decodes, because an
+      // identity taken from a torn read is an identity that matches nothing.
+      if (!want && party && party[targetSlot] && party[targetSlot].record) {
+        want = party[targetSlot];
+      }
+      if (want && party) targetSlot = slotOfMon(party, want, targetSlot);
+
       if (!party || !party[targetSlot]) {
         // Hold still rather than act on a read that failed, and only give up
         // once it has failed for long enough to mean something.
@@ -670,19 +689,37 @@ export function runner(policy, route = null, world = null) {
         if (battle && battle.menu === "party") {
           if (canHeal) needsHeal = true;
           // "Choose a POKéMON", which the game opens by itself the moment the
-          // one that was out faints. Its submenu is SHIFT / SUMMARY / CANCEL
-          // -- no ITEM, so mashing A here cannot give anything away, which is
-          // why this is a smaller worry than the field menu was. It can still
-          // land on SUMMARY, which A does not close, and that is a run sitting
-          // in a stat screen until its patience runs out.
+          // one that was out faints.
           //
-          // So when the entries can be read, walk to the first one (the send-
-          // out) and only then press. When they cannot, mash A as before --
-          // that is the behaviour this has always had, and it mostly works.
+          // The cursor starts on the Pokémon that just fainted, and **A on a
+          // fainted Pokémon does nothing at all**. Pressing it anyway is a
+          // frozen game, and was: a level-ten CLEFAIRY sent to grind Route 24
+          // was knocked out, the game asked who should come in, and the run
+          // pressed A at the corpse for a full minute and then reported that
+          // the battle had stopped responding. Three times in a row, every
+          // time that scenario ran.
+          //
+          // So the replacement is *chosen*. `menu.slot` is which party member
+          // the cursor is on, straight out of the game, and `fainted` is a
+          // fact about that member -- walk the one to a member the other
+          // permits, and only then press. Once the cursor is on somebody who
+          // can fight, A opens the submenu and A again takes its first entry,
+          // which is SEND OUT.
           const open = state.menu;
-          if (open && open.actions && open.actions.length > 0) {
-            const step = open.cursor === 0 ? 0 : BTN.UP;
-            return { keys: tapping(elapsed) ? step || BTN.A : 0 };
+          const at = open && Number.isInteger(open.slot) ? open.slot : null;
+          if (at !== null && party[at] && party[at].fainted) {
+            const next = party.findIndex((one) => one && !one.fainted);
+            if (next < 0) {
+              // Nobody left. The next thing that happens is a white-out, and
+              // there is no press that prevents it.
+              return {
+                keys: 0,
+                done: true,
+                final: true,
+                reason: "Every Pokémon has fainted, so there is nobody left to send out.",
+              };
+            }
+            return { keys: tapping(elapsed) ? (next > at ? BTN.DOWN : BTN.UP) : 0 };
           }
           return { keys: tapping(elapsed) ? BTN.A : 0 };
         }
@@ -943,7 +980,6 @@ export function runner(policy, route = null, world = null) {
       // starts grinding with the wrong one in front is a run that cannot
       // succeed no matter how well everything after this works.
       if (!ordered && here && !state.inBattle) {
-        want = want || mon;
         mode = "journey";
         tripKind = "order";
         trip = drive(() => leadWith(want));
