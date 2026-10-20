@@ -3,6 +3,12 @@
   publish = "public"
   functions = "netlify/functions"
 
+# Pinned, not left to the site's default. package.json uses caret ranges and
+# there is no lockfile, so every build installs the newest @supabase/supabase-js
+# and @netlify/blobs, and both now declare engines node >= 22.
+[build.environment]
+  NODE_VERSION = "22"
+
 # The Garmin inReach proxy. Must come BEFORE the clean-URL catch-all below:
 # Netlify applies the first matching rule, and /api/feed is not a real file, so
 # the catch-all would otherwise rewrite it to /api/feed/index.html and 404.
