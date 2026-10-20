@@ -4,8 +4,16 @@
 //   import { AuthGate } from "../../../shared/auth.js";
 //   <AuthGate>{(user) => <App user={user} />}</AuthGate>
 //
-// Sign-in is passwordless: the user enters an email, gets a magic link, clicks it,
-// and lands back here signed in. The session is shared across all apps on this origin.
+// Sign-in is passwordless by default: the user enters an email, gets a magic link,
+// clicks it, and lands back here signed in. The session is shared across all apps
+// on this origin.
+//
+// <AuthGate method="password"> asks for an email and password instead, for an app
+// whose few users have accounts made for them. A magic link fails in ways the app
+// cannot see or fix: a corporate mail scanner (Outlook Safe Links) opens the link
+// first and spends the one-time token, a home-screen web app on iOS keeps its own
+// storage so the link signs in Safari rather than the app, and the built-in mailer
+// sends a few emails an hour. A password has none of those failure modes.
 
 import React, { useState, useEffect } from "react";
 import { sb, configured } from "./client.js";
@@ -16,6 +24,12 @@ export async function signInWithEmail(email, redirectTo) {
     email,
     options: { emailRedirectTo: redirectTo || window.location.href },
   });
+  if (error) throw error;
+}
+
+export async function signInWithPassword(email, password) {
+  if (!sb) throw new Error("Backend not configured");
+  const { error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw error;
 }
 
@@ -43,9 +57,10 @@ function Center({ children }) {
   );
 }
 
-export function AuthGate({ children }) {
+export function AuthGate({ children, method = "link" }) {
   const user = useAuth();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -65,8 +80,36 @@ export function AuthGate({ children }) {
     setBusy(false);
   };
 
+  const signIn = async () => {
+    setErr(null);
+    if (!/.+@.+\..+/.test(email.trim())) return setErr("Enter a valid email.");
+    if (!password) return setErr("Enter your password.");
+    setBusy(true);
+    try { await signInWithPassword(email.trim(), password); }
+    catch (e) {
+      // GoTrue says "Invalid login credentials" for a wrong password and for an
+      // account with no password at all, which is what a magic-link account is.
+      setErr(/invalid login/i.test(e.message || "") ? "Email or password is wrong." : (e.message || "Sign-in failed."));
+      setBusy(false);
+    }
+  };
+
   const input = { width: "100%", background: C.bg, border: `1px solid ${C.line}`, color: C.text, borderRadius: 9, padding: "11px 13px", fontSize: 15, outline: "none", marginBottom: 12 };
   const btn = { width: "100%", background: C.accent, color: "#06231f", border: "none", borderRadius: 10, padding: "11px 16px", fontWeight: 700, fontSize: 15, cursor: "pointer" };
+
+  if (method === "password") return (
+    <Center>
+      <div style={{ fontSize: 11, letterSpacing: ".22em", color: C.dim, fontWeight: 600 }}>APP HUB</div>
+      <h2 style={{ margin: "6px 0 14px" }}>Sign in</h2>
+      <input style={input} type="email" autoComplete="username" placeholder="you@email.com" value={email}
+        onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} />
+      <input style={input} type="password" autoComplete="current-password" placeholder="Password" value={password}
+        onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signIn()} />
+      {err && <div style={{ color: C.danger, fontSize: 13, marginBottom: 10 }}>{err}</div>}
+      <button style={btn} disabled={busy} onClick={signIn}>{busy ? "Signing in…" : "Sign in"}</button>
+      <p style={{ color: C.dim, fontSize: 12, marginTop: 12, lineHeight: 1.5 }}>Accounts are set up by hand; there is no sign-up here. Ask whoever runs this app if you need one or forgot your password.</p>
+    </Center>
+  );
 
   return (
     <Center>
