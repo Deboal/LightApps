@@ -59,10 +59,14 @@ function Claim({ user, claims, onClaimed }) {
   const taken = new Map(claims.map((c) => [c.id, c.email]));
   const open = PEOPLE.filter((p) => !taken.has(p.key));
 
+  const [err, setErr] = useState(null);
+
+  // A failed write used to leave the button reading "Linking…" forever, which
+  // looks exactly like sign-in not working.
   const pick = async (key) => {
-    setBusy(key);
-    await db.set(CLAIMS, { email: user.email }, key);
-    await onClaimed();
+    setBusy(key); setErr(null);
+    try { await db.set(CLAIMS, { email: user.email }, key); await onClaimed(); }
+    catch (x) { setErr(x.message || "Could not link this email."); }
     setBusy(null);
   };
 
@@ -89,7 +93,28 @@ function Claim({ user, claims, onClaimed }) {
             ))}
           </div>
         )}
+        {err && <div style={{ color: C.danger, fontSize: 13, marginTop: 10 }}>{err}</div>}
         <button onClick={signOut} style={{ ...ghost, marginTop: 14 }}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+// Signed in, but not on the list in household_members. The restrictive policy
+// does not refuse such a request, it filters it: every read comes back empty
+// and every write is rejected, so without this the app showed an empty ledger
+// and a "Who's signing in?" screen that could never succeed.
+function NotMember({ user }) {
+  return (
+    <div style={{ maxWidth: 460, margin: "0 auto", padding: "60px 20px" }}>
+      <div style={card}>
+        <h2 style={{ margin: "0 0 6px" }}>Not on the household list</h2>
+        <p style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginTop: 0 }}>
+          You're signed in as <b style={{ color: C.text }}>{user.email}</b>, which isn't one of the
+          two emails this ledger is shared with. Sign out and use the other email, or add this one
+          to <code>household_members</code> in Supabase.
+        </p>
+        <button onClick={signOut} style={{ ...ghost, marginTop: 6 }}>Sign out</button>
       </div>
     </div>
   );
@@ -527,8 +552,18 @@ function Ledger({ user, me, entries, reload }) {
 function Household({ user }) {
   const [entries, setEntries] = useState([]);
   const [claims, setClaims] = useState([]);
+  const [member, setMember] = useState(null);   // null = unknown, false = not on the list
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState(null);
+
+  // Ask Postgres directly, using the same function the policy uses. If the
+  // function is missing (schema-household.sql not run) this errors and we
+  // carry on as before rather than locking anyone out on a guess.
+  useEffect(() => {
+    db.raw().rpc("is_household_member").then(({ data, error }) => {
+      if (!error && data === false) setMember(false);
+    });
+  }, [user.id]);
 
   const load = useCallback(async () => {
     try {
@@ -541,6 +576,7 @@ function Household({ user }) {
   useEffect(() => { load(); const ch = db.subscribe(load); return () => ch.unsubscribe(); }, [load]);
 
   const wrap = { maxWidth: 460, margin: "0 auto", padding: "60px 20px", color: C.dim };
+  if (member === false) return <NotMember user={user} />;
   if (!ready) return <div style={wrap}>Loading…</div>;
   if (err) return <div style={wrap}><div style={{ color: C.danger, marginBottom: 12 }}>{err}</div><button style={ghost} onClick={load}>Try again</button></div>;
 
@@ -551,5 +587,5 @@ function Household({ user }) {
 }
 
 createRoot(document.getElementById("root")).render(
-  <AuthGate>{(user) => <Household user={user} />}</AuthGate>
+  <AuthGate method="password">{(user) => <Household user={user} />}</AuthGate>
 );

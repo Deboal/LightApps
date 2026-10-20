@@ -38,3 +38,28 @@ every app requires sign-in.
 - **Shared:** `store("my-app", { shared: true })` lets all signed-in users share the data (e.g. the
   Ecuador ledger), with each row recording who wrote it.
 - **Gate:** wrap the app root in `<AuthGate>{(user) => <App user={user} />}</AuthGate>`.
+
+## Password sign-in (household)
+`<AuthGate method="password">` swaps the magic link for email + password. The household ledger
+uses it because magic links kept failing there: a corporate mail scanner (Outlook Safe Links)
+opens the link before you do and spends the one-time token, and a home-screen web app on iOS
+keeps its own storage, so the link signs in Safari instead of the app. There is no sign-up
+screen; accounts are made here, once.
+
+The Email provider already covers passwords; nothing to enable. Then, per person:
+
+- **No account yet:** Authentication > Users > Add user > Create new user. Enter the email and a
+  password, tick **Auto Confirm User**.
+- **Account already exists** (any earlier magic-link attempt created one, so this is the usual
+  case): SQL Editor, with the real password in place of the placeholder:
+  ```sql
+  update auth.users
+     set encrypted_password = extensions.crypt('PASSWORD-HERE', extensions.gen_salt('bf')),
+         email_confirmed_at = coalesce(email_confirmed_at, now())
+   where lower(email) = lower('someone@example.com');
+  ```
+  `UPDATE 1` means done; `UPDATE 0` means no account, so use Add user instead. The SQL Editor
+  keeps query history, so clear the snippet afterwards or change the password once signed in.
+
+The sign-in email must also be in `household_members` (see `schema-household.sql`). If it isn't,
+the app now says so instead of showing an empty ledger.
