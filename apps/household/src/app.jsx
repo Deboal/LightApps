@@ -7,6 +7,7 @@ import {
   money, cents, sharesFor, balance, monthKey, monthLabel, dayLabel,
   shiftMonth, todayISO, isSettle, monthSummary, monthsWithActivity, sortEntries,
 } from "./model.js";
+import { downloadLedger } from "./export.js";
 
 // Shared store: both of us sign in with our own email and see the same ledger.
 //
@@ -29,6 +30,10 @@ const card = { background: C.panel, border: `1px solid ${C.line}`, borderRadius:
 const label = { fontSize: 12, color: C.dim, marginBottom: 6, display: "block" };
 const field = { width: "100%", background: C.sunk, border: `1px solid ${C.line}`, color: C.text, borderRadius: 9, padding: "11px 12px", fontSize: 15, outline: "none", fontFamily: "inherit" };
 const ghost = { background: "none", border: `1px solid ${C.line}`, color: C.dim, borderRadius: 8, padding: "6px 11px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
+const exportBtn = {
+  ...ghost, color: C.text, borderColor: "#245e56", background: "#13221f",
+  padding: "10px 14px", fontSize: 14, fontWeight: 600, minHeight: 44, flex: "0 0 auto",
+};
 const primary = { background: C.accent, color: C.accentInk, border: "none", borderRadius: 10, padding: "12px 18px", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" };
 
 function Segmented({ options, value, onChange }) {
@@ -277,6 +282,17 @@ function Ledger({ user, me, entries, reload }) {
     catch { flash(window.location.href); }
   };
 
+  // The file is the whole ledger, not the month on screen: the banner is
+  // to-date, and so is the spreadsheet.
+  const onExport = () => {
+    try {
+      downloadLedger(entries);
+      flash("Spreadsheet downloaded.");
+    } catch (e) {
+      flash(e.message || "Could not export the ledger.");
+    }
+  };
+
   const owedTo = bal.creditor;
   const pct = sum.total > 0 ? (sum.fronted.alex / sum.total) * 100 : 50;
 
@@ -303,7 +319,10 @@ function Ledger({ user, me, entries, reload }) {
 
       {/* Standing balance */}
       <div style={card}>
-        <div style={{ fontSize: 11, letterSpacing: ".2em", color: C.dim, fontWeight: 600 }}>STANDING BALANCE</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 11, letterSpacing: ".2em", color: C.dim, fontWeight: 600 }}>STANDING BALANCE</div>
+          <button type="button" onClick={onExport} style={exportBtn}>Export to Excel</button>
+        </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap", margin: "8px 0 2px" }}>
           <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: "-.03em", color: owedTo ? colorOf(owedTo) : C.text, fontVariantNumeric: "tabular-nums" }}>
             {money(bal.amount)}
